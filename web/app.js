@@ -552,8 +552,8 @@ function renderDrawer() {
   }
   $('#drawer-title').innerHTML = isNew
     ? 'New task'
-    : `<span class="status-dot ${esc(task.status)}"></span>${esc(task.id)} · ${esc(task.status)}
-       <span class="do-copy"><code>"Do ${esc(task.id)}"</code><button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉</button></span>`;
+    : `<span class="status-dot ${esc(task.status)}"></span>${esc(task.id)} · ${esc(task.status)}${task.status === 'todo' ? `
+       <span class="do-copy"><code>"Do ${esc(task.id)}"</code><button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉</button></span>` : ''}`;
 
   const options = state.data.tasks
     .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)

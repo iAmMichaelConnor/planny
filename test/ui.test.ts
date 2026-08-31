@@ -593,6 +593,21 @@ describe('ui smoke', () => {
     expect(writeText).toHaveBeenCalledWith('Do t3');
   });
 
+  it('offers the Do-this copy only on todo tasks', () => {
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click(); // in-progress
+    let title = document.querySelector('#drawer-title') as HTMLElement;
+    expect(title.textContent).not.toContain('"Do t2"'); // an agent already has it
+    expect(title.querySelector('#copy-do')).toBeNull();
+
+    (document.querySelector('.card[data-id="t6"]') as HTMLElement).click(); // done
+    title = document.querySelector('#drawer-title') as HTMLElement;
+    expect(title.querySelector('#copy-do')).toBeNull();
+
+    (document.querySelector('.card[data-id="t5"]') as HTMLElement).click(); // cancelled
+    title = document.querySelector('#drawer-title') as HTMLElement;
+    expect(title.querySelector('#copy-do')).toBeNull();
+  });
+
   it('kind is a single select of known kinds with a custom escape hatch', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const select = document.querySelector('#f-kind') as HTMLSelectElement;
