@@ -239,5 +239,9 @@ Reading the plan — the exact query for each question:
 hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
 problems that have one right answer; it exits 1 while errors remain.
 
+This file covers the common paths, not every flag. The full reference is
+`planny <command> --help`: every command documents its options and carries
+examples, and it cannot drift from the binary.
+
 A bug in planny itself goes upstream: add a task to your own plan to open
 the issue or PR at <https://github.com/iAmMichaelConnor/planny>.
