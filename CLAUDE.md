@@ -40,7 +40,15 @@ structure, so a re-parent never moves a file.
 ## Commands
 
 `npm run build` compiles to `dist/`. `npm test` runs vitest once.
-`node dist/cli.js` is the CLI (`planny` when linked).
+`node dist/bin.js` is the CLI (`planny` when linked).
+
+## Dogfooding
+
+This repo tracks its own remaining work in its own `.planny` store. Follow
+the planny skill (`skills/planny/SKILL.md`, symlinked into
+`.claude/skills/`): use the CLI for every task and decision change, and
+record open questions as decision tasks, not chat asides. Rebuild before
+using the CLI after source changes.
 
 ### Testing philosophy
 
