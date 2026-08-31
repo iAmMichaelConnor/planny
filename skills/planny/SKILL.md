@@ -193,9 +193,24 @@ their file; `--replaced-by` rewires dependants onto the successors).
 Kinds: `ai`, `operator` by convention (free-form for new kinds); `--model`
 records a preferred model, advisory only — reassign at load time if that
 model is unavailable.
-Getters: `show <id>`, `list` (`--status --kind --type --model --parent
---recursive --blocked`), `next`, `decisions`, `progress`, `path <id>`,
-`tree`, `deps` — all machine-readable with `--json` where it matters.
+Reading the plan — the exact query for each question:
+
+- What is left to do? `planny list --status todo,in-progress --json`
+  (add `--kind`, `--type`, `--model`, `--changed-since` to slice).
+- What should be worked on now? `planny next [n] --json` — each item
+  carries the task, its ancestor path, and the tasks it unlocks.
+- How does task X relate to everything? `planny show X --json` — fields
+  `ancestors` (parent chain, nearest first), `children`, `blockedBy`,
+  `blocking`, and a `blocked` flag. The text form prints the same as
+  path / children / waits on / blocks lines.
+- Children of X? `planny list --parent X`; the whole subtree:
+  add `--recursive`.
+- What is blocked right now? `planny list --blocked` (and `--unblocked`
+  for the opposite).
+- The shape at a glance: `planny tree` (hierarchy), `planny deps`
+  (blockers above what they block), `planny progress [--parent X]`
+  (completion).
+- The file behind a task: `planny path X`.
 `planny doctor [--fix] [--json]` checks a store that may have been edited by
 hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
 problems that have one right answer; it exits 1 while errors remain.
