@@ -61,6 +61,7 @@ const fetchCalls: Array<{ path: string; init?: RequestInit }> = [];
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onmessage: ((event: { data: string }) => void) | null = null;
+  onopen: (() => void) | null = null;
   constructor(readonly url: string) {
     FakeEventSource.instances.push(this);
   }
@@ -307,6 +308,17 @@ describe('ui smoke', () => {
     expect(drawer.style.top).toBe('64px');
     (document.querySelector('.dock-btn[data-dock="bottom"]') as HTMLElement).click();
     expect(drawer.style.top).toBe('');
+  });
+
+  it('refreshes when the event stream reconnects and when the tab becomes visible', async () => {
+    const stateCalls = () => fetchCalls.filter((c) => c.path === '/api/state').length;
+    const before = stateCalls();
+    FakeEventSource.instances[0]!.onopen!(); // simulates a reconnect after a server restart
+    await new Promise((r) => setTimeout(r, 5));
+    expect(stateCalls()).toBe(before + 1);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(stateCalls()).toBe(before + 2);
   });
 
   it('connects an event stream and refreshes when it fires', async () => {

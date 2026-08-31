@@ -867,8 +867,16 @@ $('#drawer-body').addEventListener('input', () => {
 window.addEventListener('resize', positionDrawer);
 if (typeof EventSource !== 'undefined') {
   // The server pushes an event whenever any task file changes (CLI edits included).
-  new EventSource('/api/events').onmessage = () => refresh();
+  const stream = new EventSource('/api/events');
+  stream.onmessage = () => refresh();
+  // A (re)connect means events may have been missed — a server restart, a
+  // dropped connection — so catch up immediately.
+  stream.onopen = () => refresh();
 }
+document.addEventListener('visibilitychange', () => {
+  // Background tabs get throttled and can miss events.
+  if (!document.hidden) refresh();
+});
 $('#drawer-close').onclick = () => {
   state.selected = null;
   renderDrawer();
