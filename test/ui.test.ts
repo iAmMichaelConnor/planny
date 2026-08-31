@@ -406,13 +406,8 @@ describe('ui smoke', () => {
     expect(body).toContain('started by agent-7');
   });
 
-  it('the header shows a For you chip that opens the operator tree', () => {
-    const chip = document.querySelector('#operator-chip') as HTMLElement;
-    expect(chip.classList.contains('hidden')).toBe(false);
-    expect(chip.textContent).toContain('For you: 1'); // t4, the operator decision
-    chip.click();
-    expect(document.querySelector('#view-tree')!.classList.contains('hidden')).toBe(false);
-    expect((document.querySelector('#kind-filter') as HTMLSelectElement).value).toBe('operator');
+  it('has no For you chip (removed by operator preference)', () => {
+    expect(document.querySelector('#operator-chip')).toBeNull();
   });
 
   it('drawer top/bottom bumps ask for confirmation first', () => {

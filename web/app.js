@@ -181,13 +181,6 @@ function render() {
   const openCount = state.data.decisions.filter((d) => !d.blocked).length;
   $('#decision-count').textContent = openCount > 0 ? `(${openCount})` : '';
 
-  const forYou = state.data.tasks.filter(
-    (t) => t.kind === 'operator' && (t.status === 'todo' || t.status === 'in-progress') && !t.blocked,
-  ).length;
-  const chip = $('#operator-chip');
-  chip.classList.toggle('hidden', forYou === 0);
-  chip.textContent = `For you: ${forYou}`;
-
   for (const tab of document.querySelectorAll('.tab')) {
     tab.classList.toggle('active', tab.dataset.view === state.view);
   }
@@ -842,13 +835,6 @@ applyDock();
     dragging = false;
   });
 }
-
-$('#operator-chip').onclick = () => {
-  state.view = 'tree';
-  render();
-  $('#kind-filter').value = 'operator';
-  renderTree();
-};
 
 $('#add-btn').onclick = () => {
   if (
