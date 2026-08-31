@@ -1,4 +1,5 @@
 import { buildGraph } from './graph.js';
+import { withLock } from './lock.js';
 import { repairDependencyOrder } from './priority.js';
 import type { Store } from './store.js';
 import { isActive, type Task } from './types.js';
@@ -245,6 +246,10 @@ export interface FixResult {
 }
 
 export function fixStore(store: Store): FixResult {
+  return withLock(store.root, () => doFixStore(store));
+}
+
+function doFixStore(store: Store): FixResult {
   const before = diagnose(store);
   const { tasks } = store.scan();
   const byId = new Map(tasks.map((t) => [t.id, t]));

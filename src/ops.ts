@@ -1,4 +1,5 @@
 import { buildGraph, type Graph } from './graph.js';
+import { withLock } from './lock.js';
 import { bumpPriority, repairDependencyOrder, type BumpTarget } from './priority.js';
 import type { Store } from './store.js';
 import { isActive, type Status, type Task, type TaskType } from './types.js';
@@ -152,6 +153,10 @@ function removeBlocker(m: Mutation, taskId: string, blockerId: string): void {
 }
 
 export function addTask(store: Store, input: AddInput, actor?: string): OpResult {
+  return withLock(store.root, () => doAddTask(store, input, actor));
+}
+
+function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
   const m = new Mutation(store);
   const now = new Date().toISOString();
   const task: Task = {
@@ -182,6 +187,10 @@ export function addTask(store: Store, input: AddInput, actor?: string): OpResult
 }
 
 export function updateTask(store: Store, id: string, input: UpdateInput): OpResult {
+  return withLock(store.root, () => doUpdateTask(store, id, input));
+}
+
+function doUpdateTask(store: Store, id: string, input: UpdateInput): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
 
@@ -225,6 +234,15 @@ export function setStatus(
   status: Exclude<Status, 'cancelled'>,
   actor?: string,
 ): OpResult {
+  return withLock(store.root, () => doSetStatus(store, id, status, actor));
+}
+
+function doSetStatus(
+  store: Store,
+  id: string,
+  status: Exclude<Status, 'cancelled'>,
+  actor?: string,
+): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
   if (status === 'done') {
@@ -255,6 +273,10 @@ export function cancelTask(
   replacedBy: string[] = [],
   actor?: string,
 ): OpResult {
+  return withLock(store.root, () => doCancelTask(store, id, replacedBy, actor));
+}
+
+function doCancelTask(store: Store, id: string, replacedBy: string[], actor?: string): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
   const replacements = [...new Set(replacedBy)];
@@ -298,6 +320,10 @@ export function resolveDecision(
   response: string,
   actor?: string,
 ): OpResult {
+  return withLock(store.root, () => doResolveDecision(store, id, response, actor));
+}
+
+function doResolveDecision(store: Store, id: string, response: string, actor?: string): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
   if (task.type !== 'decision') {
@@ -314,10 +340,12 @@ export function resolveDecision(
 }
 
 export function bumpTask(store: Store, id: string, target: BumpTarget): OpResult {
-  const m = new Mutation(store);
-  const task = m.get(id);
-  m.touch(id);
-  m.bump(id, target);
-  m.commit();
-  return m.result(task);
+  return withLock(store.root, () => {
+    const m = new Mutation(store);
+    const task = m.get(id);
+    m.touch(id);
+    m.bump(id, target);
+    m.commit();
+    return m.result(task);
+  });
 }
