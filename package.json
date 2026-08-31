@@ -4,7 +4,7 @@
   "description": "A file-backed task and decision tracker for AI-driven projects. CLI, markdown store, localhost UI.",
   "type": "module",
   "bin": {
-    "planny": "dist/cli.js"
+    "planny": "dist/bin.js"
   },
   "main": "dist/cli.js",
   "scripts": {

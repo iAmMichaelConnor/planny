@@ -93,7 +93,11 @@ export interface Progress {
 
 /** Completion over non-cancelled tasks, optionally scoped to a subtree. */
 export function progress(store: Store, parentId?: string): Progress {
-  const tasks = store.loadAll();
+  return computeProgress(store.loadAll(), parentId);
+}
+
+/** Same as progress, over an already-loaded task list. */
+export function computeProgress(tasks: Task[], parentId?: string): Progress {
   const graph = buildGraph(tasks);
   let scoped = tasks;
   if (parentId !== undefined) {

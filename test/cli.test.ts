@@ -1,0 +1,259 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { runCli } from '../src/cli.js';
+
+let dir: string;
+let out: string[];
+let err: string[];
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'planny-cli-'));
+  out = [];
+  err = [];
+});
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+async function run(...args: string[]): Promise<number> {
+  return runCli(args, {
+    cwd: dir,
+    out: (line) => out.push(line),
+    err: (line) => err.push(line),
+  });
+}
+
+function allOut(): string {
+  return out.join('\n');
+}
+
+async function seedTrio(): Promise<void> {
+  await run('init');
+  await run('add', 'first task');
+  await run('add', 'second task');
+  await run('add', 'third task');
+  out = [];
+}
+
+describe('init and add', () => {
+  it('init creates the store', async () => {
+    expect(await run('init')).toBe(0);
+    expect(existsSync(join(dir, '.planny', 'tasks'))).toBe(true);
+    expect(allOut()).toMatch(/initialized/i);
+  });
+
+  it('commands fail cleanly without init', async () => {
+    expect(await run('list')).toBe(1);
+    expect(err.join('\n')).toMatch(/planny init/);
+  });
+
+  it('add prints the new id', async () => {
+    await run('init');
+    expect(await run('add', 'my first task')).toBe(0);
+    expect(allOut()).toContain('t1');
+  });
+
+  it('add accepts description, kind, model, type and relationships', async () => {
+    await run('init');
+    await run('add', 'parent');
+    await run(
+      'add', 'child',
+      '--desc', 'Do it well.',
+      '--kind', 'operator',
+      '--model', 'opus',
+      '--parent', 't1',
+    );
+    out = [];
+    await run('show', 't2');
+    const text = allOut();
+    expect(text).toContain('child');
+    expect(text).toContain('operator');
+    expect(text).toContain('opus');
+    expect(text).toContain('Do it well.');
+    expect(text).toContain('t1');
+  });
+
+  it('rejects a bad reference with exit code 1', async () => {
+    await run('init');
+    expect(await run('add', 'x', '--parent', 't9')).toBe(1);
+    expect(err.join('\n')).toContain('t9');
+  });
+});
+
+describe('show and list', () => {
+  it('show --json includes derived relationships and the file path', async () => {
+    await seedTrio();
+    await run('update', 't2', '--parent', 't1', '--add-blocked-by', 't3');
+    out = [];
+    await run('show', 't2', '--json');
+    const data = JSON.parse(allOut());
+    expect(data.task.id).toBe('t2');
+    expect(data.task.parent).toBe('t1');
+    expect(data.path.endsWith('t2.md')).toBe(true);
+    expect(data.ancestors).toEqual(['t1']);
+    expect(data.blockedBy).toEqual(['t3']);
+  });
+
+  it('accepts a bare number as an id', async () => {
+    await seedTrio();
+    await run('show', '2');
+    expect(allOut()).toContain('second task');
+  });
+
+  it('list filters by status', async () => {
+    await seedTrio();
+    await run('done', 't1');
+    out = [];
+    await run('list', '--status', 'done');
+    expect(allOut()).toContain('first task');
+    expect(allOut()).not.toContain('second task');
+  });
+
+  it('list --json returns an array', async () => {
+    await seedTrio();
+    out = [];
+    await run('list', '--json');
+    const data = JSON.parse(allOut());
+    expect(data.map((t: { id: string }) => t.id)).toEqual(['t1', 't2', 't3']);
+  });
+});
+
+describe('status commands', () => {
+  it('start, done and todo change status', async () => {
+    await seedTrio();
+    await run('start', 't1');
+    expect(allOut()).toContain('in-progress');
+    await run('done', 't1');
+    await run('todo', 't1');
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toContain('todo');
+  });
+
+  it('done on a blocked task prints a warning but succeeds', async () => {
+    await seedTrio();
+    await run('update', 't2', '--add-blocked-by', 't1');
+    expect(await run('done', 't2')).toBe(0);
+    expect(err.join('\n')).toMatch(/blocked/i);
+  });
+
+  it('cancel with replacement rewires dependants', async () => {
+    await seedTrio();
+    await run('update', 't3', '--add-blocked-by', 't1');
+    await run('cancel', 't1', '--replaced-by', 't2');
+    out = [];
+    await run('show', 't3', '--json');
+    expect(JSON.parse(allOut()).blockedBy).toEqual(['t2']);
+  });
+});
+
+describe('ordering', () => {
+  it('bump top reorders the list', async () => {
+    await seedTrio();
+    await run('bump', 't3', 'top');
+    out = [];
+    await run('list');
+    const text = allOut();
+    expect(text.indexOf('third task')).toBeLessThan(text.indexOf('first task'));
+  });
+
+  it('bump respects blockers and says where the task landed', async () => {
+    await seedTrio();
+    await run('update', 't2', '--add-blocked-by', 't1');
+    out = [];
+    await run('bump', 't2', 'top');
+    out = [];
+    await run('list');
+    const text = allOut();
+    expect(text.indexOf('first task')).toBeLessThan(text.indexOf('second task'));
+  });
+});
+
+describe('next', () => {
+  it('lists ready tasks with their paths', async () => {
+    await run('init');
+    await run('add', 'epic');
+    await run('add', 'leaf', '--parent', 't1');
+    await run('add', 'blocked', '--blocked-by', 't2');
+    out = [];
+    await run('next');
+    const text = allOut();
+    expect(text).toContain('leaf');
+    expect(text).not.toContain('blocked');
+  });
+
+  it('next --json includes path and unlocks', async () => {
+    await run('init');
+    await run('add', 'epic');
+    await run('add', 'leaf', '--parent', 't1');
+    await run('add', 'blocked', '--blocked-by', 't2');
+    out = [];
+    await run('next', '--json');
+    const data = JSON.parse(allOut());
+    expect(data[0].task.id).toBe('t2');
+    expect(data[0].ancestors).toEqual(['t1']);
+    expect(data[0].unlocks).toEqual(['t3']);
+  });
+});
+
+describe('decisions', () => {
+  it('lists open decisions and resolves one', async () => {
+    await run('init');
+    await run('add', 'Pick a database', '--type', 'decision', '--desc', '## Proposal\n\nUse files.');
+    out = [];
+    await run('decisions');
+    expect(allOut()).toContain('Pick a database');
+    out = [];
+    await run('resolve', 't1', '--response', 'Agreed: use files.');
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toContain('Agreed: use files.');
+    expect(allOut()).toContain('done');
+  });
+
+  it('resolve rejects a plain task', async () => {
+    await seedTrio();
+    expect(await run('resolve', 't1', '--response', 'x')).toBe(1);
+    expect(err.join('\n')).toMatch(/decision/i);
+  });
+});
+
+describe('progress and export', () => {
+  it('progress prints a percentage', async () => {
+    await seedTrio();
+    await run('done', 't1');
+    out = [];
+    await run('progress');
+    expect(allOut()).toContain('33%');
+  });
+
+  it('export writes a markdown file', async () => {
+    await seedTrio();
+    const file = join(dir, 'plan.md');
+    await run('export', '--out', file);
+    const text = readFileSync(file, 'utf8');
+    expect(text).toMatch(/^# Plan/);
+    expect(text).toContain('first task');
+  });
+
+  it('export without --out prints to stdout', async () => {
+    await seedTrio();
+    out = [];
+    await run('export');
+    expect(allOut()).toContain('## Tasks');
+  });
+
+  it('tree and deps render to the terminal', async () => {
+    await seedTrio();
+    await run('update', 't2', '--parent', 't1', '--add-blocked-by', 't3');
+    out = [];
+    await run('tree');
+    expect(allOut()).toContain('second task');
+    out = [];
+    await run('deps');
+    expect(allOut()).toContain('third task');
+  });
+});
