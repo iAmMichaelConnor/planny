@@ -64,13 +64,18 @@ adds a localhost UI as a bonus for humans:
   agent has asked you**, one at a time, in answering order (or, again,
   just tell your agent your answers).
 
-![The board — this screenshot is planny tracking its own development](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-board.png)
+![The board](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-board.png)
+*The board — this screenshot is planny tracking its own development.*
 
-![The tree view, on a small demo store — per-parent progress, holders, models, and waits-on links](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-tree.png)
+![The tree view](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-tree.png)
+*The tree view, on a small demo store — per-parent progress, holders,
+models, and waits-on links.*
 
 ![The decision queue](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-decisions.png)
+*The decision queue.*
 
-![The edit drawer, docked on the right](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-drawer.png)
+![The edit drawer](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-drawer.png)
+*The edit drawer, docked on the right.*
 
 The detail, for the curious: four views — a kanban board (columns in
 priority order, global `#position` on active cards), a tree of parents
