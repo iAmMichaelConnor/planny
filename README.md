@@ -26,33 +26,28 @@ staying current, and serving the board at session start.
 The fastest install is to paste this at your agent:
 
 > Set up planny in this project: make sure the `planny` CLI is installed
-> (`npm install -g planny`); give yourself the planny skill — in Claude
-> Code, add the plugin marketplace `iAmMichaelConnor/planny` and install
-> the `planny` plugin from it; in Codex or another agent that reads the
-> open SKILL.md format, link `$(npm root -g)/planny/skills/planny` into
-> your skills directory — then run `planny init` and use the planny skill
-> for every task and decision from now on.
+> (`npm install -g planny`); give yourself the planny skill by linking
+> `$(npm root -g)/planny/skills/planny` into your skills directory
+> (`~/.claude/skills/` for Claude Code, `~/.codex/skills/` for Codex, or
+> wherever your agent reads the open SKILL.md format) — then run
+> `planny init` and use the planny skill for every task and decision from
+> now on.
 
-Or by hand. Claude Code (the repo doubles as a plugin marketplace):
-
-```
-/plugin marketplace add iAmMichaelConnor/planny
-/plugin install planny@planny
-```
-
-Codex CLI, or any other agent that reads the open SKILL.md format — the
-npm package ships the skill, so link it from the installed package and it
-stays current across upgrades:
+Or by hand — the npm package ships the skill, so link it from the
+installed package and it stays current across upgrades:
 
 ```bash
-mkdir -p ~/.codex/skills
-ln -s "$(npm root -g)/planny/skills/planny" ~/.codex/skills/planny
+mkdir -p ~/.claude/skills   # Codex: ~/.codex/skills
+ln -s "$(npm root -g)/planny/skills/planny" ~/.claude/skills/planny
 ```
 
-Restart Codex to pick up new skills; use `.agents/skills/planny` instead
-for a per-repo install. Either way the CLI itself still comes from npm —
-the skill is the primary instructions, and every command's `--help`
-teaches the rest.
+Restart the agent to pick up new skills; for a per-repo install, link
+into the project's `.claude/skills/` (Claude Code) or `.agents/skills/`
+(Codex). Claude Code can also take the plugin route instead — the repo
+doubles as a plugin marketplace (`/plugin marketplace add
+iAmMichaelConnor/planny`, then `/plugin install planny@planny`). Either
+way the CLI itself still comes from npm — the skill is the primary
+instructions, and every command's `--help` teaches the rest.
 
 ## The localhost UI
 
