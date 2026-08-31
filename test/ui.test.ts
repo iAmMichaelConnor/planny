@@ -112,6 +112,35 @@ describe('ui smoke', () => {
     expect(svg.querySelectorAll('.dep-edge').length).toBe(1);
   });
 
+  it('colour-codes status consistently across board, deps and drawer', () => {
+    const card = (id: string) => document.querySelector(`.card[data-id="${id}"]`) as HTMLElement;
+    expect(card('t1').classList.contains('st-todo')).toBe(true);
+    expect(card('t2').classList.contains('st-in-progress')).toBe(true);
+    expect(card('t5').classList.contains('st-cancelled')).toBe(true);
+    expect(document.querySelector('#view-board .column h2 .status-dot')).not.toBeNull();
+
+    clickTab('deps');
+    const bar = document.querySelector('.dep-node[data-id="t1"] .statusbar') as SVGRectElement;
+    expect(bar).not.toBeNull();
+    expect(bar.classList.contains('todo')).toBe(true);
+    expect(document.querySelectorAll('#view-deps .legend .status-dot').length).toBe(4);
+
+    card('t1').click();
+    expect(document.querySelector('#drawer-title .status-dot')).not.toBeNull();
+  });
+
+  it('filters the dependency graph by status', () => {
+    clickTab('deps');
+    expect(document.querySelectorAll('#deps-status input').length).toBe(4);
+    expect(document.querySelectorAll('#deps-svg .dep-node').length).toBe(2);
+    const todoBox = document.querySelector('#deps-status input[data-status="todo"]') as HTMLInputElement;
+    todoBox.checked = false;
+    todoBox.dispatchEvent(new Event('change'));
+    // t1 and t3 are both todo, so nothing with an edge remains.
+    expect(document.querySelector('#deps-svg .dep-node')).toBeNull();
+    expect(document.querySelector('#deps-scroll')!.textContent).toMatch(/no dependencies/i);
+  });
+
   it('annotates every arrow and can flip the perspective', () => {
     clickTab('deps');
     const nodeX = (id: string): number =>

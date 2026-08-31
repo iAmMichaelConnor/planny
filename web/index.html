@@ -52,6 +52,12 @@
           <option value="blocked-by">A → B: A is blocked by B</option>
         </select>
       </label>
+      <span class="filter-group legend" id="deps-status">
+        <label><span class="status-dot todo"></span><input type="checkbox" data-status="todo" checked> todo</label>
+        <label><span class="status-dot in-progress"></span><input type="checkbox" data-status="in-progress" checked> in progress</label>
+        <label><span class="status-dot done"></span><input type="checkbox" data-status="done" checked> done</label>
+        <label><span class="status-dot cancelled"></span><input type="checkbox" data-status="cancelled"> cancelled</label>
+      </span>
     </div>
     <p class="hint" id="deps-hint"></p>
     <div id="deps-scroll"><svg id="deps-svg"></svg></div>

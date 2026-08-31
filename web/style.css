@@ -11,6 +11,11 @@
   --bad: #dc2626;
   --todo: #64748b;
   --shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+  /* One status palette for every view; the referenced tokens flip in dark mode. */
+  --st-todo: var(--todo);
+  --st-in-progress: var(--accent);
+  --st-done: var(--ok);
+  --st-cancelled: var(--line);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -85,7 +90,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .column h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 2px 6px 10px; }
 .card {
   border: 1px solid var(--line);
-  border-left: 3px solid var(--todo);
+  border-left: 3px solid var(--st-todo);
   border-radius: 8px;
   padding: 8px 10px;
   margin-bottom: 8px;
@@ -95,7 +100,9 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .card:hover { border-color: var(--accent); }
 .card .id { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; margin-right: 6px; }
 .card .name { font-weight: 550; }
-.card.decision { border-left-color: var(--warn); }
+.card.st-in-progress { border-left-color: var(--st-in-progress); }
+.card.st-done { border-left-color: var(--st-done); }
+.card.st-cancelled { border-left-color: var(--st-cancelled); }
 .card.blocked-card { opacity: 0.75; }
 .card .badges { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
 .badge {
@@ -121,10 +128,22 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .tree-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
 .tree-row:hover { background: var(--bg); }
 .tree-row .twist { width: 14px; color: var(--muted); text-align: center; cursor: pointer; user-select: none; }
-.status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--todo); flex: none; }
-.status-dot.in-progress { background: var(--accent); }
-.status-dot.done { background: var(--ok); }
-.status-dot.cancelled { background: var(--line); }
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--st-todo);
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+.status-dot.in-progress { background: var(--st-in-progress); }
+.status-dot.done { background: var(--st-done); }
+.status-dot.cancelled { background: var(--st-cancelled); }
+.column h2 .status-dot { margin-right: 6px; }
+#drawer-title .status-dot { margin-right: 7px; }
+.legend label { cursor: pointer; }
+.legend .status-dot { margin-right: 4px; }
 .tree-row .id { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
 .tree-row .name.done-name { text-decoration: line-through; color: var(--muted); }
 .mini-progress { width: 70px; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; flex: none; }
@@ -134,6 +153,11 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 #deps-scroll { overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 #deps-svg { display: block; }
 .dep-node rect { fill: var(--bg); stroke: var(--line); rx: 7px; cursor: pointer; }
+.dep-node .statusbar { stroke: none; }
+.dep-node .statusbar.todo { fill: var(--st-todo); }
+.dep-node .statusbar.in-progress { fill: var(--st-in-progress); }
+.dep-node .statusbar.done { fill: var(--st-done); }
+.dep-node .statusbar.cancelled { fill: var(--st-cancelled); }
 .dep-node:hover rect { stroke: var(--accent); }
 .dep-node text { fill: var(--ink); font-size: 12px; pointer-events: none; }
 .dep-node .sub { fill: var(--muted); font-size: 10px; }

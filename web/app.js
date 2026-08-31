@@ -181,7 +181,12 @@ function cardHtml(task) {
   if (task.status === 'todo' || task.status === 'in-progress') {
     quick.push(`<button data-action="top" data-id="${task.id}" title="bump to top">▲ top</button>`);
   }
-  const classes = ['card', task.type === 'decision' ? 'decision' : '', task.blocked ? 'blocked-card' : ''];
+  const classes = [
+    'card',
+    `st-${task.status}`,
+    task.type === 'decision' ? 'decision' : '',
+    task.blocked ? 'blocked-card' : '',
+  ];
   return `<div class="${classes.join(' ')}" data-id="${task.id}">
     <span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
     <div class="badges">${badges(task)}</div>
@@ -200,7 +205,7 @@ function renderBoard() {
     .filter(([status]) => status !== 'cancelled' || state.data.tasks.some((t) => t.status === status))
     .map(([status, title]) => {
       const cards = state.data.tasks.filter((t) => t.status === status).map(cardHtml).join('');
-      return `<div class="column"><h2>${title}</h2>${cards || '<p class="muted">—</p>'}</div>`;
+      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}</h2>${cards || '<p class="muted">—</p>'}</div>`;
     })
     .join('');
 }
@@ -276,8 +281,17 @@ function renderDeps() {
       ? 'Arrows point from a blocker to the task it blocks: A → B means A blocks B, so B waits on A. Blockers sit left. Hover an arrow for its two ends; click a task to edit it.'
       : 'Arrows point from a task to what it waits on: A → B means A is blocked by B. Blocked tasks sit left. Hover an arrow for its two ends; click a task to edit it.';
 
+  const shown = new Set(
+    [...document.querySelectorAll('#deps-status input:checked')].map((el) => el.dataset.status),
+  );
+  const visibleIds = new Set(
+    state.data.tasks.filter((t) => shown.has(t.status)).map((t) => t.id),
+  );
   const involved = state.data.tasks.filter(
-    (t) => t.blocking.length > 0 || t.blockedBy.some((id) => state.byId.has(id)),
+    (t) =>
+      visibleIds.has(t.id) &&
+      (t.blockedBy.some((id) => visibleIds.has(id)) ||
+        t.blocking.some((id) => visibleIds.has(id))),
   );
   const scroll = $('#deps-scroll');
   if (involved.length === 0) {
@@ -292,7 +306,7 @@ function renderDeps() {
     if (trail.has(id)) return 0;
     trail.add(id);
     const task = state.byId.get(id);
-    const blockers = task.blockedBy.filter((b) => state.byId.has(b));
+    const blockers = task.blockedBy.filter((b) => visibleIds.has(b));
     const value = blockers.length === 0 ? 0 : 1 + Math.max(...blockers.map((b) => layer(b, trail)));
     layerOf.set(id, value);
     return value;
@@ -343,7 +357,8 @@ function renderDeps() {
     const cls = t.status === 'done' || t.status === 'cancelled' ? 'dep-node done' : 'dep-node';
     return `<g class="${cls}" data-id="${t.id}" transform="translate(${x(l)},${y(row)})">
       <rect width="${boxW}" height="${boxH}"/>
-      <text x="10" y="20">${esc(t.id)} ${esc(name)}</text>
+      <rect class="statusbar ${t.status}" x="1" y="1" width="4" height="${boxH - 2}"/>
+      <text x="12" y="20">${esc(t.id)} ${esc(name)}</text>
       <text x="10" y="36" class="sub">${t.status}${t.type === 'decision' ? ' · decision' : ''}</text>
     </g>`;
   });
@@ -407,7 +422,9 @@ function renderDrawer() {
     drawer.classList.add('hidden');
     return;
   }
-  $('#drawer-title').textContent = isNew ? 'New task' : `${task.id} · ${task.status}`;
+  $('#drawer-title').innerHTML = isNew
+    ? 'New task'
+    : `<span class="status-dot ${esc(task.status)}"></span>${esc(task.id)} · ${esc(task.status)}`;
 
   const options = state.data.tasks
     .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)
@@ -701,6 +718,9 @@ $('#deps-mode').addEventListener('change', () => {
   writePreference('planny-deps-mode', state.depsMode);
   renderDeps();
 });
+for (const el of document.querySelectorAll('#deps-status input')) {
+  el.addEventListener('change', renderDeps);
+}
 window.addEventListener('focus', refresh);
 
 refresh().catch((err) => toast(err.message, 'error'));
