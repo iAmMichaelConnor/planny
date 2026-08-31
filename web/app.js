@@ -594,7 +594,7 @@ function renderDrawer() {
 
   const doCopy = isNew ? '' : `
     <div class="do-copy"><code>Do ${esc(task.id)}</code>
-      <button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. We admire your commitment to laziness.">⧉ copy</button>
+      <button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉ copy</button>
     </div>`;
 
   $('#drawer-body').innerHTML = `
