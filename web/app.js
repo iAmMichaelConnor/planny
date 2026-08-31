@@ -493,12 +493,26 @@ function parseIdList(value) {
 
 function wireDrawer(task, isNew) {
   const body = $('#drawer-body');
+  // Expanded means full: the box fits its whole content and the drawer
+  // scrolls, so there is never a scrollbar inside the box.
+  const autosizeDesc = () => {
+    const textarea = $('#f-desc');
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 240)}px`;
+  };
   $('#desc-toggle').onclick = () => {
     // Toggle in place: a re-render would drop unsaved edits in the form.
     state.descExpanded = !state.descExpanded;
-    $('#f-desc').classList.toggle('expanded', state.descExpanded);
+    const textarea = $('#f-desc');
+    textarea.classList.toggle('expanded', state.descExpanded);
     $('#desc-toggle').textContent = state.descExpanded ? 'collapse' : 'expand';
+    if (state.descExpanded) autosizeDesc();
+    else textarea.style.height = '';
   };
+  $('#f-desc').addEventListener('input', () => {
+    if (state.descExpanded) autosizeDesc();
+  });
+  if (state.descExpanded) autosizeDesc();
   $('#save-btn').onclick = () => {
     const fields = {
       name: $('#f-name').value,

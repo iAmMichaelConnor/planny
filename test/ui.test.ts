@@ -184,16 +184,21 @@ describe('ui smoke', () => {
     expect(drawer.style.width).toBe(`${window.innerWidth - 600}px`);
   });
 
-  it('the description toggle expands the box without losing unsaved edits', () => {
+  it('the description toggle fully expands the box without losing unsaved edits', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const textarea = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 1500 });
     textarea.value = 'unsaved edit';
     const toggle = document.querySelector('#desc-toggle') as HTMLElement;
     toggle.click();
     expect(textarea.classList.contains('expanded')).toBe(true);
+    expect(textarea.style.height).toBe('1500px'); // sized to the full content
     expect(textarea.value).toBe('unsaved edit');
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(textarea.style.height).toBe('1500px'); // re-sized on typing
     toggle.click();
     expect(textarea.classList.contains('expanded')).toBe(false);
+    expect(textarea.style.height).toBe(''); // compact height again
     expect(textarea.value).toBe('unsaved edit');
   });
 

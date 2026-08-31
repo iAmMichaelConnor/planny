@@ -226,7 +226,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 }
 #drawer-resize:hover { background: var(--accent); opacity: 0.5; }
 .desc-area { min-height: 240px; }
-.desc-area.expanded { min-height: 62vh; }
+.desc-area.expanded { overflow-y: hidden; resize: none; }
 button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 #drawer-body { padding: 14px 16px 40px; overflow-y: auto; }
 #drawer-body label { display: block; margin: 10px 0 3px; color: var(--muted); font-size: 12px; }
