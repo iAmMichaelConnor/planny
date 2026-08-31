@@ -185,6 +185,7 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
     .option('--blocks <ids>', 'tasks that must wait for this one (comma-separated, repeatable)', collectIds)
     .option('--priority <pos>', 'top | bottom | 1-based position (default bottom)', parsePriority)
     .option('--start', 'claim and start the new task immediately (yours to work)')
+    .option('--json', 'machine-readable output: {task, warnings}')
     .addHelpText(
       'after',
       `
@@ -196,8 +197,9 @@ Examples:
   planny add "Long brief" --desc-file brief.md  (- reads stdin)`,
     )
     .action((name, options) => {
+      const store = open();
       const result = addTask(
-        open(),
+        store,
         {
           name,
           body: readBody(options),
@@ -214,9 +216,14 @@ Examples:
       );
       let line = `added ${result.task.id} — ${result.task.name}`;
       if (options.start) {
-        const started = setStatus(open(), result.task.id, 'in-progress', actor());
+        const started = setStatus(store, result.task.id, 'in-progress', actor());
         result.warnings.push(...started.warnings);
         line += ' · started';
+      }
+      if (options.json) {
+        const task = options.start ? store.load(result.task.id) : result.task;
+        io.out(JSON.stringify({ task, warnings: result.warnings }, null, 2));
+        return;
       }
       report(result, line);
     });
@@ -550,6 +557,7 @@ Examples:
           JSON.stringify(
             {
               ...result,
+              since: result.since ?? null, // always present: JSON drops undefined keys
               resolved: result.resolved.map(({ task, unblocks }) => ({
                 task,
                 unblocks: unblocks.map((t) => t.id),

@@ -289,7 +289,10 @@ function renderBoard() {
         .filter((t) => t.status === status && visible(t))
         .map((t) => cardHtml(t, t.position > 0 ? t.position : undefined))
         .join('');
-      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}${ordered}</h2>${cards || '<p class="muted">—</p>'}</div>`;
+      const empty = status === 'in-progress'
+        ? '<p class="muted col-tip">Nothing in progress. Ask your AI to work the plan — it has the planny skill. Try: &ldquo;do more tasks&rdquo;.</p>'
+        : '<p class="muted">—</p>';
+      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}${ordered}</h2>${cards || empty}</div>`;
     })
     .join('');
 }
@@ -524,7 +527,7 @@ function renderDrawer() {
   if (state.selected === state.renderedDrawerId && state.drawerDirty) return;
   const isNew = state.selected === '__new__';
   const task = isNew
-    ? { name: '', body: '', type: 'task', kind: 'ai', model: '', parent: '', blockedBy: [], status: 'todo' }
+    ? { name: '', body: '', type: 'task', kind: 'ai', model: '', parent: state.newParent || '', blockedBy: [], status: 'todo' }
     : state.byId.get(state.selected);
   if (!task) {
     state.selected = null;
@@ -537,6 +540,13 @@ function renderDrawer() {
 
   const options = state.data.tasks
     .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)
+    .join('');
+  const others = state.data.tasks.filter((t) => isNew || t.id !== task.id);
+  const otherOptions = others
+    .map((t) => `<option value="${t.id}"${t.id === task.parent ? ' selected' : ''}>${t.id} ${esc(t.name)}</option>`)
+    .join('');
+  const blockedOptions = others
+    .map((t) => `<option value="${t.id}"${task.blockedBy.includes(t.id) ? ' selected' : ''}>${t.id} ${esc(t.name)}</option>`)
     .join('');
   const active = activeTasks();
   const positionValue = task.position ?? 0; // served by the API; 0 when inactive or new
@@ -556,7 +566,8 @@ function renderDrawer() {
       ${ancestorsOf(task.id).length > 0 ? `<label>path</label><div>${ancestorsOf(task.id).reverse().map((a) => `${a.id} ${esc(a.name)}`).join(' › ')}</div>` : ''}
       ${childrenOf(task.id).length > 0 ? `<label>children</label><ul class="rel-list">${childrenOf(task.id).map((c) => `<li data-goto="${c.id}">${c.id} ${esc(c.name)} — ${c.status}</li>`).join('')}</ul>` : ''}
       ${task.blocking.length > 0 ? `<label>blocks</label><ul class="rel-list">${task.blocking.map((id) => { const b = state.byId.get(id); return `<li data-goto="${id}">${id} ${esc(b ? b.name : '')}</li>`; }).join('')}</ul>` : ''}
-      <label>file</label><div class="file-path">.planny/tasks/${task.id}.md</div>
+      <div style="margin:8px 0"><button id="add-child-btn">+ add child task</button></div>
+      <label>file</label><div class="file-path">${esc(state.data.store ? `${state.data.store.root}/` : '')}.planny/tasks/${task.id}.md</div>
     </div>`;
 
   const statusButtons = isNew ? '' : `
@@ -602,7 +613,7 @@ function renderDrawer() {
     ${doCopy}
     <label>name</label><input id="f-name" value="${esc(task.name)}">
     <label>description (markdown)
-      <button id="desc-toggle" type="button" class="mini">${state.descExpanded ? 'collapse' : 'expand'}</button>
+      <button id="desc-toggle" type="button" class="mini" tabindex="-1">${state.descExpanded ? 'collapse' : 'expand'}</button>
     </label>
     <textarea id="f-desc" class="desc-area${state.descExpanded ? ' expanded' : ''}">${esc(task.body)}</textarea>
     ${resolveSection}
@@ -621,13 +632,24 @@ function renderDrawer() {
     </div>
     <div class="row">
       <div><label>model (optional)</label><input id="f-model" value="${esc(task.model || '')}"></div>
-      <div><label>parent (optional)</label><input id="f-parent" list="task-ids" value="${esc(task.parent || '')}">
+      <div><label>parent (optional)</label>
+        <div class="combo">
+          <input id="f-parent" list="task-ids" value="${esc(task.parent || '')}">
+          <select id="f-parent-pick" title="pick a parent">
+            <option value="">—</option>${otherOptions}
+          </select>
+        </div>
         <datalist id="task-ids">${options}</datalist></div>
     </div>
     <label>waits on (comma-separated ids)</label>
-    <input id="f-blocked-by" value="${esc(task.blockedBy.join(', '))}">
+    <div class="combo">
+      <input id="f-blocked-by" value="${esc(task.blockedBy.join(', '))}">
+      <select id="f-blocked-pick" multiple size="4" title="pick blockers (adds to the text box)">
+        ${blockedOptions}
+      </select>
+    </div>
     ${prioritySection}
-    <div style="margin-top:14px"><button class="primary" id="save-btn">${isNew ? 'Create task' : 'Save changes'}</button></div>
+    <div style="margin-top:14px"><button class="primary" id="save-btn"${isNew ? '' : ' disabled title="type a change first"'}>${isNew ? 'Create task' : 'Save changes'}</button></div>
     ${statusButtons}
     ${relSection}`;
 
@@ -702,6 +724,32 @@ function wireDrawer(task, isNew) {
     const removeBlockedBy = task.blockedBy.filter((id) => !blockedBy.includes(id));
     api(`/api/tasks/${task.id}`, 'PATCH', { ...fields, addBlockedBy, removeBlockedBy });
   };
+
+  const parentPick = $('#f-parent-pick');
+  if (parentPick) {
+    parentPick.onchange = () => {
+      $('#f-parent').value = parentPick.value;
+      state.drawerDirty = true;
+      const save = $('#save-btn');
+      if (save) save.disabled = false;
+    };
+  }
+  const blockedPick = $('#f-blocked-pick');
+  if (blockedPick) {
+    blockedPick.onchange = () => {
+      const known = new Set([...blockedPick.options].map((o) => o.value));
+      const typedUnknown = parseIdList($('#f-blocked-by').value).filter((id) => !known.has(id));
+      const picked = [...blockedPick.selectedOptions].map((o) => o.value);
+      $('#f-blocked-by').value = [...typedUnknown, ...picked].join(', ');
+      state.drawerDirty = true;
+      const save = $('#save-btn');
+      if (save) save.disabled = false;
+    };
+  }
+  const addChild = $('#add-child-btn');
+  if (addChild) {
+    addChild.onclick = () => openNewTaskForm(task.id);
+  }
 
   const copyDo = $('#copy-do');
   if (copyDo) {
@@ -924,9 +972,12 @@ applyDock();
   });
 }
 
-function openNewTaskForm() {
+function openNewTaskForm(parentId) {
   $('#add-note').classList.add('hidden');
+  state.newParent = typeof parentId === 'string' ? parentId : null;
   state.selected = '__new__';
+  state.renderedDrawerId = null; // force a rebuild even if the form was open
+  state.drawerDirty = false;
   renderDrawer();
 }
 
@@ -944,6 +995,17 @@ $('#add-note-dismiss').onclick = () => {
 };
 $('#drawer-body').addEventListener('input', () => {
   state.drawerDirty = true;
+  const save = $('#save-btn');
+  if (save) {
+    save.disabled = false;
+    save.removeAttribute('title');
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !$('#add-note').classList.contains('hidden')) {
+    event.preventDefault();
+    openNewTaskForm();
+  }
 });
 $('#drawer-body').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {

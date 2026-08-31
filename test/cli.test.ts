@@ -88,6 +88,16 @@ describe('init and add', () => {
     expect(task.history.at(-1)).toMatchObject({ status: 'in-progress', by: 'sess-a' });
   });
 
+  it('add --json returns the task machine-readably, with --start reflected', async () => {
+    await run('init');
+    out = [];
+    await run('--session', 'sess-a', 'add', 'json task', '--start', '--json');
+    const { task, warnings } = JSON.parse(allOut());
+    expect(task.id).toBe('t1');
+    expect(task.status).toBe('in-progress');
+    expect(Array.isArray(warnings)).toBe(true);
+  });
+
   it('rejects a bad reference with exit code 1', async () => {
     await run('init');
     expect(await run('add', 'x', '--parent', 't9')).toBe(1);
@@ -371,6 +381,15 @@ describe('catchup command', () => {
     out = [];
     await run('catchup', '--as', 'agent-x', '--json');
     expect(JSON.parse(allOut()).changed).toHaveLength(0);
+  });
+
+  it('json always carries since, null on a first call', async () => {
+    await run('init');
+    out = [];
+    await run('catchup', '--as', 'fresh-agent', '--json');
+    const result = JSON.parse(allOut());
+    expect('since' in result).toBe(true);
+    expect(result.since).toBeNull();
   });
 
   it('requires a consumer id from --as or the session', async () => {

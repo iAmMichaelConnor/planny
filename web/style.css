@@ -84,7 +84,11 @@ header {
   z-index: 5;
 }
 .header-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.header-sub { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.header-sub { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.combo { display: flex; gap: 6px; }
+.combo input { flex: 1; }
+.combo select { max-width: 45%; }
+.col-tip { font-size: 12.5px; line-height: 1.4; padding: 4px 6px; }
 header h1 { font-size: 17px; margin: 0; }
 #theme-btn { border: none; background: none; font-size: 15px; padding: 2px 4px; margin-left: auto; }
 #progress-wrap { display: flex; align-items: center; gap: 8px; min-width: 220px; }

@@ -307,7 +307,9 @@ describe('ui smoke', () => {
   it('opens the drawer from a card and saves an edit via PATCH', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
-    (document.querySelector('#f-name') as HTMLInputElement).value = 'Renamed';
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'Renamed';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
     (document.querySelector('#save-btn') as HTMLElement).click();
     const patch = fetchCalls.find((c) => c.path === '/api/tasks/t1');
     expect(patch).toBeDefined();
@@ -456,6 +458,76 @@ describe('ui smoke', () => {
     await new Promise((r) => setTimeout(r, 5));
     expect(draft().value).toBe('leaning towards yes');
     expect(document.activeElement).toBe(draft());
+  });
+
+  it('progress sits next to the path on the sub-row, not pushed apart', () => {
+    const label = document.querySelector('#store-label') as HTMLElement;
+    expect(label.nextElementSibling!.id).toBe('progress-wrap');
+    const sub = label.parentElement as HTMLElement;
+    expect(sub.classList.contains('spread')).toBe(false); // adjacency, not space-between
+  });
+
+  it('an empty in-progress column tells the operator to prompt their AI', () => {
+    // Filter to decisions only: t2 (a task) leaves the in-progress column empty.
+    (document.querySelector('#board-filters .chip[data-type="decision"]') as HTMLElement).click();
+    const board = document.querySelector('#board-columns')!;
+    expect(board.textContent).toMatch(/do more tasks/i);
+    expect(board.textContent).toMatch(/planny skill/i);
+  });
+
+  it('the drawer shows the absolute file path', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(document.querySelector('#drawer-body .file-path')!.textContent).toBe(
+      '/home/me/projects/rocket/.planny/tasks/t1.md',
+    );
+  });
+
+  it('save is disabled until an edit is typed', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const save = document.querySelector('#save-btn') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'x';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(save.disabled).toBe(false);
+  });
+
+  it('Enter on the add-task note means continue', () => {
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    expect(document.querySelector('#add-note')!.classList.contains('hidden')).toBe(false);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.querySelector('#add-note')!.classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('the drawer offers an add-child button that prefills the parent', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    (document.querySelector('#add-child-btn') as HTMLElement).click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('New task');
+    expect((document.querySelector('#f-parent') as HTMLInputElement).value).toBe('t1');
+  });
+
+  it('the expand toggle is not a tab stop', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect((document.querySelector('#desc-toggle') as HTMLElement).getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('parent and waits-on offer pickers alongside the text inputs', () => {
+    (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
+    const parentPick = document.querySelector('#f-parent-pick') as HTMLSelectElement;
+    expect(parentPick).not.toBeNull();
+    parentPick.value = 't1';
+    parentPick.dispatchEvent(new Event('change', { bubbles: true }));
+    expect((document.querySelector('#f-parent') as HTMLInputElement).value).toBe('t1');
+
+    const blockedPick = document.querySelector('#f-blocked-pick') as HTMLSelectElement;
+    expect(blockedPick.multiple).toBe(true);
+    const optionT2 = [...blockedPick.options].find((o) => o.value === 't2')!;
+    optionT2.selected = true;
+    blockedPick.dispatchEvent(new Event('change', { bubbles: true }));
+    const text = (document.querySelector('#f-blocked-by') as HTMLInputElement).value;
+    expect(text).toContain('t1'); // existing blocker kept
+    expect(text).toContain('t2'); // picked one added
   });
 
   it('the drawer offers a Do-this copy button, with an honest tooltip', async () => {
