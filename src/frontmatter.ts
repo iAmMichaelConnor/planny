@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import { isStatus, isTaskType, type HistoryEntry, type Task } from './types.js';
+import { isStatus, isTaskType, STATUSES, TASK_TYPES, type HistoryEntry, type Task } from './types.js';
 
 /**
  * Task file format: a YAML frontmatter block delimited by `---` lines,
@@ -110,9 +110,13 @@ export function parseTaskFile(text: string): Task {
   }
 
   const status = requireString(meta, 'status');
-  if (!isStatus(status)) throw new Error(`unknown status "${status}"`);
+  if (!isStatus(status)) {
+    throw new Error(`unknown status "${status}" — expected ${STATUSES.join(', ')}`);
+  }
   const type = requireString(meta, 'type');
-  if (!isTaskType(type)) throw new Error(`unknown task type "${type}"`);
+  if (!isTaskType(type)) {
+    throw new Error(`unknown task type "${type}" — expected ${TASK_TYPES.join(' or ')}`);
+  }
   const priority = meta.priority;
   if (typeof priority !== 'number') throw new Error('field "priority" must be a number');
 

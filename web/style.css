@@ -274,6 +274,26 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 .rel-list li { cursor: pointer; }
 .rel-list li:hover { color: var(--accent); }
 
+/* Add-note modal */
+#add-note {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+#add-note .modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  max-width: 440px;
+  padding: 18px 22px;
+}
+#add-note .row { margin-top: 12px; }
+
 /* Toasts */
 #toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 20; }
 .toast {

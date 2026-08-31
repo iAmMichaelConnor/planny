@@ -141,6 +141,11 @@ describe('scan', () => {
     expect(() => store.loadAll()).toThrow(/t1\.md/);
   });
 
+  it('load names the broken file when a single task fails to parse', () => {
+    writeFileSync(store.path('t1'), 'garbage');
+    expect(() => store.load('t1')).toThrow(/t1\.md/);
+  });
+
   it('flags a frontmatter id that disagrees with the filename', () => {
     const impostor = makeTask('t5');
     store.save(impostor);

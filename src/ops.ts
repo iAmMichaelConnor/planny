@@ -65,7 +65,10 @@ class Mutation {
 
   get(id: string): Task {
     const task = this.byId.get(id);
-    if (task === undefined) throw new Error(`no task ${id}`);
+    if (task === undefined) {
+      const hint = /^\d+$/.test(id) ? ` (ids are prefixed — try t${id})` : '';
+      throw new Error(`no task ${id}${hint} — \`planny list\` shows every id`);
+    }
     return task;
   }
 
@@ -133,7 +136,9 @@ function setParent(
   if (parentId !== undefined) {
     m.get(parentId);
     if (m.graph().wouldCycleParent(childId, parentId)) {
-      throw new Error(`parent cycle: ${parentId} is ${childId} or one of its descendants`);
+      throw new Error(
+        `parent cycle: making ${parentId} the parent of ${childId} would loop the hierarchy — ${parentId} is ${childId} or one of its descendants`,
+      );
     }
   }
   if (child.parent === parentId) return;
@@ -154,7 +159,9 @@ function addBlocker(m: Mutation, taskId: string, blockerId: string): boolean {
   m.get(blockerId);
   if (task.blockedBy.includes(blockerId)) return false;
   if (m.graph().wouldCycleDependency(taskId, blockerId)) {
-    throw new Error(`dependency cycle: ${blockerId} already waits on ${taskId}`);
+    throw new Error(
+      `dependency cycle: ${taskId} waiting on ${blockerId} would loop the dependency graph — ${blockerId} already waits on ${taskId}`,
+    );
   }
   task.blockedBy.push(blockerId);
   m.touch(taskId);

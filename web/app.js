@@ -836,16 +836,23 @@ applyDock();
   });
 }
 
-$('#add-btn').onclick = () => {
-  if (
-    !confirm(
-      'Add a task by hand?\n\nTip: you can also ask your AI agent to add it — it fills in the description, relationships and priority for you.',
-    )
-  ) {
-    return;
-  }
+function openNewTaskForm() {
+  $('#add-note').classList.add('hidden');
   state.selected = '__new__';
   renderDrawer();
+}
+
+$('#add-btn').onclick = () => {
+  if (readPreference('planny-add-note-dismissed', '') === '1') {
+    openNewTaskForm();
+    return;
+  }
+  $('#add-note').classList.remove('hidden');
+};
+$('#add-note-continue').onclick = openNewTaskForm;
+$('#add-note-dismiss').onclick = () => {
+  writePreference('planny-add-note-dismissed', '1');
+  openNewTaskForm();
 };
 $('#drawer-body').addEventListener('input', () => {
   state.drawerDirty = true;

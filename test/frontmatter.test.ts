@@ -84,9 +84,14 @@ describe('parseTaskFile', () => {
     expect(() => parseTaskFile('---\nid: t1\n---\n')).toThrow(/missing required field/i);
   });
 
-  it('rejects an invalid status', () => {
+  it('rejects an invalid status, listing the valid ones', () => {
     const text = serializeTaskFile(fullTask).replace('status: in-progress', 'status: wip');
-    expect(() => parseTaskFile(text)).toThrow(/status/i);
+    expect(() => parseTaskFile(text)).toThrow(/todo.*in-progress.*done.*cancelled/);
+  });
+
+  it('rejects an invalid type, listing the valid ones', () => {
+    const text = serializeTaskFile(fullTask).replace('type: task', 'type: epic');
+    expect(() => parseTaskFile(text)).toThrow(/task.*decision/);
   });
 
   it('round-trips attribution and history', () => {

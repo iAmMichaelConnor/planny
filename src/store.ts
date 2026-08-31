@@ -91,7 +91,11 @@ export function openStore(startDir: string): Store {
     load(id: string): Task {
       const file = path(id);
       if (!existsSync(file)) throw new Error(`no task ${id} (looked for ${file})`);
-      return parseTaskFile(readFileSync(file, 'utf8'));
+      try {
+        return parseTaskFile(readFileSync(file, 'utf8'));
+      } catch (error) {
+        throw new Error(`${file}: ${(error as Error).message}`);
+      }
     },
     scan,
     loadAll(): Task[] {

@@ -80,6 +80,18 @@
   <div id="drawer-body"></div>
 </aside>
 
+<div id="add-note" class="hidden">
+  <div class="modal">
+    <p><strong>Good call using the button.</strong> Adding a task by hand here is
+    deterministic and spends no AI tokens — the form writes straight to the
+    store, attributed to <code>operator</code>. Ask your agent instead when the
+    task needs a rich description, relationships, or a place in the plan.</p>
+    <div class="row">
+      <button id="add-note-continue" class="primary">Continue</button>
+      <button id="add-note-dismiss">Continue, don't show this again</button>
+    </div>
+  </div>
+</div>
 <div id="toasts"></div>
 <script src="/app.js"></script>
 </body>

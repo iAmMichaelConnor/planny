@@ -368,6 +368,30 @@ describe('catchup command', () => {
   });
 });
 
+describe('error clarity and help', () => {
+  it('a mistyped command gets a did-you-mean suggestion', async () => {
+    await run('init');
+    expect(await run('lst')).toBe(1);
+    expect(err.join('\n')).toMatch(/did you mean.*list/i);
+  });
+
+  it('top-level help ends with a worked example block', async () => {
+    await run('--help');
+    const text = allOut() + err.join('\n');
+    expect(text).toMatch(/Examples:/);
+    expect(text).toContain('planny init');
+  });
+
+  it('command help carries examples where usage is not obvious', async () => {
+    for (const command of ['add', 'update', 'bump', 'resolve', 'catchup']) {
+      out = [];
+      err = [];
+      await run(command, '--help');
+      expect(allOut() + err.join('\n'), `${command} --help`).toMatch(/Examples:/);
+    }
+  });
+});
+
 describe('store header', () => {
   it('view commands name the store they read, first line', async () => {
     await seedTrio();

@@ -108,7 +108,23 @@ function buildProgram(io: CliIo): Command {
       writeOut: (text) => io.out(text.replace(/\n$/, '')),
       writeErr: (text) => io.err(text.replace(/\n$/, '')),
     })
-    .exitOverride();
+    .showSuggestionAfterError()
+    .exitOverride()
+    .addHelpText(
+      'after',
+      `
+Examples:
+  planny init                                   create a store in this project
+  planny add "Build the importer" -d "Parse the CSV rows."
+  planny add "Choose a database" --type decision --kind operator --blocks t1
+  planny next --json                            what to work on now
+  planny start t1 && planny done t1             claim it, finish it
+  planny tree                                   the plan at a glance
+  planny serve                                  the localhost board
+
+The plan lives in .planny/ next to your code; every command acts on the
+nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
+    );
 
   const open = (): Store => openStore(io.cwd);
   /** First line of human-readable views: which project's plan answered. */
@@ -152,6 +168,16 @@ function buildProgram(io: CliIo): Command {
     .option('--blocked-by <ids>', 'tasks that must finish first (comma-separated, repeatable)', collectIds)
     .option('--blocks <ids>', 'tasks that must wait for this one (comma-separated, repeatable)', collectIds)
     .option('--priority <pos>', 'top | bottom | 1-based position (default bottom)', parsePriority)
+    .addHelpText(
+      'after',
+      `
+Examples:
+  planny add "Write the parser" -d "Done when: round-trip tests pass."
+  planny add "Ship v1" --child t3,t4            adopt existing tasks as children
+  planny add "Deploy" --blocked-by t2 --parent t1
+  planny add "Pick a vendor" --type decision --kind operator --blocks t5
+  planny add "Long brief" --desc-file brief.md  (- reads stdin)`,
+    )
     .action((name, options) => {
       const result = addTask(
         open(),
@@ -193,6 +219,15 @@ function buildProgram(io: CliIo): Command {
     .option('--add-blocks <ids>', 'add tasks that wait on this one (comma-separated, repeatable)', collectIds)
     .option('--remove-blocks <ids>', 'remove tasks that wait on this one (comma-separated, repeatable)', collectIds)
     .option('--priority <pos>', 'top | bottom | 1-based position', parsePriority)
+    .addHelpText(
+      'after',
+      `
+Examples:
+  planny update t3 --name "Sharper name" --append-desc "Also cover the error path."
+  planny update t3 --parent t1                  move under t1 (--clear-parent to detach)
+  planny update t3 --add-blocked-by t2 --remove-blocks t9
+  planny update t3 --desc-file body.md          replace the whole description`,
+    )
     .action((id, options) => {
       const result = updateTask(open(), id, {
         name: options.name,
@@ -256,6 +291,17 @@ function buildProgram(io: CliIo): Command {
     .description('move a task in the priority order (clamped by dependencies)')
     .argument('<id>', 'task id', normalizeId)
     .argument('<target>', 'top | bottom | 1-based position', parsePriority)
+    .addHelpText(
+      'after',
+      `
+Positions count active (todo + in progress) tasks only, and the move is
+clamped: a task never lands above an active task that blocks it, nor below
+an active task it blocks — you get the nearest legal position.
+
+Examples:
+  planny bump t7 top
+  planny bump t7 3`,
+    )
     .action((id, target) => {
       const store = open();
       const result = bumpTask(store, id, target, actor());
@@ -458,6 +504,18 @@ function buildProgram(io: CliIo): Command {
     .option('--as <id>', 'consumer id (defaults to --session / $PLANNY_SESSION)')
     .option('--peek', 'look without advancing the cursor')
     .option('--json', 'machine-readable output')
+    .addHelpText(
+      'after',
+      `
+Each consumer id has its own cursor, stored in .planny/cursors.json: a call
+returns everything changed since that consumer's previous call, then
+advances the cursor. The first call returns the full state. Delivery is
+at-least-once — treat the delta as facts, safe to see twice.
+
+Examples:
+  planny catchup --json                          uses $PLANNY_SESSION as the id
+  planny catchup --as mike --peek                look without advancing`,
+    )
     .action((options) => {
       const consumer: string | undefined = options.as ?? actor();
       if (consumer === undefined) {
@@ -555,6 +613,18 @@ function buildProgram(io: CliIo): Command {
     .option('--response <text>', 'the decision, free-form')
     .option('--response-file <path>', 'read the decision from a file (- for stdin)')
     .option('--accept', 'shorthand for accepting the written proposal')
+    .addHelpText(
+      'after',
+      `
+The answer is appended to the task under "## Outcome" and the decision is
+marked done. Afterwards, enrich the record with what was built:
+planny update <id> --append-desc "Built: … Files: … How to test: …"
+
+Examples:
+  planny resolve t5 --accept
+  planny resolve t5 --response "Use SQLite; revisit at 10k rows/day."
+  planny resolve t5 --response-file answer.md   (- reads stdin)`,
+    )
     .action((id, options) => {
       const response: string | undefined = options.accept
         ? 'Accepted the proposal.'

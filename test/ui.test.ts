@@ -478,17 +478,31 @@ describe('ui smoke', () => {
     expect(drawer.classList.contains('hidden')).toBe(true);
   });
 
-  it('the add-task button suggests the agent first and respects a decline', () => {
-    const declined = vi.fn(() => false);
-    vi.stubGlobal('confirm', declined);
+  it('the add-task button shows the token-saving note, then opens the form', () => {
     (document.querySelector('#add-btn') as HTMLElement).click();
-    expect(declined).toHaveBeenCalledOnce();
+    const note = document.querySelector('#add-note')!;
+    expect(note.classList.contains('hidden')).toBe(false);
+    expect(note.textContent).toMatch(/token/i); // explains why the button is good
     expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(true);
+    (document.querySelector('#add-note-continue') as HTMLElement).click();
+    expect(note.classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it("don't-show-again persists and skips the note next time", () => {
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    (document.querySelector('#add-note-dismiss') as HTMLElement).click();
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+    expect(localStorage.getItem('planny-add-note-dismissed')).toBe('1');
+    (document.querySelector('#drawer-close') as HTMLElement).click();
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    expect(document.querySelector('#add-note')!.classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
   });
 
   it('the new-task drawer creates via POST', () => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
     (document.querySelector('#add-btn') as HTMLElement).click();
+    (document.querySelector('#add-note-continue') as HTMLElement).click();
     (document.querySelector('#f-name') as HTMLInputElement).value = 'Brand new';
     (document.querySelector('#save-btn') as HTMLElement).click();
     const post = fetchCalls.find((c) => c.path === '/api/tasks' && c.init?.method === 'POST');

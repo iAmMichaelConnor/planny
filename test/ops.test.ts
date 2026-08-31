@@ -300,6 +300,25 @@ describe('attribution', () => {
   });
 });
 
+describe('error clarity', () => {
+  it('unknown ids point at planny list', () => {
+    expect(() => setStatus(store, 't99', 'done')).toThrow(/planny list/);
+  });
+
+  it('a bare-number id suggests the t prefix', () => {
+    addTask(store, { name: 'a' });
+    expect(() => setStatus(store, '1', 'done')).toThrow(/try t1/);
+  });
+
+  it('cycle refusals explain the loop', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b', parent: 't1' });
+    expect(() => updateTask(store, 't1', { parent: 't2' })).toThrow(/loop/i);
+    addTask(store, { name: 'c', blockedBy: ['t1'] });
+    expect(() => updateTask(store, 't1', { addBlockedBy: ['t3'] })).toThrow(/loop/i);
+  });
+});
+
 describe('typed history events', () => {
   beforeEach(() => {
     addTask(store, { name: 'a' });
