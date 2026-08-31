@@ -166,6 +166,10 @@ you are deep in something else only displaces working context.
 - Explicit windows, when a cursor is not what you mean:
   `planny decisions --resolved --since <time> --json` (answers, each with
   the tasks it unblocked) and `planny list --changed-since <time> --json`.
+- One task's own timeline needs no store-wide diff: its typed `history`
+  logs every status change, priority move, re-parent, dependency edit and
+  rename with `{at, …, by}` — `planny show <id>` prints it, `--json`
+  returns it.
 - Skip your own footprints: entries whose `by` (in `history`/`created_by`)
   shares your session root are changes you already know about.
 - There is no agent-facing watch mode, deliberately. File watching exists
