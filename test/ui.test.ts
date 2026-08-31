@@ -422,6 +422,19 @@ describe('ui smoke', () => {
     expect(document.activeElement).toBe(draft());
   });
 
+  it('the drawer offers a Do-this copy button, with an honest tooltip', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
+    const button = document.querySelector('#copy-do') as HTMLElement;
+    expect(button).not.toBeNull();
+    expect(document.querySelector('#drawer-body')!.textContent).toContain('Do t3');
+    expect(button.title).toMatch(/lazy/i);
+    button.click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(writeText).toHaveBeenCalledWith('Do t3');
+  });
+
   it('kind is a single select of known kinds with a custom escape hatch', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const select = document.querySelector('#f-kind') as HTMLSelectElement;

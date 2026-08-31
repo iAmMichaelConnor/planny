@@ -285,6 +285,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 #drawer-body { padding: 14px 16px 40px; overflow-y: auto; }
 #drawer-body label { display: block; margin: 10px 0 3px; color: var(--muted); font-size: 12px; }
+.do-copy { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.do-copy code { background: var(--bg); padding: 2px 8px; border-radius: 5px; font-size: 12.5px; }
 #drawer-body input, #drawer-body select { width: 100%; }
 .row { display: flex; gap: 8px; }
 .row > * { flex: 1; }

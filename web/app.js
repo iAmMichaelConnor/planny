@@ -592,7 +592,13 @@ function renderDrawer() {
          <button data-bump="bottom" title="move to the bottom of the priority order">▼ bottom</button>
        </div>`;
 
+  const doCopy = isNew ? '' : `
+    <div class="do-copy"><code>Do ${esc(task.id)}</code>
+      <button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. We admire your commitment to laziness.">⧉ copy</button>
+    </div>`;
+
   $('#drawer-body').innerHTML = `
+    ${doCopy}
     <label>name</label><input id="f-name" value="${esc(task.name)}">
     <label>description (markdown)
       <button id="desc-toggle" type="button" class="mini">${state.descExpanded ? 'collapse' : 'expand'}</button>
@@ -695,6 +701,18 @@ function wireDrawer(task, isNew) {
     const removeBlockedBy = task.blockedBy.filter((id) => !blockedBy.includes(id));
     api(`/api/tasks/${task.id}`, 'PATCH', { ...fields, addBlockedBy, removeBlockedBy });
   };
+
+  const copyDo = $('#copy-do');
+  if (copyDo) {
+    copyDo.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(`Do ${task.id}`);
+        toast(`copied "Do ${task.id}"`);
+      } catch {
+        toast('clipboard unavailable — you may have to type it yourself', 'warn');
+      }
+    };
+  }
 
   if (!isNew) {
     for (const btn of body.querySelectorAll('[data-status]')) {
