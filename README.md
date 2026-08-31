@@ -6,8 +6,6 @@ live as one markdown file each, the plan stays current because updating it
 is one cheap command, and an agent loads only the tasks it needs instead of
 a whole document.
 
-![The planny board — this screenshot is planny tracking its own development](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-board.png)
-
 ## Install
 
 ```bash
@@ -66,6 +64,10 @@ by B` — labels, arrows and layout all flip), and the decision queue with
 respond / accept / skip. Filter chips slice every view by status, kind and
 type. The edit drawer covers every CLI action, docks to either side or the
 bottom, and resizes.
+
+![The board — this screenshot is planny tracking its own development](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-board.png)
+
+![The decision queue, with the edit drawer docked on the right](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-decisions.png)
 
 The server watches the store and pushes events to open tabs, so CLI edits
 appear without a reload; refreshes never clobber a half-typed form. One
