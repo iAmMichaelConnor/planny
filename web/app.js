@@ -601,8 +601,13 @@ function renderDrawer() {
         <option value="task"${task.type === 'task' ? ' selected' : ''}>task</option>
         <option value="decision"${task.type === 'decision' ? ' selected' : ''}>decision</option>
       </select></div>
-      <div><label>kind (owner)</label><input id="f-kind" list="kind-list" value="${esc(task.kind)}">
-        <datalist id="kind-list"><option>ai</option><option>operator</option></datalist></div>
+      <div><label>kind (owner)</label><select id="f-kind">
+        ${[...new Set(['ai', 'operator', ...state.data.tasks.map((t) => t.kind), task.kind])]
+          .filter(Boolean)
+          .map((k) => `<option value="${esc(k)}"${k === task.kind ? ' selected' : ''}>${esc(k)}</option>`)
+          .join('')}
+        <option value="__custom">custom…</option>
+      </select></div>
     </div>
     <div class="row">
       <div><label>model (optional)</label><input id="f-model" value="${esc(task.model || '')}"></div>
@@ -648,6 +653,18 @@ function wireDrawer(task, isNew) {
     if (state.descExpanded) autosizeDesc();
   });
   if (state.descExpanded) autosizeDesc();
+
+  // "custom…" turns the kind select into a free-form input: ai and
+  // operator are the conventional kinds, but the store accepts new ones.
+  $('#f-kind').addEventListener('change', () => {
+    const select = $('#f-kind');
+    if (select.value !== '__custom') return;
+    const input = document.createElement('input');
+    input.id = 'f-kind';
+    input.placeholder = 'new kind…';
+    select.replaceWith(input);
+    input.focus();
+  });
   $('#save-btn').onclick = () => {
     state.drawerDirty = false; // saving hands the form back to refreshes
     const fields = {

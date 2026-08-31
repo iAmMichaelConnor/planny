@@ -391,6 +391,20 @@ describe('ui smoke', () => {
     expect(document.activeElement).toBe(draft());
   });
 
+  it('kind is a single select of known kinds with a custom escape hatch', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const select = document.querySelector('#f-kind') as HTMLSelectElement;
+    expect(select.tagName).toBe('SELECT');
+    const values = [...select.options].map((o) => o.value);
+    expect(values).toContain('ai');
+    expect(values).toContain('operator');
+    expect(values).toContain('__custom');
+    select.value = '__custom';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const replaced = document.querySelector('#f-kind') as HTMLElement;
+    expect(replaced.tagName).toBe('INPUT'); // free-form entry for a new kind
+  });
+
   it('puts the resolve box directly below the description for open decisions', () => {
     (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
     const html = (document.querySelector('#drawer-body') as HTMLElement).innerHTML;
