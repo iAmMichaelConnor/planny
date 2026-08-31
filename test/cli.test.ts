@@ -134,6 +134,17 @@ describe('show and list', () => {
     expect(allOut()).not.toContain('second task');
   });
 
+  it('list --count prints a bare number honoring the filters', async () => {
+    await seedTrio();
+    await run('done', 't1');
+    out = [];
+    await run('list', '--status', 'todo', '--count');
+    expect(out).toEqual(['2']);
+    out = [];
+    await run('list', '--count');
+    expect(out).toEqual(['3']);
+  });
+
   it('list --json returns an array', async () => {
     await seedTrio();
     out = [];

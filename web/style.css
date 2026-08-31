@@ -159,6 +159,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .chip-link:hover { color: var(--accent); }
 .badge.decision { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
 .badge.operator { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.badge.holder { background: color-mix(in srgb, var(--st-in-progress) 15%, transparent); color: var(--st-in-progress); font-family: ui-monospace, monospace; }
 .card .quick { display: none; gap: 4px; margin-top: 6px; }
 .card:hover .quick { display: flex; }
 .quick button { padding: 1px 7px; font-size: 12px; }

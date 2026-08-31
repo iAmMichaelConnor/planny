@@ -148,6 +148,9 @@ function badges(task) {
   const parts = [];
   if (task.type === 'decision') parts.push('<span class="badge decision">decision</span>');
   if (task.kind !== 'ai') parts.push(`<span class="badge operator">${esc(task.kind)}</span>`);
+  if (task.status === 'in-progress' && task.holder) {
+    parts.push(`<span class="badge holder" title="started by this session">${esc(task.holder)}</span>`);
+  }
   if (task.model) parts.push(`<span class="badge">${esc(task.model)}</span>`);
   if (task.blocked) {
     const blockers = task.blockedBy.filter((id) => {

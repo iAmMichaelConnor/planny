@@ -23,6 +23,7 @@ const sampleState = {
       createdBy: 'agent-7',
       history: [{ at: '2026-08-31T12:00:00.000Z', status: 'in-progress', by: 'agent-7' }],
       position: 7, // deliberately not the naive index: proves the client reads it
+      holder: 'agent-7',
     }),
     task('t3', { name: 'Deploy', blockedBy: ['t1'], blocked: true, position: 3 }),
     task('t4', {
@@ -177,6 +178,12 @@ describe('ui smoke', () => {
     expect(board.textContent).not.toContain('Build the API'); // plain task filtered out
     (chips.querySelector('.chip[data-type="decision"]') as HTMLElement).click();
     expect(document.querySelector('#board-columns')!.textContent).toContain('Build the API');
+  });
+
+  it('in-progress cards wear a holder badge', () => {
+    const card = document.querySelector('.card[data-id="t2"]')!;
+    expect(card.querySelector('.badge.holder')!.textContent).toBe('agent-7');
+    expect(document.querySelector('.card[data-id="t1"] .badge.holder')).toBeNull(); // todo: no holder
   });
 
   it('renders the board with columns, cards and badges', () => {

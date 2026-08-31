@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addTask } from '../src/ops.js';
+import { addTask, setStatus } from '../src/ops.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import { initRepo, openStore, type Store } from '../src/store.js';
 
@@ -72,6 +72,14 @@ describe('GET /api/state', () => {
     // Positions come from the server so the client never re-derives order.
     expect(state.tasks[0].position).toBe(1);
     expect(state.tasks[1].position).toBe(2);
+    expect(state.tasks[0].holder).toBeNull(); // not in progress
+  });
+
+  it('serves the holder of an in-progress task', async () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'in-progress', 'sess-worker');
+    const state = await (await fetch(`${base}/api/state`)).json();
+    expect(state.tasks[0].holder).toBe('sess-worker');
   });
 });
 

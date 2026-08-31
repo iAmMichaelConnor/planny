@@ -86,6 +86,18 @@ describe('renderDependencyForest', () => {
   });
 });
 
+describe('holder in labels', () => {
+  it('an in-progress task names its holder in the terminal label', () => {
+    const tasks = [
+      makeTask('t1', {
+        status: 'in-progress',
+        history: [{ at: '2026-08-31T12:00:00.000Z', status: 'in-progress', by: 'sess-w' }],
+      }),
+    ];
+    expect(renderTaskList(tasks, {})).toContain('sess-w');
+  });
+});
+
 describe('renderProgressLine', () => {
   it('shows a bar, the percentage and the counts', () => {
     const line = renderProgressLine({

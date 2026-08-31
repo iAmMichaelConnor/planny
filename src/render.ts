@@ -22,6 +22,8 @@ export function taskLabel(task: Task, graph: Graph, showBlockers = true): string
   const parts = [`${STATUS_MARK[task.status]} ${task.id} ${task.name}`];
   if (task.type === 'decision') parts.push('(decision)');
   if (task.kind !== 'ai') parts.push(`(${task.kind})`);
+  const holder = holderOf(task);
+  if (holder?.by !== undefined) parts.push(`(${holder.by})`);
   const blockers = showBlockers ? graph.activeBlockers(task.id) : [];
   if (blockers.length > 0) parts.push(`— waits on ${blockers.map((t) => t.id).join(', ')}`);
   if (task.status === 'cancelled' && task.replacedBy.length > 0) {

@@ -18,7 +18,7 @@ import {
 import { computeProgress, nextDecisions } from './query.js';
 import { activePositions, sortByPriority } from './priority.js';
 import type { Store } from './store.js';
-import { isStatus } from './types.js';
+import { holderOf, isStatus } from './types.js';
 
 /**
  * Minimal localhost control surface. Serves the static UI from web/ and a
@@ -171,6 +171,7 @@ function buildState(store: Store): object {
       // The server owns position: clamping and repairs mean only the
       // priority engine knows where a task truly stands.
       position: positions.get(task.id) ?? 0,
+      holder: holderOf(task)?.by ?? null,
     })),
     progress: computeProgress(tasks),
     decisions: nextDecisions(store).map(({ task, blocked }) => ({ id: task.id, blocked })),

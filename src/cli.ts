@@ -393,10 +393,11 @@ Examples:
     .option('--blocked', 'only blocked tasks')
     .option('--unblocked', 'only unblocked tasks')
     .option('--changed-since <time>', 'only tasks updated at or after this ISO time', parseTime)
+    .option('--count', 'print only the number of matching tasks')
     .option('--json', 'machine-readable output')
     .action((options) => {
       const store = open();
-      if (!options.json) nameStore(store);
+      if (!options.json && !options.count) nameStore(store);
       const tasks = listTasks(store, {
         status: options.status,
         kind: options.kind,
@@ -407,6 +408,10 @@ Examples:
         blocked: options.blocked ? true : options.unblocked ? false : undefined,
         changedSince: options.changedSince,
       });
+      if (options.count) {
+        io.out(String(tasks.length));
+        return;
+      }
       if (options.json) {
         const graph = buildGraph(store.loadAll());
         io.out(
