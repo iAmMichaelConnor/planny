@@ -183,7 +183,7 @@ function render() {
   renderDrawer();
 }
 
-function cardHtml(task) {
+function cardHtml(task, position) {
   const quick = [];
   if (task.status === 'todo') quick.push(`<button data-action="start" data-id="${task.id}">start</button>`);
   if (task.status === 'in-progress') quick.push(`<button data-action="finish" data-id="${task.id}">done</button>`);
@@ -196,14 +196,21 @@ function cardHtml(task) {
     task.type === 'decision' ? 'decision' : '',
     task.blocked ? 'blocked-card' : '',
   ];
+  const pos = position !== undefined
+    ? `<span class="pos" title="priority position among active tasks">#${position}</span>`
+    : '';
   return `<div class="${classes.join(' ')}" data-id="${task.id}">
-    <span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
+    ${pos}<span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
     <div class="badges">${badges(task)}</div>
     <div class="quick">${quick.join('')}</div>
   </div>`;
 }
 
 function renderBoard() {
+  // Position = index in the active (todo + in-progress) priority order,
+  // shared across both active columns — the same number bump and the
+  // drawer's position field use.
+  const positions = new Map(activeTasks().map((t, i) => [t.id, i + 1]));
   const columns = [
     ['todo', 'To do'],
     ['in-progress', 'In progress'],
@@ -213,8 +220,14 @@ function renderBoard() {
   $('#view-board').innerHTML = columns
     .filter(([status]) => status !== 'cancelled' || state.data.tasks.some((t) => t.status === status))
     .map(([status, title]) => {
-      const cards = state.data.tasks.filter((t) => t.status === status).map(cardHtml).join('');
-      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}</h2>${cards || '<p class="muted">—</p>'}</div>`;
+      const ordered = status === 'todo' || status === 'in-progress'
+        ? ' <span class="colsub">priority order ↓</span>'
+        : '';
+      const cards = state.data.tasks
+        .filter((t) => t.status === status)
+        .map((t) => cardHtml(t, positions.get(t.id)))
+        .join('');
+      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}${ordered}</h2>${cards || '<p class="muted">—</p>'}</div>`;
     })
     .join('');
 }

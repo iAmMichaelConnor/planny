@@ -124,6 +124,21 @@ describe('ui smoke', () => {
     expect(document.querySelector('#progress-text')!.textContent).toContain('20%');
   });
 
+  it('labels active board columns as priority-ordered with card positions', () => {
+    const headers = [...document.querySelectorAll('#view-board .column h2')].map(
+      (h) => h.textContent,
+    );
+    expect(headers[0]).toContain('priority order');
+    expect(headers[1]).toContain('priority order');
+    expect(headers[2]).not.toContain('priority order');
+    const cardText = (id: string) =>
+      (document.querySelector(`.card[data-id="${id}"]`) as HTMLElement).textContent;
+    expect(cardText('t1')).toContain('#1');
+    expect(cardText('t2')).toContain('#2'); // global position across both active columns
+    expect(cardText('t3')).toContain('#3');
+    expect(cardText('t6')).not.toContain('#'); // done cards carry no position
+  });
+
   it('renders the tree with nesting, per-parent progress and filters', () => {
     clickTab('tree');
     const tree = document.querySelector('#tree-list')!;

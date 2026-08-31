@@ -99,6 +99,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 }
 .card:hover { border-color: var(--accent); }
 .card .id { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; margin-right: 6px; }
+.card .pos { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; margin-right: 6px; }
+.column h2 .colsub { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--muted); }
 .card .name { font-weight: 550; }
 .card.st-in-progress { border-left-color: var(--st-in-progress); }
 .card.st-done { border-left-color: var(--st-done); }
