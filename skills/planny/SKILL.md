@@ -239,7 +239,5 @@ Reading the plan — the exact query for each question:
 hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
 problems that have one right answer; it exits 1 while errors remain.
 
-A problem with planny *itself* — a bug, a confusing error, a rough edge —
-belongs upstream, not buried in your project's store: open an issue (or a
-PR) at <https://github.com/iAmMichaelConnor/planny-wanny>. If it blocks
-your work, also track the local workaround as a task in your own store.
+A bug in planny itself goes upstream: add a task to your own plan to open
+the issue or PR at <https://github.com/iAmMichaelConnor/planny-wanny>.
