@@ -1,8 +1,21 @@
 import { buildGraph, type Graph } from './graph.js';
 import { withLock } from './lock.js';
-import { bumpPriority, repairDependencyOrder, sortByPriority, type BumpTarget } from './priority.js';
+import {
+  activePosition,
+  bumpPriority,
+  repairDependencyOrder,
+  type BumpTarget,
+} from './priority.js';
 import type { Store } from './store.js';
-import { holderOf, isActive, sameTeam, type Status, type Task, type TaskType } from './types.js';
+import {
+  holderOf,
+  isActive,
+  isTaskType,
+  sameTeam,
+  type Status,
+  type Task,
+  type TaskType,
+} from './types.js';
 
 /**
  * Every mutation of the task store goes through this module. The CLI and the
@@ -96,6 +109,11 @@ class Mutation {
     }
   }
 
+  /** Run the dependency-order repair now (commit re-runs it, harmlessly). */
+  repair(): void {
+    for (const id of repairDependencyOrder(this.tasks)) this.rankChanged.add(id);
+  }
+
   /** Repair the dependency-order invariant, then write every changed file. */
   commit(): void {
     for (const id of repairDependencyOrder(this.tasks)) this.rankChanged.add(id);
@@ -119,10 +137,78 @@ class Mutation {
   }
 }
 
-function requireName(name: string): string {
+/**
+ * Input contracts live here, at the funnel, so every entry point (CLI,
+ * server, future callers) inherits them — the type system alone cannot
+ * protect the store from a JSON body.
+ */
+
+function requireName(name: unknown): string {
+  if (typeof name !== 'string') throw new Error('task name must be a string');
   const trimmed = name.trim();
   if (trimmed === '') throw new Error('task name must not be empty');
   return trimmed;
+}
+
+function assertType(value: unknown): void {
+  if (value !== undefined && !isTaskType(value)) {
+    throw new Error(`unknown task type "${String(value)}" — expected task or decision`);
+  }
+}
+
+function assertKind(value: unknown): void {
+  if (value === undefined) return;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error('kind must be a non-empty string');
+  }
+}
+
+function assertOptionalString(value: unknown, field: string, nullable = false): void {
+  if (value === undefined || (nullable && value === null)) return;
+  if (typeof value !== 'string') throw new Error(`${field} must be a string`);
+}
+
+function assertIdList(value: unknown, field: string): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
+    throw new Error(`${field} must be a list of task ids`);
+  }
+}
+
+function assertBumpTarget(value: unknown): asserts value is BumpTarget {
+  if (value === 'top' || value === 'bottom') return;
+  if (typeof value === 'number' && Number.isInteger(value)) return;
+  throw new Error(
+    `priority must be "top", "bottom" or an integer position, not ${JSON.stringify(value)}`,
+  );
+}
+
+function assertAddInput(input: AddInput): void {
+  assertType(input.type);
+  assertKind(input.kind);
+  assertOptionalString(input.model, 'model');
+  assertOptionalString(input.parent, 'parent');
+  assertOptionalString(input.body, 'body');
+  assertIdList(input.children, 'children');
+  assertIdList(input.blockedBy, 'blockedBy');
+  assertIdList(input.blocks, 'blocks');
+  if (input.priority !== undefined) assertBumpTarget(input.priority);
+}
+
+function assertUpdateInput(input: UpdateInput): void {
+  assertType(input.type);
+  assertKind(input.kind);
+  assertOptionalString(input.model, 'model', true);
+  assertOptionalString(input.parent, 'parent', true);
+  assertOptionalString(input.body, 'body');
+  assertOptionalString(input.appendBody, 'appendBody');
+  assertIdList(input.addChildren, 'addChildren');
+  assertIdList(input.removeChildren, 'removeChildren');
+  assertIdList(input.addBlockedBy, 'addBlockedBy');
+  assertIdList(input.removeBlockedBy, 'removeBlockedBy');
+  assertIdList(input.addBlocks, 'addBlocks');
+  assertIdList(input.removeBlocks, 'removeBlocks');
+  if (input.priority !== undefined) assertBumpTarget(input.priority);
 }
 
 function setParent(
@@ -198,6 +284,7 @@ export function addTask(store: Store, input: AddInput, actor?: string): OpResult
 }
 
 function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
+  assertAddInput(input);
   const m = new Mutation(store);
   const now = new Date().toISOString();
   const task: Task = {
@@ -241,6 +328,7 @@ export function updateTask(
 }
 
 function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: string): OpResult {
+  assertUpdateInput(input);
   const m = new Mutation(store);
   const task = m.get(id);
 
@@ -283,10 +371,11 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: stri
   m.touch(id);
   if (input.priority !== undefined) {
     m.bump(id, input.priority);
+    m.repair(); // so the logged position is the task's final resting place
     logEvent(task, actor, {
       event: 'priority',
       target: String(input.priority),
-      position: activePosition(m.tasks, id),
+      position: activePosition(m.tasks, id).position,
     });
   }
   m.commit();
@@ -306,9 +395,24 @@ function logStatus(task: Task, status: Status, actor: string | undefined): void 
   logEvent(task, actor, { status });
 }
 
-/** 1-based position among active tasks, for priority events. */
-function activePosition(tasks: Task[], id: string): number {
-  return sortByPriority(tasks.filter(isActive)).findIndex((t) => t.id === id) + 1;
+/**
+ * Which of a cancelled task's replacements can attach to a dependant
+ * without looping the dependency graph. Shared by cancel and the doctor's
+ * cancelled-blocker repair, so the rewire policy has one definition.
+ */
+export function viableReplacements(
+  graph: Graph,
+  dependantId: string,
+  cancelled: Task,
+): { attach: string[]; loops: string[] } {
+  const attach: string[] = [];
+  const loops: string[] = [];
+  for (const replacementId of cancelled.replacedBy) {
+    if (replacementId === dependantId) continue;
+    if (graph.wouldCycleDependency(dependantId, replacementId)) loops.push(replacementId);
+    else attach.push(replacementId);
+  }
+  return { attach, loops };
 }
 
 export interface StatusOptions {
@@ -411,15 +515,11 @@ function doCancelTask(store: Store, id: string, replacedBy: string[], actor?: st
   for (const other of m.tasks) {
     if (other.id === id || !other.blockedBy.includes(id)) continue;
     removeBlocker(m, other.id, id);
-    const rewired: string[] = [];
-    for (const replacementId of replacements) {
-      if (replacementId === other.id) continue;
-      if (m.graph().wouldCycleDependency(other.id, replacementId)) {
-        m.warn(`did not rewire ${other.id} onto ${replacementId}: it would create a dependency cycle`);
-        continue;
-      }
-      if (addBlocker(m, other.id, replacementId)) rewired.push(replacementId);
+    const { attach, loops } = viableReplacements(m.graph(), other.id, task);
+    for (const replacementId of loops) {
+      m.warn(`did not rewire ${other.id} onto ${replacementId}: it would create a dependency cycle`);
     }
+    const rewired = attach.filter((replacementId) => addBlocker(m, other.id, replacementId));
     logEdgeChanges(m, other.id, actor, rewired, [id]);
   }
 
@@ -459,15 +559,17 @@ function doResolveDecision(store: Store, id: string, response: string, actor?: s
 }
 
 export function bumpTask(store: Store, id: string, target: BumpTarget, actor?: string): OpResult {
+  assertBumpTarget(target);
   return withLock(store.root, () => {
     const m = new Mutation(store);
     const task = m.get(id);
     m.touch(id);
     m.bump(id, target);
+    m.repair(); // so the logged position is the task's final resting place
     logEvent(task, actor, {
       event: 'priority',
       target: String(target),
-      position: activePosition(m.tasks, id),
+      position: activePosition(m.tasks, id).position,
     });
     m.commit();
     return m.result(task);

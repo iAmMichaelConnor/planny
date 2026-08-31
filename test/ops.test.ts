@@ -300,6 +300,48 @@ describe('attribution', () => {
   });
 });
 
+describe('input validation at the ops funnel', () => {
+  it('rejects an invalid type, listing the valid ones', () => {
+    expect(() => addTask(store, { name: 'x', type: 'epic' as never })).toThrow(/task or decision/);
+    addTask(store, { name: 'a' });
+    expect(() => updateTask(store, 't1', { type: 'epic' as never })).toThrow(/task or decision/);
+  });
+
+  it('rejects malformed priority targets', () => {
+    expect(() => addTask(store, { name: 'x', priority: Number.NaN })).toThrow(/top.*bottom|position/);
+    addTask(store, { name: 'a' });
+    expect(() => bumpTask(store, 't1', 1.5)).toThrow(/position/);
+  });
+
+  it('rejects relationship fields that are not id lists', () => {
+    expect(() => addTask(store, { name: 'x', blockedBy: 't1' as never })).toThrow(/list/i);
+    addTask(store, { name: 'a' });
+    expect(() => updateTask(store, 't1', { addChildren: 5 as never })).toThrow(/list/i);
+  });
+
+  it('rejects a non-string or empty kind', () => {
+    expect(() => addTask(store, { name: 'x', kind: '' })).toThrow(/kind/i);
+    expect(() => addTask(store, { name: 'x', kind: 5 as never })).toThrow(/kind/i);
+  });
+
+  it('reopening a cancelled task clears its replacements', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    cancelTask(store, 't1', ['t2']);
+    setStatus(store, 't1', 'todo');
+    expect(store.load('t1').replacedBy).toEqual([]);
+  });
+
+  it('cancel skips a rewire that would loop, and says so', () => {
+    addTask(store, { name: 'a' }); // t1
+    addTask(store, { name: 'b', blockedBy: ['t1'] }); // t2
+    addTask(store, { name: 'c', blockedBy: ['t2'] }); // t3
+    const { warnings } = cancelTask(store, 't1', ['t3']);
+    expect(warnings.join(' ')).toMatch(/cycle/i);
+    expect(store.load('t2').blockedBy).toEqual([]); // dropped, not rewired onto t3
+  });
+});
+
 describe('error clarity', () => {
   it('unknown ids point at planny list', () => {
     expect(() => setStatus(store, 't99', 'done')).toThrow(/planny list/);

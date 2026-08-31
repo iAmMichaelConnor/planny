@@ -1,5 +1,5 @@
 import { buildGraph, type Graph } from './graph.js';
-import { sortByPriority } from './priority.js';
+import { activePosition, sortByPriority } from './priority.js';
 import { computeProgress, type Progress } from './query.js';
 import { holderOf, isActive, type HistoryEntry, type Status, type Task, type TaskType } from './types.js';
 
@@ -115,8 +115,8 @@ export function renderShow(task: Task, allTasks: Task[], filePath: string): stri
     lines.push(`started by: ${holder.by ?? '(unattributed)'} at ${holder.at}`);
   }
 
-  const position = activePosition(allTasks, task);
-  if (position !== undefined) lines.push(`position: ${position.index} of ${position.total} active`);
+  const { position, total } = activePosition(allTasks, task.id);
+  if (position > 0) lines.push(`position: ${position} of ${total} active`);
 
   const ancestors = graph.ancestors(task.id);
   if (ancestors.length > 0) {
@@ -168,15 +168,6 @@ function describeHistory(entry: HistoryEntry): string {
     case 'rename':
       return `renamed "${entry.from}" → "${entry.to}"`;
   }
-}
-
-function activePosition(
-  tasks: Task[],
-  task: Task,
-): { index: number; total: number } | undefined {
-  if (!isActive(task)) return undefined;
-  const active = sortByPriority(tasks.filter(isActive));
-  return { index: active.findIndex((t) => t.id === task.id) + 1, total: active.length };
 }
 
 export interface ExportOptions extends ListRenderOptions {}

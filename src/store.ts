@@ -21,6 +21,8 @@ export interface ScanResult {
 export interface Store {
   /** Directory that contains `.planny`. */
   root: string;
+  /** The directory holding the task files. */
+  tasksDir: string;
   path(id: string): string;
   listIds(): string[];
   load(id: string): Task;
@@ -86,6 +88,7 @@ export function openStore(startDir: string): Store {
 
   return {
     root,
+    tasksDir,
     path,
     listIds,
     load(id: string): Task {

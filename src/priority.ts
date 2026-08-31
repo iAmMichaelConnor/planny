@@ -152,8 +152,14 @@ function midpoint(a: number, b: number): number {
   return Math.floor((a + b) / 2);
 }
 
-/** Re-rank every task except `skipId` to sparse steps, preserving order. */
-function renormalize(tasks: Task[], skipId: string, changed: Set<string>): void {
+/**
+ * Re-rank every task (except skipId, when given) to sparse steps,
+ * preserving order. The one renumbering codepath: bump, repair, and the
+ * doctor's duplicate-rank fix all use it. The stable sort keeps id order
+ * for tied ranks, since callers load tasks in id order.
+ */
+export function resequenceRanks(tasks: Task[], skipId?: string): Set<string> {
+  const changed = new Set<string>();
   let rank = STEP;
   for (const task of sortByPriority(tasks.filter((t) => t.id !== skipId))) {
     if (task.priority !== rank) {
@@ -162,4 +168,18 @@ function renormalize(tasks: Task[], skipId: string, changed: Set<string>): void 
     }
     rank += STEP;
   }
+  return changed;
+}
+
+function renormalize(tasks: Task[], skipId: string, changed: Set<string>): void {
+  for (const id of resequenceRanks(tasks, skipId)) changed.add(id);
+}
+
+/** 1-based position among active tasks (0 when the task is not active). */
+export function activePosition(
+  tasks: readonly Task[],
+  id: string,
+): { position: number; total: number } {
+  const active = sortByPriority(tasks.filter(isActive));
+  return { position: active.findIndex((t) => t.id === id) + 1, total: active.length };
 }

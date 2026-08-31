@@ -159,6 +159,39 @@ describe('events', () => {
   });
 });
 
+describe('malformed input cannot corrupt the store', () => {
+  it('rejects an invalid type and leaves the task intact', async () => {
+    addTask(store, { name: 'a' });
+    const res = await patch('/api/tasks/t1', { type: 'epic' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/task or decision/);
+    expect(store.load('t1').type).toBe('task'); // file still parses, unchanged
+  });
+
+  it('rejects an invalid type on create', async () => {
+    expect((await post('/api/tasks', { name: 'x', type: 'epic' })).status).toBe(400);
+  });
+
+  it('rejects a malformed priority', async () => {
+    expect((await post('/api/tasks', { name: 'x', priority: 'banana' })).status).toBe(400);
+    addTask(store, { name: 'a' });
+    expect((await post('/api/tasks/t1/bump', { target: 1.5 })).status).toBe(400);
+  });
+
+  it('rejects non-list relationship fields', async () => {
+    expect((await post('/api/tasks', { name: 'x', blockedBy: 't1' })).status).toBe(400);
+    addTask(store, { name: 'a' });
+    expect((await patch('/api/tasks/t1', { addBlockedBy: 't1' })).status).toBe(400);
+  });
+
+  it('rejects an unknown status value', async () => {
+    addTask(store, { name: 'a' });
+    const res = await post('/api/tasks/t1/status', { status: 'wip' });
+    expect(res.status).toBe(400);
+    expect(store.load('t1').status).toBe('todo');
+  });
+});
+
 describe('errors', () => {
   it('400s an unknown task id with the message', async () => {
     const res = await patch('/api/tasks/t9', { name: 'x' });

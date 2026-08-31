@@ -2,7 +2,8 @@ import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { buildGraph } from './graph.js';
 import { withLock } from './lock.js';
-import { repairDependencyOrder } from './priority.js';
+import { viableReplacements } from './ops.js';
+import { repairDependencyOrder, resequenceRanks } from './priority.js';
 import type { Store } from './store.js';
 import { holderOf, isActive, type Task } from './types.js';
 
@@ -374,11 +375,11 @@ function doFixStore(store: Store): FixResult {
       }
       if (blocker.status === 'cancelled') {
         changedMeaning.add(task.id); // rewire onto the replacements, as cancel does
-        for (const replacementId of blocker.replacedBy) {
-          if (!byId.has(replacementId) || replacementId === task.id) continue;
-          if (keptBlockers.includes(replacementId)) continue;
-          if (graph.wouldCycleDependency(task.id, replacementId)) continue;
-          keptBlockers.push(replacementId);
+        const { attach } = viableReplacements(graph, task.id, blocker);
+        for (const replacementId of attach) {
+          if (byId.has(replacementId) && !keptBlockers.includes(replacementId)) {
+            keptBlockers.push(replacementId);
+          }
         }
         continue;
       }
@@ -394,17 +395,7 @@ function doFixStore(store: Store): FixResult {
 
   const ranks = new Set(tasks.map((t) => t.priority));
   if (ranks.size !== tasks.length) {
-    let rank = 10;
-    const ordered = [...tasks].sort(
-      (a, b) => a.priority - b.priority || Number(a.id.slice(1)) - Number(b.id.slice(1)),
-    );
-    for (const task of ordered) {
-      if (task.priority !== rank) {
-        task.priority = rank;
-        changedRank.add(task.id);
-      }
-      rank += 10;
-    }
+    for (const id of resequenceRanks(tasks)) changedRank.add(id);
   }
 
   // Cutting a dependency loop is a judgement call, and the order repair

@@ -37,6 +37,12 @@ structure, so a re-parent never moves a file.
 - Cancelling a task with `--replaced-by` rewires dependants' `blocked_by` onto
   the replacement tasks.
 - Ids are never reused.
+- The ops-only rule covers *task files*. Two store-level files are owned
+  elsewhere by design: `.planny/cursors.json` (written by catchup, under the
+  same lock) and `.planny/lock` (the lock module itself).
+- Ops validates input shapes at runtime (enums, id lists, bump targets) —
+  the server passes JSON bodies through, so the funnel must not trust its
+  compile-time types.
 
 ## Commands
 

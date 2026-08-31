@@ -11,7 +11,7 @@ import {
   updateTask,
   type OpResult,
 } from './ops.js';
-import type { BumpTarget } from './priority.js';
+import { activePosition, type BumpTarget } from './priority.js';
 import { listTasks, nextDecisions, nextTasks, progress, resolvedDecisions } from './query.js';
 import {
   renderDependencyForest,
@@ -305,9 +305,8 @@ Examples:
     .action((id, target) => {
       const store = open();
       const result = bumpTask(store, id, target, actor());
-      const active = listTasks(store, { status: ['todo', 'in-progress'] });
-      const position = active.findIndex((t) => t.id === id) + 1;
-      const where = position > 0 ? `position ${position} of ${active.length} active` : 'the inactive set';
+      const { position, total } = activePosition(store.loadAll(), id);
+      const where = position > 0 ? `position ${position} of ${total} active` : 'the inactive set';
       report(result, `moved ${id} to ${where}`);
     });
 

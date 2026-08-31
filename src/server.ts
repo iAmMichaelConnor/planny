@@ -2,7 +2,7 @@ import { watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { basename, dirname } from 'node:path';
+import { basename } from 'node:path';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -11,7 +11,9 @@ import {
   resolveDecision,
   setStatus,
   updateTask,
+  type AddInput,
   type OpResult,
+  type UpdateInput,
 } from './ops.js';
 import { computeProgress, nextDecisions } from './query.js';
 import { sortByPriority } from './priority.js';
@@ -48,7 +50,7 @@ export async function startServer(store: Store, port: number): Promise<RunningSe
   // Live updates: watch the task files and tell every open page to re-fetch.
   const clients = new Set<ServerResponse>();
   let debounce: NodeJS.Timeout | undefined;
-  const watcher = watch(dirname(store.path('t0')), { persistent: false }, () => {
+  const watcher = watch(store.tasksDir, { persistent: false }, () => {
     clearTimeout(debounce);
     debounce = setTimeout(() => {
       for (const client of clients) client.write('data: changed\n\n');
@@ -105,7 +107,8 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
 
   if (req.method === 'POST' && path === '/api/tasks') {
     const body = await readJson(req);
-    sendResult(res, addTask(store, body, actorOf(body)));
+    // ops validates the runtime shape; the cast only quiets the compiler.
+    sendResult(res, addTask(store, body as unknown as AddInput, actorOf(body)));
     return;
   }
 
@@ -113,7 +116,7 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
   if (taskRoute !== null) {
     const [, id, action] = taskRoute;
     if (req.method === 'PATCH' && action === undefined) {
-      sendResult(res, updateTask(store, id!, await readJson(req)));
+      sendResult(res, updateTask(store, id!, (await readJson(req)) as UpdateInput));
       return;
     }
     if (req.method === 'POST' && action === 'status') {
@@ -130,10 +133,8 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
     }
     if (req.method === 'POST' && action === 'bump') {
       const { target } = await readJson(req);
-      if (target !== 'top' && target !== 'bottom' && typeof target !== 'number') {
-        throw new HttpError(400, 'bump target must be "top", "bottom" or a position number');
-      }
-      sendResult(res, bumpTask(store, id!, target));
+      // ops rejects malformed targets; the cast only quiets the compiler.
+      sendResult(res, bumpTask(store, id!, target as never));
       return;
     }
     if (req.method === 'POST' && action === 'resolve') {
@@ -165,7 +166,7 @@ function buildState(store: Store): object {
   };
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown> & any> {
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   const text = Buffer.concat(chunks).toString('utf8');
