@@ -1,6 +1,6 @@
 {
   "name": "planny",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A file-backed task and decision tracker for AI-driven projects. CLI, markdown store, localhost UI.",
   "type": "module",
   "bin": {
