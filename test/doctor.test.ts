@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -148,6 +148,93 @@ describe('diagnose', () => {
       }),
     );
     expect(diagnose(store)).toEqual([]);
+  });
+});
+
+describe('post-doctor feature coverage', () => {
+  it('flags history entries out of time order, and fix sorts them', () => {
+    save(
+      makeTask('t1', {
+        status: 'done',
+        history: [
+          { at: '2026-08-31T13:00:00.000Z', status: 'done' },
+          { at: '2026-08-31T12:00:00.000Z', status: 'in-progress' },
+        ],
+      }),
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toContain('history-order');
+    expect(byCode(findings, 'history-order')[0]!.fixable).toBe(true);
+    fixStore(store);
+    const history = store.load('t1').history;
+    expect(history.map((e) => e.at)).toEqual([
+      '2026-08-31T12:00:00.000Z',
+      '2026-08-31T13:00:00.000Z',
+    ]);
+    expect(codes(diagnose(store))).not.toContain('history-order');
+  });
+
+  it('flags a status that disagrees with the history trail', () => {
+    save(
+      makeTask('t1', {
+        status: 'todo',
+        history: [{ at: '2026-08-31T12:00:00.000Z', status: 'done', by: 'sess-a' }],
+      }),
+    );
+    const findings = byCode(diagnose(store), 'status-history-mismatch');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.severity).toBe('warning');
+    expect(findings[0]!.fixable).toBe(false);
+  });
+
+  it('flags an in-progress task with no claim on record', () => {
+    save(makeTask('t1', { status: 'in-progress', history: [] }));
+    expect(codes(diagnose(store))).toContain('unclaimed-in-progress');
+  });
+
+  it('flags replaced_by on a task that is not cancelled', () => {
+    save(makeTask('t1'), makeTask('t2', { replacedBy: ['t1'], priority: 20 }));
+    const findings = byCode(diagnose(store), 'stray-replaced-by');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.fixable).toBe(false);
+  });
+
+  it('flags an unreadable cursors file as a fixable error, and fix resets it', () => {
+    save(makeTask('t1'));
+    writeFileSync(join(dir, '.planny', 'cursors.json'), 'not json{');
+    const findings = byCode(diagnose(store), 'cursors-unreadable');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.severity).toBe('error');
+    expect(findings[0]!.fixable).toBe(true);
+    const { remaining } = fixStore(store);
+    expect(codes(remaining)).not.toContain('cursors-unreadable');
+  });
+
+  it('flags a future cursor (it would suppress deliveries), and fix drops it', () => {
+    save(makeTask('t1'));
+    writeFileSync(
+      join(dir, '.planny', 'cursors.json'),
+      JSON.stringify({ 'agent-x': '2099-01-01T00:00:00.000Z', 'agent-y': '2020-01-01T00:00:00.000Z' }),
+    );
+    const findings = byCode(diagnose(store), 'cursor-in-future');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain('agent-x');
+    fixStore(store);
+    const cursors = JSON.parse(readFileSync(join(dir, '.planny', 'cursors.json'), 'utf8'));
+    expect(cursors['agent-x']).toBeUndefined();
+    expect(cursors['agent-y']).toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  it('flags a stale lock; a fresh lock is another process at work, not a problem', () => {
+    save(makeTask('t1'));
+    const lock = join(dir, '.planny', 'lock');
+    writeFileSync(lock, '12345');
+    expect(codes(diagnose(store))).not.toContain('stale-lock'); // fresh
+    const old = (Date.now() - 60_000) / 1000;
+    utimesSync(lock, old, old);
+    expect(codes(diagnose(store))).toContain('stale-lock');
+    fixStore(store); // acquiring the write lock breaks the stale one
+    expect(codes(diagnose(store))).not.toContain('stale-lock');
   });
 });
 

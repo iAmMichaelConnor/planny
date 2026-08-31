@@ -1,8 +1,10 @@
+import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildGraph } from './graph.js';
 import { withLock } from './lock.js';
 import { repairDependencyOrder } from './priority.js';
 import type { Store } from './store.js';
-import { isActive, type Task } from './types.js';
+import { holderOf, isActive, type Task } from './types.js';
 
 /**
  * Integrity checks for a store that may have been edited by hand. Diagnosis
@@ -25,7 +27,14 @@ export type FindingCode =
   | 'order-violation'
   | 'cancelled-blocker'
   | 'cancelled-parent'
-  | 'unresolved-decision';
+  | 'unresolved-decision'
+  | 'history-order'
+  | 'status-history-mismatch'
+  | 'unclaimed-in-progress'
+  | 'stray-replaced-by'
+  | 'cursors-unreadable'
+  | 'cursor-in-future'
+  | 'stale-lock';
 
 export interface Finding {
   code: FindingCode;
@@ -191,6 +200,91 @@ export function diagnose(store: Store): Finding[] {
     }
   }
 
+  for (const task of tasks) {
+    const file = store.path(task.id);
+    if (historyOutOfOrder(task)) {
+      add('history-order', 'warning', true, file, `${task.id} history entries are out of time order`, task.id);
+    }
+    const lastStatus = [...task.history].reverse().find((e) => 'status' in e);
+    if (lastStatus !== undefined && 'status' in lastStatus && lastStatus.status !== task.status) {
+      add(
+        'status-history-mismatch',
+        'warning',
+        false,
+        file,
+        `${task.id} is ${task.status} but its history ends at ${lastStatus.status} — one of the two was hand-edited`,
+        task.id,
+      );
+    }
+    if (task.status === 'in-progress' && holderOf(task) === undefined) {
+      add(
+        'unclaimed-in-progress',
+        'warning',
+        false,
+        file,
+        `${task.id} is in progress with no record of who started it`,
+        task.id,
+      );
+    }
+    if (task.status !== 'cancelled' && task.replacedBy.length > 0) {
+      add(
+        'stray-replaced-by',
+        'warning',
+        false,
+        file,
+        `${task.id} is ${task.status} but lists replacements (${task.replacedBy.join(', ')}) — only cancelled tasks carry replaced_by`,
+        task.id,
+      );
+    }
+  }
+
+  const cursorsFile = join(store.root, '.planny', 'cursors.json');
+  if (existsSync(cursorsFile)) {
+    try {
+      const cursors = JSON.parse(readFileSync(cursorsFile, 'utf8')) as Record<string, unknown>;
+      for (const [consumer, at] of Object.entries(cursors)) {
+        if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) {
+          add('cursors-unreadable', 'error', true, cursorsFile, `cursor for "${consumer}" is not a time`);
+        } else if (Date.parse(at) > Date.now() + FUTURE_SLACK_MS) {
+          add(
+            'cursor-in-future',
+            'warning',
+            true,
+            cursorsFile,
+            `cursor for "${consumer}" is in the future (${at}) and would suppress deliveries`,
+          );
+        }
+      }
+    } catch {
+      add(
+        'cursors-unreadable',
+        'error',
+        true,
+        cursorsFile,
+        'cursors.json is not valid JSON — resetting it is safe (consumers just re-receive)',
+      );
+    }
+  }
+
+  const lockFile = join(store.root, '.planny', 'lock');
+  if (existsSync(lockFile)) {
+    try {
+      const age = Date.now() - statSync(lockFile).mtimeMs;
+      const staleAfter = Number(process.env.PLANNY_LOCK_STALE_MS ?? 10_000);
+      if (age > staleAfter) {
+        add(
+          'stale-lock',
+          'warning',
+          true,
+          lockFile,
+          `lock file is ${Math.round(age / 1000)}s old — its holder is likely gone; the next write breaks it`,
+        );
+      }
+    } catch {
+      // the lock was released between the existence check and stat
+    }
+  }
+
   const severityOrder = { error: 0, warning: 1 };
   return findings.sort(
     (a, b) =>
@@ -198,6 +292,15 @@ export function diagnose(store: Store): Finding[] {
       a.code.localeCompare(b.code) ||
       a.file.localeCompare(b.file),
   );
+}
+
+const FUTURE_SLACK_MS = 60_000;
+
+function historyOutOfOrder(task: Task): boolean {
+  for (let i = 1; i < task.history.length; i++) {
+    if (Date.parse(task.history[i]!.at) < Date.parse(task.history[i - 1]!.at)) return true;
+  }
+  return false;
 }
 
 /** Each loop reported once, as the ids along it. */
@@ -308,6 +411,37 @@ function doFixStore(store: Store): FixResult {
   // cannot settle while one exists.
   if (!before.some((f) => f.code === 'dependency-cycle')) {
     for (const id of repairDependencyOrder(tasks)) changedRank.add(id);
+  }
+
+  // Sorting a shuffled history has one right answer (stable by time).
+  for (const task of tasks) {
+    if (historyOutOfOrder(task)) {
+      task.history = [...task.history].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+      changedRank.add(task.id); // saved without a timestamp bump, like rank repairs
+    }
+  }
+
+  // Cursor repairs are safe by contract: dropping a cursor only causes
+  // re-delivery, and delivery is at-least-once.
+  const cursorsFile = join(store.root, '.planny', 'cursors.json');
+  if (existsSync(cursorsFile)) {
+    try {
+      const cursors = JSON.parse(readFileSync(cursorsFile, 'utf8')) as Record<string, unknown>;
+      let dirty = false;
+      for (const [consumer, at] of Object.entries(cursors)) {
+        if (
+          typeof at !== 'string' ||
+          Number.isNaN(Date.parse(at)) ||
+          Date.parse(at) > Date.now() + FUTURE_SLACK_MS
+        ) {
+          delete cursors[consumer];
+          dirty = true;
+        }
+      }
+      if (dirty) writeFileSync(cursorsFile, `${JSON.stringify(cursors, null, 2)}\n`);
+    } catch {
+      unlinkSync(cursorsFile);
+    }
   }
 
   const now = new Date().toISOString();

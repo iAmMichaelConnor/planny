@@ -94,6 +94,15 @@ describe('parseTaskFile', () => {
     expect(() => parseTaskFile(text)).toThrow(/task.*decision/);
   });
 
+  it('normalizes hand-edited empty strings in optional fields to absent', () => {
+    const text = serializeTaskFile(fullTask)
+      .replace('model: opus', 'model: ""')
+      .replace('parent: t4', 'parent: ""');
+    const parsed = parseTaskFile(text);
+    expect(parsed.model).toBeUndefined();
+    expect(parsed.parent).toBeUndefined();
+  });
+
   it('round-trips attribution and history', () => {
     const tracked: Task = {
       ...fullTask,

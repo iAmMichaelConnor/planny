@@ -52,7 +52,8 @@ function optionalString(meta: Record<string, unknown>, key: string): string | un
   const value = meta[key];
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') throw new Error(`field "${key}" must be a string`);
-  return value;
+  // A hand-edited empty string means "not set"; normalize it away.
+  return value === '' ? undefined : value;
 }
 
 function idList(meta: Record<string, unknown>, key: string): string[] {
