@@ -2,3 +2,5 @@ node_modules/
 dist/
 .vimdirs/
 *.log
+.planny/serve.json
+.planny/lock
