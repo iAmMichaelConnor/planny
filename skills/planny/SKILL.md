@@ -238,3 +238,8 @@ Reading the plan — the exact query for each question:
 `planny doctor [--fix] [--json]` checks a store that may have been edited by
 hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
 problems that have one right answer; it exits 1 while errors remain.
+
+A problem with planny *itself* — a bug, a confusing error, a rough edge —
+belongs upstream, not buried in your project's store: open an issue (or a
+PR) at <https://github.com/iAmMichaelConnor/planny-wanny>. If it blocks
+your work, also track the local workaround as a task in your own store.
