@@ -55,7 +55,12 @@ Rules that keep the store consistent:
   `ssh -L 5891:127.0.0.1:5891 <host>`, then open http://localhost:5891.
 - **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
   at the start of a session (or pass `--session <id>` before any
-  subcommand). Creates then stamp `created_by`, and the task's history logs
+  subcommand). If your harness runs each command in a fresh shell, the
+  export does not survive between commands — prefix each command instead:
+  `PLANNY_SESSION=<id> planny …`. Do not stash the flag in a shell
+  variable (`S="--session <id>"; planny $S …`): zsh does not word-split
+  unquoted variables, so the whole string arrives as one unknown option.
+  Creates then stamp `created_by`, and the task's history logs
   every status change, priority move, re-parent, dependency edit and rename
   with `{at, …, by}`, so the operator can see which agent did what.
   Starting a task claims it: `planny start` on a task another session
