@@ -7,7 +7,13 @@
     "planny": "dist/bin.js"
   },
   "main": "dist/cli.js",
+  "files": [
+    "dist",
+    "web",
+    "skills"
+  ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
