@@ -14,15 +14,20 @@ first line so there is never doubt which project answered.
 ## Install
 
 ```bash
+npm install -g planny
+```
+
+Node 20+. Then, in any project: `planny init`.
+
+To work on planny itself, install from source instead:
+
+```bash
 git clone https://github.com/iAmMichaelConnor/planny
 cd planny
 npm install
 npm run build
 npm link        # puts `planny` on your PATH
 ```
-
-Node 20+. Then, in any project: `planny init`. An npm package is planned;
-until then the repo is the distribution channel.
 
 ## Quickstart
 
