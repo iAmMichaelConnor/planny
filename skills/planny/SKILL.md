@@ -17,7 +17,8 @@ planny keeps the plan out of your context window. Each task is one markdown
 file with YAML frontmatter under `.planny/tasks/<id>.md`. Ids (`t1`, `t2`, …)
 are stable for the life of the project; file paths never change when parents
 or priorities change. Load only what you need with getter commands instead of
-reading a whole plan.md.
+reading a whole plan.md. If the `planny` command is missing, install it
+first: `npm install -g planny` (Node 20+).
 
 Rules that keep the store consistent:
 
