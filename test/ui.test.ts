@@ -310,6 +310,51 @@ describe('ui smoke', () => {
     expect(edgeTitle.textContent).toBe('t1 blocks t3 — t3 waits on t1');
   });
 
+  it('search by bare number opens the task in the drawer and highlights its card', () => {
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = '3';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+    expect((document.querySelector('#f-name') as HTMLInputElement).value).toBe('Deploy');
+    expect(document.querySelector('.card[data-id="t3"]')!.classList.contains('is-selected')).toBe(
+      true,
+    );
+  });
+
+  it('clicking a card highlights it and the highlight follows the selection', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(document.querySelector('.card[data-id="t1"]')!.classList.contains('is-selected')).toBe(
+      true,
+    );
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    expect(document.querySelector('.card[data-id="t1"]')!.classList.contains('is-selected')).toBe(
+      false,
+    );
+    expect(document.querySelector('.card[data-id="t2"]')!.classList.contains('is-selected')).toBe(
+      true,
+    );
+  });
+
+  it('searching an open decision in the decisions view expands and highlights its tile', () => {
+    clickTab('decisions');
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = 't4';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const tile = document.querySelector(
+      '#view-decisions .decision-card[data-id="t4"]',
+    ) as HTMLElement;
+    expect(tile.classList.contains('collapsed')).toBe(false);
+    expect(tile.classList.contains('is-selected')).toBe(true);
+  });
+
+  it('an unknown id warns and opens nothing', () => {
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = 't99';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('#toasts')!.textContent).toContain('t99');
+  });
+
   it('decision tiles start collapsed and expand on click', async () => {
     clickTab('decisions');
     const tile = () => document.querySelector('#view-decisions .decision-card') as HTMLElement;

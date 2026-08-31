@@ -259,6 +259,15 @@ function render() {
   renderDrawer();
 }
 
+/** Mark the selected task's representation in whichever views show one. */
+function applySelection() {
+  for (const el of document.querySelectorAll('.is-selected')) el.classList.remove('is-selected');
+  const id = state.selected;
+  if (id === null || id === '__new__') return;
+  const sel = `.card[data-id="${id}"], .tree-row[data-id="${id}"], .dep-node[data-id="${id}"], .decision-card[data-id="${id}"]`;
+  for (const el of document.querySelectorAll(sel)) el.classList.add('is-selected');
+}
+
 function cardHtml(task, position) {
   const quick = [];
   if (task.status === 'todo') quick.push(`<button data-action="start" data-id="${task.id}">start</button>`);
@@ -276,9 +285,9 @@ function cardHtml(task, position) {
     ? `<span class="pos" title="priority position among active tasks">#${position}</span>`
     : '';
   return `<div class="${classes.join(' ')}" data-id="${task.id}">
-    ${pos}<span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
+    <span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
     <div class="badges">${badges(task)}</div>
-    <div class="quick">${quick.join('')}</div>
+    <div class="quick">${quick.join('')}</div>${pos}
   </div>`;
 }
 
@@ -362,6 +371,7 @@ function renderTree() {
   const roots = state.data.tasks.filter((t) => !t.parent || !state.byId.has(t.parent));
   $('#tree-list').innerHTML =
     roots.map(nodeHtml).join('') || '<p class="muted">No tasks match the filters.</p>';
+  applySelection(); // this rebuild is sometimes called outside render()
 }
 
 function renderDeps() {
@@ -528,11 +538,13 @@ function renderDecisions() {
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     }
   }
+  applySelection(); // this rebuild is sometimes called outside render()
 }
 
 // ---------- drawer ----------
 
 function renderDrawer() {
+  applySelection(); // the views are already rendered whenever the drawer is
   const drawer = $('#drawer');
   if (state.selected === null) {
     drawer.classList.add('hidden');
@@ -1027,6 +1039,32 @@ function openNewTaskForm(parentId) {
   state.drawerDirty = false;
   renderDrawer();
 }
+
+$('#search').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  const raw = event.target.value.trim().toLowerCase();
+  if (raw === '') return;
+  const id = /^\d+$/.test(raw) ? `t${raw}` : raw;
+  const task = state.byId.get(id);
+  if (!task) {
+    // Before the first state fetch lands, byId is empty — say so instead
+    // of wrongly claiming the task does not exist.
+    toast(state.byId.size === 0 ? 'still loading — try again' : `no task "${raw}"`, 'warn');
+    return;
+  }
+  state.selected = id;
+  const openDecision =
+    task.type === 'decision' && (task.status === 'todo' || task.status === 'in-progress');
+  if (state.view === 'decisions' && openDecision) {
+    state.skippedDecisions.delete(id); // a skipped tile comes back when searched
+    state.expandedDecisions.add(id);
+    renderDecisions();
+  }
+  renderDrawer();
+  const el = document.querySelector(`#view-${state.view} [data-id="${id}"]`);
+  el?.scrollIntoView?.({ block: 'nearest' });
+  event.target.select(); // leave the text ready for the next search
+});
 
 $('#add-btn').onclick = () => {
   if (readPreference('planny-add-note-dismissed', '') === '1') {

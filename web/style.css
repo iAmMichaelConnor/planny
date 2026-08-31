@@ -156,10 +156,25 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   margin-bottom: 8px;
   background: var(--bg);
   cursor: pointer;
+  position: relative; /* anchors the priority position bottom-right */
 }
 .card:hover { border-color: var(--accent); }
-.card .id { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; margin-right: 6px; }
-.card .pos { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; margin-right: 6px; }
+.is-selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dep-node.is-selected { outline: none; }
+.dep-node.is-selected rect { stroke: var(--accent); stroke-width: 2; }
+#search {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  width: 110px;
+}
+#search:focus { border-color: var(--accent); outline: none; }
+.card .id { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; margin-right: 6px; }
+.card .pos { position: absolute; bottom: 6px; right: 8px; color: var(--muted); opacity: 0.75; font-family: ui-monospace, monospace; font-size: 10px; margin: 0; }
 .column h2 .colsub { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--muted); }
 .card .name { font-weight: 550; }
 .card.st-in-progress { border-left-color: var(--st-in-progress); }
