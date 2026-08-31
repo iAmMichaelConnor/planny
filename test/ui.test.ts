@@ -170,6 +170,19 @@ describe('ui smoke', () => {
     expect(textarea.value).toBe('unsaved edit');
   });
 
+  it('drawer top/bottom bumps ask for confirmation first', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const declined = vi.fn(() => false);
+    vi.stubGlobal('confirm', declined);
+    (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
+    expect(declined).toHaveBeenCalledOnce();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/bump')).toBe(false);
+
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/bump')).toBe(true);
+  });
+
   it('the new-task drawer creates via POST', () => {
     (document.querySelector('#add-btn') as HTMLElement).click();
     (document.querySelector('#f-name') as HTMLInputElement).value = 'Brand new';

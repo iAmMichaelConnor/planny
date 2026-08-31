@@ -420,9 +420,9 @@ function renderDrawer() {
     : `<label>priority position (of ${active.length} active)</label>
        <div class="row">
          <input id="f-position" type="number" min="1" value="${positionValue > 0 ? positionValue : ''}" ${positionValue > 0 ? '' : 'disabled'}>
-         <button data-bump="top">▲ top</button>
-         <button data-bump="bottom">▼ bottom</button>
-         ${positionValue > 0 ? '<button id="set-position">set</button>' : ''}
+         <button data-bump="top" title="move to the top of the priority order">▲ top</button>
+         <button data-bump="bottom" title="move to the bottom of the priority order">▼ bottom</button>
+         ${positionValue > 0 ? '<button id="set-position" title="move to the typed position">set</button>' : ''}
        </div>`;
 
   $('#drawer-body').innerHTML = `
@@ -513,7 +513,10 @@ function wireDrawer(task, isNew) {
         });
     }
     for (const btn of body.querySelectorAll('[data-bump]')) {
-      btn.onclick = () => api(`/api/tasks/${task.id}/bump`, 'POST', { target: btn.dataset.bump });
+      btn.onclick = () => {
+        if (!confirm(`Move ${task.id} to the ${btn.dataset.bump} of the priority order?`)) return;
+        api(`/api/tasks/${task.id}/bump`, 'POST', { target: btn.dataset.bump });
+      };
     }
     const setPosition = $('#set-position');
     if (setPosition) {
