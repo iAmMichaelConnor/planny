@@ -9,6 +9,7 @@ const state = {
   selected: null, // task id shown in the drawer, or '__new__'
   collapsed: new Set(),
   skippedDecisions: new Set(),
+  descExpanded: false,
 };
 
 // ---------- data ----------
@@ -426,7 +427,10 @@ function renderDrawer() {
 
   $('#drawer-body').innerHTML = `
     <label>name</label><input id="f-name" value="${esc(task.name)}">
-    <label>description (markdown)</label><textarea id="f-desc">${esc(task.body)}</textarea>
+    <label>description (markdown)
+      <button id="desc-toggle" type="button" class="mini">${state.descExpanded ? 'collapse' : 'expand'}</button>
+    </label>
+    <textarea id="f-desc" class="desc-area${state.descExpanded ? ' expanded' : ''}">${esc(task.body)}</textarea>
     <div class="row">
       <div><label>type</label><select id="f-type">
         <option value="task"${task.type === 'task' ? ' selected' : ''}>task</option>
@@ -457,6 +461,12 @@ function parseIdList(value) {
 
 function wireDrawer(task, isNew) {
   const body = $('#drawer-body');
+  $('#desc-toggle').onclick = () => {
+    // Toggle in place: a re-render would drop unsaved edits in the form.
+    state.descExpanded = !state.descExpanded;
+    $('#f-desc').classList.toggle('expanded', state.descExpanded);
+    $('#desc-toggle').textContent = state.descExpanded ? 'collapse' : 'expand';
+  };
   $('#save-btn').onclick = () => {
     const fields = {
       name: $('#f-name').value,
@@ -577,6 +587,26 @@ document.addEventListener('click', (event) => {
     renderDrawer();
   }
 });
+
+{
+  // Drag the drawer's left edge to resize it.
+  let dragging = false;
+  $('#drawer-resize').addEventListener('mousedown', (event) => {
+    dragging = true;
+    event.preventDefault();
+  });
+  document.addEventListener('mousemove', (event) => {
+    if (!dragging) return;
+    const width = Math.min(
+      Math.max(window.innerWidth - event.clientX, 320),
+      Math.round(window.innerWidth * 0.95),
+    );
+    $('#drawer').style.width = `${width}px`;
+  });
+  document.addEventListener('mouseup', () => {
+    dragging = false;
+  });
+}
 
 $('#add-btn').onclick = () => {
   state.selected = '__new__';

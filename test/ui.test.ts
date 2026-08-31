@@ -146,6 +146,30 @@ describe('ui smoke', () => {
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(true);
   });
 
+  it('the drawer left edge drags to resize', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const handle = document.querySelector('#drawer-resize') as HTMLElement;
+    expect(handle).not.toBeNull();
+    handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 800 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 600 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    const drawer = document.querySelector('#drawer') as HTMLElement;
+    expect(drawer.style.width).toBe(`${window.innerWidth - 600}px`);
+  });
+
+  it('the description toggle expands the box without losing unsaved edits', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const textarea = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    textarea.value = 'unsaved edit';
+    const toggle = document.querySelector('#desc-toggle') as HTMLElement;
+    toggle.click();
+    expect(textarea.classList.contains('expanded')).toBe(true);
+    expect(textarea.value).toBe('unsaved edit');
+    toggle.click();
+    expect(textarea.classList.contains('expanded')).toBe(false);
+    expect(textarea.value).toBe('unsaved edit');
+  });
+
   it('the new-task drawer creates via POST', () => {
     (document.querySelector('#add-btn') as HTMLElement).click();
     (document.querySelector('#f-name') as HTMLInputElement).value = 'Brand new';

@@ -159,7 +159,9 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   position: fixed;
   top: 0;
   right: 0;
-  width: min(430px, 95vw);
+  width: 50vw;
+  min-width: 320px;
+  max-width: 95vw;
   height: 100vh;
   background: var(--panel);
   border-left: 1px solid var(--line);
@@ -177,6 +179,19 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   font-weight: 600;
 }
 #drawer-close { border: none; background: none; font-size: 20px; color: var(--muted); }
+#drawer-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 1;
+}
+#drawer-resize:hover { background: var(--accent); opacity: 0.5; }
+.desc-area { min-height: 240px; }
+.desc-area.expanded { min-height: 62vh; }
+button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 #drawer-body { padding: 14px 16px 40px; overflow-y: auto; }
 #drawer-body label { display: block; margin: 10px 0 3px; color: var(--muted); font-size: 12px; }
 #drawer-body input, #drawer-body select { width: 100%; }
