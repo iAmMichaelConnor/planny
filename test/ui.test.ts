@@ -302,6 +302,35 @@ describe('ui smoke', () => {
     expect(JSON.parse(resolve!.init!.body as string).response).toContain('Accepted');
   });
 
+  it('a lock-contention error is retried once automatically', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    let attempts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        fetchCalls.push({ path, init });
+        if (path.includes('/status') && init?.method === 'POST') {
+          attempts += 1;
+          if (attempts === 1) {
+            return {
+              ok: false,
+              json: async () => ({ error: 'the store is locked by another planny process — retry' }),
+            };
+          }
+        }
+        return {
+          ok: true,
+          json: async () =>
+            path === '/api/state' ? structuredClone(sampleState) : { task: task('t9'), warnings: [] },
+        };
+      }),
+    );
+    (document.querySelector('button[data-action="start"][data-id="t1"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(attempts).toBe(2); // failed once, retried, succeeded
+    expect(document.querySelector('#toasts')!.textContent).not.toMatch(/locked/);
+  });
+
   it('quick actions on cards confirm first, then post status and bump', () => {
     const declined = vi.fn(() => false);
     vi.stubGlobal('confirm', declined);

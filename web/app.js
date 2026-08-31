@@ -56,7 +56,7 @@ async function refresh() {
   render();
 }
 
-async function api(path, method, body) {
+async function api(path, method, body, retried = false) {
   try {
     const res = await fetch(path, {
       method,
@@ -65,6 +65,13 @@ async function api(path, method, body) {
     });
     const data = await res.json();
     if (!res.ok) {
+      // Lock contention is transient (an agent mid-write; stale locks
+      // self-break), so one silent retry usually clears it. The failed
+      // attempt wrote nothing, so retrying is safe.
+      if (!retried && typeof data.error === 'string' && data.error.includes('locked by another planny process')) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return api(path, method, body, true);
+      }
       // A claim conflict offers a deliberate takeover instead of a dead end.
       if (
         typeof data.error === 'string' &&
