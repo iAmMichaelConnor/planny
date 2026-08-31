@@ -14,7 +14,8 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/bin.js",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "planny": "node dist/cli.js"

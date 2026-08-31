@@ -14,5 +14,5 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npx vitest run
+      - run: npm test # pretest builds (and so typechecks) first — the
+        # two-process lock test spawns children that import from dist/
