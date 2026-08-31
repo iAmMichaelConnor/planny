@@ -21,7 +21,7 @@ const state = {
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
   renderedDrawerId: null,
-  descExpanded: readPreference('planny-desc-expanded', '1') === '1',
+  descExpanded: true, // always the default on open; collapse is per-view only
 };
 
 /** Guardrail for manual state changes: the agent usually does these. */
@@ -523,6 +523,7 @@ function renderDrawer() {
     drawer.classList.add('hidden');
     state.renderedDrawerId = null;
     state.drawerDirty = false;
+    state.descExpanded = true; // next open starts expanded again
     return;
   }
   drawer.classList.remove('hidden');
@@ -539,7 +540,8 @@ function renderDrawer() {
   }
   $('#drawer-title').innerHTML = isNew
     ? 'New task'
-    : `<span class="status-dot ${esc(task.status)}"></span>${esc(task.id)} · ${esc(task.status)}`;
+    : `<span class="status-dot ${esc(task.status)}"></span>${esc(task.id)} · ${esc(task.status)}
+       <span class="do-copy"><code>"Do ${esc(task.id)}"</code><button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉</button></span>`;
 
   const options = state.data.tasks
     .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)
@@ -607,13 +609,7 @@ function renderDrawer() {
          <button data-bump="bottom" title="move to the bottom of the priority order">▼ bottom</button>
        </div>`;
 
-  const doCopy = isNew ? '' : `
-    <div class="do-copy"><code>Do ${esc(task.id)}</code>
-      <button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉ copy</button>
-    </div>`;
-
   $('#drawer-body').innerHTML = `
-    ${doCopy}
     <label>name</label><input id="f-name" value="${esc(task.name)}">
     <label>description (markdown)
       <button id="desc-toggle" type="button" class="mini" tabindex="-1">${state.descExpanded ? 'collapse' : 'expand'}</button>
@@ -677,7 +673,6 @@ function wireDrawer(task, isNew) {
   $('#desc-toggle').onclick = () => {
     // Toggle in place: a re-render would drop unsaved edits in the form.
     state.descExpanded = !state.descExpanded;
-    writePreference('planny-desc-expanded', state.descExpanded ? '1' : '0');
     const textarea = $('#f-desc');
     textarea.classList.toggle('expanded', state.descExpanded);
     $('#desc-toggle').textContent = state.descExpanded ? 'collapse' : 'expand';
@@ -754,6 +749,7 @@ function wireDrawer(task, isNew) {
     addChild.onclick = () => openNewTaskForm(task.id);
   }
 
+  // The copy button lives in the drawer head, rebuilt with the title.
   const copyDo = $('#copy-do');
   if (copyDo) {
     copyDo.onclick = async () => {

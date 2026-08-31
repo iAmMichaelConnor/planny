@@ -48,6 +48,13 @@ describe('static ui', () => {
     expect(await res.text()).toContain('planny');
   });
 
+  it('static assets forbid caching, so deploys are never stale', async () => {
+    for (const path of ['/', '/app.js', '/style.css']) {
+      const res = await fetch(`${base}${path}`);
+      expect(res.headers.get('cache-control'), path).toBe('no-cache');
+    }
+  });
+
   it('404s unknown paths', async () => {
     const res = await fetch(`${base}/nope.js`);
     expect(res.status).toBe(404);

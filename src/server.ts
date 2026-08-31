@@ -102,7 +102,9 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
   if (req.method === 'GET' && path in STATIC_FILES) {
     const asset = STATIC_FILES[path]!;
     const text = await readFile(new URL(`../web/${asset.file}`, import.meta.url), 'utf8');
-    res.writeHead(200, { 'content-type': asset.type });
+    // no-cache: browsers must revalidate, or they run yesterday's app.js
+    // against today's API after a deploy.
+    res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-cache' });
     res.end(text);
     return;
   }

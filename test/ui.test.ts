@@ -489,6 +489,19 @@ describe('ui smoke', () => {
     );
   });
 
+  it('a description-only edit enables save and PATCHes the new body', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'rewritten body';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    const save = document.querySelector('#save-btn') as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    save.click();
+    const patch = fetchCalls.find((c) => c.path === '/api/tasks/t1' && c.init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    expect(JSON.parse(patch!.init!.body as string).body).toBe('rewritten body');
+  });
+
   it('save is disabled until an edit is typed', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const save = document.querySelector('#save-btn') as HTMLButtonElement;
@@ -537,13 +550,13 @@ describe('ui smoke', () => {
     expect(text).toContain('t2'); // picked one added
   });
 
-  it('the drawer offers a Do-this copy button, with an honest tooltip', async () => {
+  it('the quoted Do-this copy button sits beside the title', async () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
-    const button = document.querySelector('#copy-do') as HTMLElement;
-    expect(button).not.toBeNull();
-    expect(document.querySelector('#drawer-body')!.textContent).toContain('Do t3');
+    const title = document.querySelector('#drawer-title') as HTMLElement;
+    expect(title.textContent).toContain('"Do t3"'); // quoted, alongside the title
+    const button = title.querySelector('#copy-do') as HTMLElement;
     expect(button.title).toMatch(/lazy/i);
     button.click();
     await new Promise((r) => setTimeout(r, 5));
