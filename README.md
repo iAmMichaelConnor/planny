@@ -51,6 +51,52 @@ iAmMichaelConnor/planny`, then `/plugin install planny@planny`). Either
 way the CLI itself still comes from npm — the skill is the primary
 instructions, and every command's `--help` teaches the rest.
 
+## Concepts
+
+**Tasks.** One markdown file per task under `.planny/tasks/<id>.md`: YAML
+frontmatter for the structured fields, a markdown body for the description.
+Ids (`t1`, `t2`, …) are stable for the life of the project and never reused;
+commands accept a bare number (`planny done 3`).
+
+**Relationships.** `parent` and `blocked_by` are the stored fields; children
+and "blocks" are derived from them at read time, so the two sides can never
+disagree. Both hierarchies must stay acyclic — the CLI refuses cycles.
+
+**Priority** is one ordered list (position 1 = top), stored as a sparse
+unique rank. The invariant: an active task never ranks above an active task
+that blocks it. `bump` clamps to the nearest legal position and every
+mutation repairs violations automatically.
+
+**Kind (owner).** `kind: ai` or `kind: operator` says which side of the
+human/AI divide owns the task. The field accepts new kinds; only these two
+carry conventions (the operator queue, `next --kind`). `--model` records a
+preferred model, advisory only.
+
+**Decisions** are tasks with `type: decision`: a question for the operator,
+written so they can answer from the item alone (Background / Why this comes
+to you / Proposal with honest pros and cons / Alternative options / Needed
+from you / When — the format lives in
+[skills/planny/references/decision-format.md](skills/planny/references/decision-format.md)).
+`planny resolve` appends the answer under `## Outcome`, so resolved
+decisions double as a browsable decision log.
+
+**Attribution.** `planny --session <id> <command>` — or
+`export PLANNY_SESSION=<id>` once per shell — records who acted. Creates
+stamp `created_by`; every status change, priority move, re-parent,
+dependency edit and rename appends a one-line history entry `{at, …, by}`.
+Session ids are hierarchical: an orchestrator passes its id to subagents
+(environment inheritance does this for free) and may suffix per child
+(`sess-abc/builder`); ids sharing the root before the first `/` are one
+team. The web UI attributes its changes to `operator`.
+
+**Claims.** `start` claims a task. Starting one that a different team holds
+is refused until `--take`, which records the takeover in history. The
+current holder shows as "started by …" in `show`, `next --json` and the UI.
+
+**Concurrency.** Every mutation runs inside an advisory cross-process lock
+(`.planny/lock`, stale locks self-heal), so two CLIs, or the CLI and the
+serve UI, cannot interleave and drop writes.
+
 ## The localhost UI
 
 The CLI is the main tool — it is what your agent uses. `planny serve`
@@ -98,58 +144,21 @@ planny add "Build the importer" -d "Parse the CSV and load rows."
 planny add "Write importer tests" --parent t1 --model opus
 planny add "Deploy importer" --blocked-by t1
 planny add "Choose a hosting provider" --type decision --kind operator --blocks t3
-planny start t1        # claims t1 for your session
-planny next            # what to work on now, in priority order
+planny start t1                        # claims t1 for your session
+planny next                            # what to work on now, in priority order
+planny show t3                         # one task in full: body, relationships, history
+planny update t2 --add-blocked-by t1   # the tests wait on the build
+planny bump t3 top                     # clamped: never above the tasks it waits on
 planny done t1
-planny progress        # ████░░ 33% — 1/4 done…
-planny serve           # localhost UI: kanban, tree, dependency graph, decisions
+planny decisions                       # what the operator still needs to answer
+planny resolve t4 --response "Fly.io"  # record the answer; t3 unblocks
+planny tree                            # the hierarchy at a glance
+planny deps                            # blockers above the tasks they block
+planny progress                        # ████░░ 33% — 1/4 done…
+planny export --out plan.md            # the whole plan as one document
+planny serve                           # localhost UI: kanban, tree, deps, decisions
+planny url                             # where that UI is being served
 ```
-
-## Concepts
-
-**Tasks.** One markdown file per task under `.planny/tasks/<id>.md`: YAML
-frontmatter for the structured fields, a markdown body for the description.
-Ids (`t1`, `t2`, …) are stable for the life of the project and never reused;
-commands accept a bare number (`planny done 3`).
-
-**Relationships.** `parent` and `blocked_by` are the stored fields; children
-and "blocks" are derived from them at read time, so the two sides can never
-disagree. Both hierarchies must stay acyclic — the CLI refuses cycles.
-
-**Priority** is one ordered list (position 1 = top), stored as a sparse
-unique rank. The invariant: an active task never ranks above an active task
-that blocks it. `bump` clamps to the nearest legal position and every
-mutation repairs violations automatically.
-
-**Kind (owner).** `kind: ai` or `kind: operator` says which side of the
-human/AI divide owns the task. The field accepts new kinds; only these two
-carry conventions (the operator queue, `next --kind`). `--model` records a
-preferred model, advisory only.
-
-**Decisions** are tasks with `type: decision`: a question for the operator,
-written so they can answer from the item alone (Background / Why this comes
-to you / Proposal with honest pros and cons / Alternative options / Needed
-from you / When — the format lives in
-[skills/planny/references/decision-format.md](skills/planny/references/decision-format.md)).
-`planny resolve` appends the answer under `## Outcome`, so resolved
-decisions double as a browsable decision log.
-
-**Attribution.** `planny --session <id> <command>` — or
-`export PLANNY_SESSION=<id>` once per shell — records who acted. Creates
-stamp `created_by`; every status change, priority move, re-parent,
-dependency edit and rename appends a one-line history entry `{at, …, by}`.
-Session ids are hierarchical: an orchestrator passes its id to subagents
-(environment inheritance does this for free) and may suffix per child
-(`sess-abc/builder`); ids sharing the root before the first `/` are one
-team. The web UI attributes its changes to `operator`.
-
-**Claims.** `start` claims a task. Starting one that a different team holds
-is refused until `--take`, which records the takeover in history. The
-current holder shows as "started by …" in `show`, `next --json` and the UI.
-
-**Concurrency.** Every mutation runs inside an advisory cross-process lock
-(`.planny/lock`, stale locks self-heal), so two CLIs, or the CLI and the
-serve UI, cannot interleave and drop writes.
 
 ## Command reference
 
