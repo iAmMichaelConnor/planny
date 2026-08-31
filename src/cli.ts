@@ -11,7 +11,7 @@ import {
   type OpResult,
 } from './ops.js';
 import type { BumpTarget } from './priority.js';
-import { listTasks, nextDecisions, nextTasks, progress } from './query.js';
+import { listTasks, nextDecisions, nextTasks, progress, resolvedDecisions } from './query.js';
 import {
   renderDependencyForest,
   renderExport,
@@ -99,6 +99,10 @@ function buildProgram(io: CliIo): Command {
   program
     .name('planny')
     .description('file-backed task and decision tracker for AI-driven projects')
+    .option(
+      '--session <id>',
+      'attribute creates and status changes to this agent session (falls back to $PLANNY_SESSION)',
+    )
     .configureOutput({
       writeOut: (text) => io.out(text.replace(/\n$/, '')),
       writeErr: (text) => io.err(text.replace(/\n$/, '')),
@@ -106,6 +110,13 @@ function buildProgram(io: CliIo): Command {
     .exitOverride();
 
   const open = (): Store => openStore(io.cwd);
+  const actor = (): string | undefined => program.opts().session ?? process.env.PLANNY_SESSION;
+  const parseTime = (value: string): string => {
+    if (Number.isNaN(Date.parse(value))) {
+      throw new Error(`"${value}" is not a time — use an ISO timestamp like 2026-08-31T12:00:00Z`);
+    }
+    return value;
+  };
   const report = (result: OpResult, line: string): void => {
     io.out(line);
     for (const warning of result.warnings) io.err(`warning: ${warning}`);
@@ -139,18 +150,22 @@ function buildProgram(io: CliIo): Command {
     .option('--blocks <ids>', 'tasks that must wait for this one (comma-separated, repeatable)', collectIds)
     .option('--priority <pos>', 'top | bottom | 1-based position (default bottom)', parsePriority)
     .action((name, options) => {
-      const result = addTask(open(), {
-        name,
-        body: readBody(options),
-        type: options.type,
-        kind: options.kind,
-        model: options.model,
-        parent: options.parent,
-        children: options.child,
-        blockedBy: options.blockedBy,
-        blocks: options.blocks,
-        priority: options.priority,
-      });
+      const result = addTask(
+        open(),
+        {
+          name,
+          body: readBody(options),
+          type: options.type,
+          kind: options.kind,
+          model: options.model,
+          parent: options.parent,
+          children: options.child,
+          blockedBy: options.blockedBy,
+          blocks: options.blocks,
+          priority: options.priority,
+        },
+        actor(),
+      );
       report(result, `added ${result.task.id} — ${result.task.name}`);
     });
 
@@ -205,7 +220,7 @@ function buildProgram(io: CliIo): Command {
       .description(description)
       .argument('<id>', 'task id', normalizeId)
       .action((id) => {
-        const result = setStatus(open(), id, status);
+        const result = setStatus(open(), id, status, actor());
         report(result, `${id} → ${status}`);
       });
   }
@@ -216,7 +231,7 @@ function buildProgram(io: CliIo): Command {
     .argument('<id>', 'task id', normalizeId)
     .option('--replaced-by <ids>', 'tasks that replace it (comma-separated, repeatable)', collectIds)
     .action((id, options) => {
-      const result = cancelTask(open(), id, options.replacedBy ?? []);
+      const result = cancelTask(open(), id, options.replacedBy ?? [], actor());
       const suffix =
         result.task.replacedBy.length > 0
           ? ` (replaced by ${result.task.replacedBy.join(', ')})`
@@ -290,6 +305,7 @@ function buildProgram(io: CliIo): Command {
     .option('--recursive', 'with --parent: all descendants')
     .option('--blocked', 'only blocked tasks')
     .option('--unblocked', 'only unblocked tasks')
+    .option('--changed-since <time>', 'only tasks updated at or after this ISO time', parseTime)
     .option('--json', 'machine-readable output')
     .action((options) => {
       const store = open();
@@ -301,6 +317,7 @@ function buildProgram(io: CliIo): Command {
         parent: options.parent,
         recursive: options.recursive,
         blocked: options.blocked ? true : options.unblocked ? false : undefined,
+        changedSince: options.changedSince,
       });
       if (options.json) {
         const graph = buildGraph(store.loadAll());
@@ -416,9 +433,38 @@ function buildProgram(io: CliIo): Command {
   program
     .command('decisions')
     .description('list open decisions in the order to answer them')
+    .option('--resolved', 'list answered decisions instead, newest first')
+    .option('--since <time>', 'with --resolved: only decisions answered at or after this ISO time', parseTime)
     .option('--json', 'machine-readable output')
     .action((options) => {
       const store = open();
+      if (options.resolved) {
+        const resolved = resolvedDecisions(store, options.since);
+        if (options.json) {
+          io.out(
+            JSON.stringify(
+              resolved.map(({ task, unblocks }) => ({ task, unblocks: unblocks.map((t) => t.id) })),
+              null,
+              2,
+            ),
+          );
+          return;
+        }
+        if (resolved.length === 0) {
+          io.out('No resolved decisions.');
+          return;
+        }
+        io.out(
+          resolved
+            .map(({ task, unblocks }) => {
+              const when = task.resolvedAt ?? task.updated;
+              const tail = unblocks.length > 0 ? `\n    unblocked: ${unblocks.map((t) => t.id).join(', ')}` : '';
+              return `${task.id} ${when} — ${task.name}${tail}`;
+            })
+            .join('\n'),
+        );
+        return;
+      }
       const items = nextDecisions(store);
       if (options.json) {
         io.out(JSON.stringify(items.map(({ task, blocked }) => ({ task, blocked })), null, 2));
@@ -450,7 +496,7 @@ function buildProgram(io: CliIo): Command {
       if (response === undefined || response.trim() === '') {
         throw new Error('give the decision with --response, --response-file or --accept');
       }
-      const result = resolveDecision(open(), id, response);
+      const result = resolveDecision(open(), id, response, actor());
       report(result, `resolved ${id}`);
     });
 
@@ -477,11 +523,17 @@ function buildProgram(io: CliIo): Command {
             .toLowerCase();
           if (choice === 'q') break;
           if (choice === 'a') {
-            report(resolveDecision(store, item.task.id, 'Accepted the proposal.'), `resolved ${item.task.id}`);
+            report(
+              resolveDecision(store, item.task.id, 'Accepted the proposal.', actor() ?? 'operator'),
+              `resolved ${item.task.id}`,
+            );
           } else if (choice === 'r') {
             const answer = (await rl.question('Your decision: ')).trim();
             if (answer !== '') {
-              report(resolveDecision(store, item.task.id, answer), `resolved ${item.task.id}`);
+              report(
+                resolveDecision(store, item.task.id, answer, actor() ?? 'operator'),
+                `resolved ${item.task.id}`,
+              );
             } else {
               io.out('Empty answer; skipped.');
             }

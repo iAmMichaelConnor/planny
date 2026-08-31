@@ -266,6 +266,58 @@ describe('doctor', () => {
   });
 });
 
+describe('attribution and catch-up', () => {
+  it('--session stamps created_by and history entries', async () => {
+    await run('init');
+    await run('--session', 'sess-9', 'add', 'traced task');
+    await run('--session', 'sess-9', 'start', 't1');
+    out = [];
+    await run('show', 't1', '--json');
+    const { task } = JSON.parse(allOut());
+    expect(task.createdBy).toBe('sess-9');
+    expect(task.history[0]).toMatchObject({ status: 'in-progress', by: 'sess-9' });
+  });
+
+  it('falls back to the PLANNY_SESSION environment variable', async () => {
+    await run('init');
+    process.env.PLANNY_SESSION = 'env-sess';
+    try {
+      await run('add', 'env task');
+    } finally {
+      delete process.env.PLANNY_SESSION;
+    }
+    out = [];
+    await run('show', 't1', '--json');
+    expect(JSON.parse(allOut()).task.createdBy).toBe('env-sess');
+  });
+
+  it('list --changed-since filters by update time', async () => {
+    await seedTrio();
+    const { openStore } = await import('../src/store.js');
+    const store = openStore(dir);
+    const stale = store.load('t1');
+    stale.updated = '2020-01-01T00:00:00.000Z';
+    store.save(stale);
+    out = [];
+    await run('list', '--changed-since', '2026-01-01T00:00:00.000Z', '--json');
+    expect(JSON.parse(allOut()).map((t: { id: string }) => t.id)).toEqual(['t2', 't3']);
+  });
+
+  it('decisions --resolved lists answered decisions, filterable by --since', async () => {
+    await run('init');
+    await run('add', 'work'); // t1
+    await run('add', 'the q', '--type', 'decision', '--blocks', 't1'); // t2
+    await run('resolve', 't2', '--response', 'Go with plan A.');
+    out = [];
+    await run('decisions', '--resolved');
+    expect(allOut()).toContain('the q');
+    expect(allOut()).toContain('t1'); // what it unblocked
+    out = [];
+    await run('decisions', '--resolved', '--since', '2100-01-01T00:00:00.000Z', '--json');
+    expect(JSON.parse(allOut())).toEqual([]);
+  });
+});
+
 describe('progress and export', () => {
   it('progress prints a percentage', async () => {
     await seedTrio();

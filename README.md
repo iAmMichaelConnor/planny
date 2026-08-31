@@ -47,12 +47,12 @@ planny serve           # localhost UI: kanban, tree, dependency graph, decisions
 | `cancel <id> [--replaced-by ids]` | cancel; dependants are rewired onto the replacements |
 | `bump <id> top\|bottom\|N` | move in the priority order, clamped so a task never outranks its blockers |
 | `show <id> [--json]` | one task in full: fields, body, relationships, file path |
-| `list [filters] [--json]` | flat priority-ordered list; filter by status, kind, type, model, parent (`--recursive`), blocked |
+| `list [filters] [--json]` | flat priority-ordered list; filter by status, kind, type, model, parent (`--recursive`), blocked, `--changed-since <time>` |
 | `next [n] [--kind] [--under id] [--json]` | unblocked leaf tasks to work on now, with ancestor paths and what they unlock |
 | `tree` / `deps` | hierarchy view / dependency view in the terminal |
 | `progress [--parent id]` | completion percentage (excludes cancelled) |
 | `export [--out plan.md]` | the plan as one markdown document |
-| `decisions [--json]` | open decisions in answering order |
+| `decisions [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
 | `decide` | interactive: step through decisions, answer or skip |
 | `resolve <id> --response …\|--accept` | record the operator's answer, mark done |
 | `path <id>` | print the task's file path |
@@ -60,6 +60,11 @@ planny serve           # localhost UI: kanban, tree, dependency graph, decisions
 | `serve [--port]` | localhost control site |
 
 Ids accept a bare number (`planny done 3`).
+
+Attribution: `planny --session <id> <command>` (or `export PLANNY_SESSION=<id>`
+once per shell) records who acted — creates stamp `created_by`, and every
+status change appends `{at, status, by}` to the task's `history`. The
+localhost UI attributes its changes to `operator`.
 
 ## Decisions
 

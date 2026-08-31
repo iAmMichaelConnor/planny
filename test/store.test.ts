@@ -27,6 +27,7 @@ function makeTask(id: string, priority = 10): Task {
     replacedBy: [],
     created: '2026-08-31T12:00:00.000Z',
     updated: '2026-08-31T12:00:00.000Z',
+    history: [],
     body: '',
   };
 }

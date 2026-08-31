@@ -7,6 +7,13 @@ export type TaskType = (typeof TASK_TYPES)[number];
 /** Statuses that count as still needing work. */
 export const ACTIVE_STATUSES: readonly Status[] = ['todo', 'in-progress'];
 
+/** One status change: when, to what, and by whom (a session id or label). */
+export interface HistoryEntry {
+  at: string;
+  status: Status;
+  by?: string;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -25,6 +32,10 @@ export interface Task {
   replacedBy: string[];
   created: string;
   updated: string;
+  /** Session id or label of whoever created the task. */
+  createdBy?: string;
+  /** Status changes, oldest first. Written only by ops. */
+  history: HistoryEntry[];
   /** For decisions: when the operator resolved it. */
   resolvedAt?: string;
   /** Markdown description. For decisions, uses the structured section layout. */

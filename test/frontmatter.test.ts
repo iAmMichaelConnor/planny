@@ -15,6 +15,7 @@ const fullTask: Task = {
   replacedBy: [],
   created: '2026-08-31T12:00:00.000Z',
   updated: '2026-08-31T13:00:00.000Z',
+  history: [],
   body: 'Write the markdown exporter.\n\nIt renders the hierarchy as nested bullets.',
 };
 
@@ -86,5 +87,34 @@ describe('parseTaskFile', () => {
   it('rejects an invalid status', () => {
     const text = serializeTaskFile(fullTask).replace('status: in-progress', 'status: wip');
     expect(() => parseTaskFile(text)).toThrow(/status/i);
+  });
+
+  it('round-trips attribution and history', () => {
+    const tracked: Task = {
+      ...fullTask,
+      createdBy: 'sess-abc',
+      history: [
+        { at: '2026-08-31T12:30:00.000Z', status: 'in-progress', by: 'sess-abc' },
+        { at: '2026-08-31T13:00:00.000Z', status: 'done' },
+      ],
+    };
+    expect(parseTaskFile(serializeTaskFile(tracked))).toEqual(tracked);
+  });
+
+  it('omits empty history and absent created_by', () => {
+    const text = serializeTaskFile(fullTask);
+    expect(text).not.toContain('history:');
+    expect(text).not.toContain('created_by:');
+  });
+
+  it('rejects a malformed history entry', () => {
+    const tracked: Task = {
+      ...fullTask,
+      history: [{ at: '2026-08-31T12:30:00.000Z', status: 'in-progress' }],
+    };
+    const serialized = serializeTaskFile(tracked);
+    expect(serialized).toContain('    status: in-progress'); // the history entry, indented
+    const text = serialized.replace('    status: in-progress\n', '');
+    expect(() => parseTaskFile(text)).toThrow(/history/i);
   });
 });

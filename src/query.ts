@@ -15,6 +15,8 @@ export interface ListFilter {
   recursive?: boolean;
   /** true: only blocked tasks; false: only unblocked tasks. */
   blocked?: boolean;
+  /** Keep only tasks updated at or after this ISO time. */
+  changedSince?: string;
 }
 
 export function listTasks(store: Store, filter: ListFilter): Task[] {
@@ -35,6 +37,12 @@ export function listTasks(store: Store, filter: ListFilter): Task[] {
       if (filter.type !== undefined && task.type !== filter.type) return false;
       if (filter.model !== undefined && task.model !== filter.model) return false;
       if (filter.blocked !== undefined && graph.isBlocked(task.id) !== filter.blocked) return false;
+      if (
+        filter.changedSince !== undefined &&
+        Date.parse(task.updated) < Date.parse(filter.changedSince)
+      ) {
+        return false;
+      }
       return true;
     }),
   );
@@ -133,6 +141,28 @@ export function nextDecisions(store: Store): DecisionItem[] {
     ...ready.map((task) => ({ task, blocked: false })),
     ...waiting.map((task) => ({ task, blocked: true })),
   ];
+}
+
+export interface ResolvedDecision {
+  task: Task;
+  /** Tasks that were waiting on this decision. */
+  unblocks: Task[];
+}
+
+/** Answered decisions, newest first — for an AI catching up after `planny decide`. */
+export function resolvedDecisions(store: Store, since?: string): ResolvedDecision[] {
+  const tasks = store.loadAll();
+  const graph = buildGraph(tasks);
+  return tasks
+    .filter(
+      (t) =>
+        t.type === 'decision' &&
+        t.status === 'done' &&
+        (since === undefined ||
+          (t.resolvedAt !== undefined && Date.parse(t.resolvedAt) >= Date.parse(since))),
+    )
+    .sort((a, b) => Date.parse(b.resolvedAt ?? b.updated) - Date.parse(a.resolvedAt ?? a.updated))
+    .map((task) => ({ task, unblocks: graph.blocking(task.id) }));
 }
 
 function raise(message: string): never {

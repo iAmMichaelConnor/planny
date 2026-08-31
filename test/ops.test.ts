@@ -261,6 +261,45 @@ describe('resolveDecision', () => {
   });
 });
 
+describe('attribution', () => {
+  it('records who created a task', () => {
+    const { task } = addTask(store, { name: 'traced' }, 'sess-1');
+    expect(task.createdBy).toBe('sess-1');
+    expect(store.load('t1').createdBy).toBe('sess-1');
+  });
+
+  it('leaves created_by unset without an actor', () => {
+    expect(addTask(store, { name: 'plain' }).task.createdBy).toBeUndefined();
+  });
+
+  it('appends a history entry per status change, carrying the actor', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'in-progress', 'sess-1');
+    setStatus(store, 't1', 'done');
+    const history = store.load('t1').history;
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ status: 'in-progress', by: 'sess-1' });
+    expect(history[0]!.at).toBeDefined();
+    expect(history[1]!.status).toBe('done');
+    expect(history[1]!.by).toBeUndefined();
+  });
+
+  it('does not log a no-op status change', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'todo', 'sess-1');
+    expect(store.load('t1').history).toHaveLength(0);
+  });
+
+  it('cancel and resolve append attributed entries', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'q', type: 'decision' });
+    cancelTask(store, 't1', [], 'sess-2');
+    resolveDecision(store, 't2', 'yes', 'sess-3');
+    expect(store.load('t1').history.at(-1)).toMatchObject({ status: 'cancelled', by: 'sess-2' });
+    expect(store.load('t2').history.at(-1)).toMatchObject({ status: 'done', by: 'sess-3' });
+  });
+});
+
 describe('bumpTask', () => {
   it('persists the new order', () => {
     addTask(store, { name: 'a' });

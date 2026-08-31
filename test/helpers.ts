@@ -14,6 +14,7 @@ export function makeTask(id: string, overrides: Partial<Task> = {}): Task {
     replacedBy: [],
     created: stamp,
     updated: stamp,
+    history: [],
     body: '',
     ...overrides,
   };

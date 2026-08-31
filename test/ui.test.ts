@@ -319,6 +319,23 @@ describe('ui smoke', () => {
     expect(document.activeElement).toBe(draft());
   });
 
+  it('puts the resolve box directly below the description for open decisions', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const html = (document.querySelector('#drawer-body') as HTMLElement).innerHTML;
+    expect(html.indexOf('f-resolution')).toBeGreaterThan(-1);
+    expect(html.indexOf('f-desc')).toBeLessThan(html.indexOf('f-resolution'));
+    expect(html.indexOf('f-resolution')).toBeLessThan(html.indexOf('f-type'));
+  });
+
+  it('clicking a waits-on chip id opens that blocker in the drawer', () => {
+    const chipLink = document.querySelector(
+      '.card[data-id="t3"] [data-goto-task="t1"]',
+    ) as HTMLElement;
+    expect(chipLink).not.toBeNull();
+    chipLink.click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t1');
+  });
+
   it('the drawer left edge drags to resize', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const handle = document.querySelector('#drawer-resize') as HTMLElement;

@@ -113,6 +113,13 @@ describe('mutations', () => {
     expect(task.body).toContain('Ship it.');
   });
 
+  it('attributes UI mutations to the operator', async () => {
+    const created = await (await post('/api/tasks', { name: 'from the ui' })).json();
+    expect(created.task.createdBy).toBe('operator');
+    await post('/api/tasks/t1/status', { status: 'done' });
+    expect(store.load('t1').history.at(-1)).toMatchObject({ status: 'done', by: 'operator' });
+  });
+
   it('surfaces warnings in the response', async () => {
     addTask(store, { name: 'a' });
     addTask(store, { name: 'b', blockedBy: ['t1'] });

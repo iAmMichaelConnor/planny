@@ -34,6 +34,11 @@ Rules that keep the store consistent:
   including a mid-conversation aside. Then work it: `start` when you begin,
   `done` when it ships. A request tracked only in chat, a TODO comment, or
   your own head is a request that gets lost.
+- **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
+  at the start of a session (or pass `--session <id>` before any
+  subcommand). Creates then stamp `created_by`, and every status change
+  appends `{at, status, by}` to the task's history, so the operator can see
+  which agent did what.
 
 ## The action map
 
@@ -108,6 +113,10 @@ at the decision, so the queue reflects what each answer unlocks.
   How to test: … Runs at: …"`.
 - `planny decide` is the operator's own interactive loop; don't run it
   yourself — you are the interpreter when you're in the loop.
+- Catching up after being away (the operator may have run `planny decide`
+  without you): `planny decisions --resolved --since <time> --json` gives
+  the answers recorded since then, each with the tasks it unblocked;
+  `planny list --changed-since <time> --json` gives everything that moved.
 
 ## Priorities
 

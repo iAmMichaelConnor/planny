@@ -104,7 +104,8 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
   }
 
   if (req.method === 'POST' && path === '/api/tasks') {
-    sendResult(res, addTask(store, await readJson(req)));
+    const body = await readJson(req);
+    sendResult(res, addTask(store, body, actorOf(body)));
     return;
   }
 
@@ -122,8 +123,8 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
       sendResult(
         res,
         status === 'cancelled'
-          ? cancelTask(store, id!, asIdList(body.replacedBy))
-          : setStatus(store, id!, status),
+          ? cancelTask(store, id!, asIdList(body.replacedBy), actorOf(body))
+          : setStatus(store, id!, status, actorOf(body)),
       );
       return;
     }
@@ -136,11 +137,12 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
       return;
     }
     if (req.method === 'POST' && action === 'resolve') {
-      const { response } = await readJson(req);
+      const body = await readJson(req);
+      const response = body.response;
       if (typeof response !== 'string' || response.trim() === '') {
         throw new HttpError(400, 'resolve needs a non-empty "response" string');
       }
-      sendResult(res, resolveDecision(store, id!, response));
+      sendResult(res, resolveDecision(store, id!, response, actorOf(body)));
       return;
     }
   }
@@ -171,6 +173,11 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown> &
   } catch {
     throw new HttpError(400, 'request body is not valid JSON');
   }
+}
+
+/** UI mutations are the human's; a caller may name itself with "by". */
+function actorOf(body: Record<string, unknown>): string {
+  return typeof body.by === 'string' && body.by !== '' ? body.by : 'operator';
 }
 
 function asIdList(value: unknown): string[] {

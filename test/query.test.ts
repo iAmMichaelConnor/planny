@@ -2,8 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addTask, cancelTask, setStatus } from '../src/ops.js';
-import { listTasks, nextDecisions, nextTasks, progress } from '../src/query.js';
+import { addTask, cancelTask, resolveDecision, setStatus } from '../src/ops.js';
+import {
+  listTasks,
+  nextDecisions,
+  nextTasks,
+  progress,
+  resolvedDecisions,
+} from '../src/query.js';
 import { initRepo, openStore, type Store } from '../src/store.js';
 
 let dir: string;
@@ -129,6 +135,40 @@ describe('progress', () => {
 
   it('is 100 for an empty store', () => {
     expect(progress(store).percent).toBe(100);
+  });
+});
+
+describe('resolvedDecisions', () => {
+  beforeEach(() => {
+    addTask(store, { name: 'blocked work' }); // t1
+    addTask(store, { name: 'first q', type: 'decision', blocks: ['t1'] }); // t2
+    addTask(store, { name: 'second q', type: 'decision' }); // t3
+    addTask(store, { name: 'still open', type: 'decision' }); // t4
+    resolveDecision(store, 't2', 'Yes.');
+    resolveDecision(store, 't3', 'No.');
+  });
+
+  it('lists resolved decisions newest first with what each unblocks', () => {
+    const resolved = resolvedDecisions(store);
+    expect(resolved.map((r) => r.task.id)).toEqual(['t3', 't2']);
+    expect(resolved[1]!.unblocks.map((t) => t.id)).toEqual(['t1']);
+  });
+
+  it('filters by resolved-at time', () => {
+    expect(resolvedDecisions(store, '2000-01-01T00:00:00.000Z')).toHaveLength(2);
+    expect(resolvedDecisions(store, '2100-01-01T00:00:00.000Z')).toHaveLength(0);
+  });
+});
+
+describe('changed-since filter', () => {
+  it('keeps only tasks updated at or after the given time', () => {
+    addTask(store, { name: 'old' });
+    addTask(store, { name: 'fresh' });
+    const stale = store.load('t1');
+    stale.updated = '2020-01-01T00:00:00.000Z';
+    store.save(stale);
+    const changed = listTasks(store, { changedSince: '2026-01-01T00:00:00.000Z' });
+    expect(changed.map((t) => t.id)).toEqual(['t2']);
   });
 });
 

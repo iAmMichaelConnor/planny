@@ -151,7 +151,7 @@ function removeBlocker(m: Mutation, taskId: string, blockerId: string): void {
   m.touch(taskId);
 }
 
-export function addTask(store: Store, input: AddInput): OpResult {
+export function addTask(store: Store, input: AddInput, actor?: string): OpResult {
   const m = new Mutation(store);
   const now = new Date().toISOString();
   const task: Task = {
@@ -167,6 +167,8 @@ export function addTask(store: Store, input: AddInput): OpResult {
     replacedBy: [],
     created: now,
     updated: now,
+    createdBy: actor,
+    history: [],
     body: input.body ?? '',
   };
   m.add(task);
@@ -209,7 +211,20 @@ export function updateTask(store: Store, id: string, input: UpdateInput): OpResu
   return m.result(task);
 }
 
-export function setStatus(store: Store, id: string, status: Exclude<Status, 'cancelled'>): OpResult {
+/** Append a status-change record; skipped when the status did not change. */
+function logStatus(task: Task, status: Status, actor: string | undefined): void {
+  if (task.status === status) return;
+  const entry: Task['history'][number] = { at: new Date().toISOString(), status };
+  if (actor !== undefined) entry.by = actor;
+  task.history.push(entry);
+}
+
+export function setStatus(
+  store: Store,
+  id: string,
+  status: Exclude<Status, 'cancelled'>,
+  actor?: string,
+): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
   if (status === 'done') {
@@ -226,6 +241,7 @@ export function setStatus(store: Store, id: string, status: Exclude<Status, 'can
       m.warn(`${id} is a decision — prefer \`planny resolve ${id} --response ...\` to record the outcome`);
     }
   }
+  logStatus(task, status, actor);
   task.status = status;
   if (status === 'todo') task.replacedBy = [];
   m.touch(id);
@@ -233,7 +249,12 @@ export function setStatus(store: Store, id: string, status: Exclude<Status, 'can
   return m.result(task);
 }
 
-export function cancelTask(store: Store, id: string, replacedBy: string[] = []): OpResult {
+export function cancelTask(
+  store: Store,
+  id: string,
+  replacedBy: string[] = [],
+  actor?: string,
+): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
   const replacements = [...new Set(replacedBy)];
@@ -241,6 +262,7 @@ export function cancelTask(store: Store, id: string, replacedBy: string[] = []):
     m.get(replacementId);
     if (replacementId === id) throw new Error(`${id} cannot replace itself`);
   }
+  logStatus(task, 'cancelled', actor);
   task.status = 'cancelled';
   task.replacedBy = replacements;
   m.touch(id);
@@ -270,7 +292,12 @@ export function cancelTask(store: Store, id: string, replacedBy: string[] = []):
   return m.result(task);
 }
 
-export function resolveDecision(store: Store, id: string, response: string): OpResult {
+export function resolveDecision(
+  store: Store,
+  id: string,
+  response: string,
+  actor?: string,
+): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
   if (task.type !== 'decision') {
@@ -278,6 +305,7 @@ export function resolveDecision(store: Store, id: string, response: string): OpR
   }
   const outcome = `## Outcome\n\n${response.trim()}`;
   task.body = task.body === '' ? outcome : `${task.body}\n\n${outcome}`;
+  logStatus(task, 'done', actor);
   task.status = 'done';
   task.resolvedAt = new Date().toISOString();
   m.touch(id);

@@ -131,7 +131,10 @@ function badges(task) {
       const b = state.byId.get(id);
       return b && (b.status === 'todo' || b.status === 'in-progress');
     });
-    parts.push(`<span class="badge blocked">waits on ${esc(blockers.join(', '))}</span>`);
+    const links = blockers
+      .map((id) => `<span class="chip-link" data-goto-task="${esc(id)}">${esc(id)}</span>`)
+      .join(', ');
+    parts.push(`<span class="badge blocked">waits on ${links}</span>`);
   }
   return parts.join('');
 }
@@ -526,6 +529,7 @@ function renderDrawer() {
       <button id="desc-toggle" type="button" class="mini">${state.descExpanded ? 'collapse' : 'expand'}</button>
     </label>
     <textarea id="f-desc" class="desc-area${state.descExpanded ? ' expanded' : ''}">${esc(task.body)}</textarea>
+    ${resolveSection}
     <div class="row">
       <div><label>type</label><select id="f-type">
         <option value="task"${task.type === 'task' ? ' selected' : ''}>task</option>
@@ -544,7 +548,6 @@ function renderDrawer() {
     ${prioritySection}
     <div style="margin-top:14px"><button class="primary" id="save-btn">${isNew ? 'Create task' : 'Save changes'}</button></div>
     ${statusButtons}
-    ${resolveSection}
     ${relSection}`;
 
   wireDrawer(task, isNew);
@@ -666,6 +669,14 @@ function wireDrawer(task, isNew) {
 // ---------- events ----------
 
 document.addEventListener('click', (event) => {
+  const chipLink = event.target.closest('[data-goto-task]');
+  if (chipLink) {
+    event.stopPropagation();
+    state.selected = chipLink.dataset.gotoTask;
+    renderDrawer();
+    return;
+  }
+
   const actionEl = event.target.closest('[data-action]');
   if (actionEl) {
     const { action, id } = actionEl.dataset;

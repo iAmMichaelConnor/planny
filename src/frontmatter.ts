@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import { isStatus, isTaskType, type Task } from './types.js';
+import { isStatus, isTaskType, type HistoryEntry, type Task } from './types.js';
 
 /**
  * Task file format: a YAML frontmatter block delimited by `---` lines,
@@ -23,7 +23,15 @@ export function serializeTaskFile(task: Task): string {
   if (task.replacedBy.length > 0) meta.replaced_by = task.replacedBy;
   meta.created = task.created;
   meta.updated = task.updated;
+  if (task.createdBy !== undefined) meta.created_by = task.createdBy;
   if (task.resolvedAt !== undefined) meta.resolved_at = task.resolvedAt;
+  if (task.history.length > 0) {
+    meta.history = task.history.map((entry) => {
+      const row: Record<string, string> = { at: entry.at, status: entry.status };
+      if (entry.by !== undefined) row.by = entry.by;
+      return row;
+    });
+  }
 
   const yaml = YAML.stringify(meta).trimEnd();
   const body = task.body === '' ? '' : `${task.body.replace(/\n+$/, '')}\n`;
@@ -54,6 +62,25 @@ function idList(meta: Record<string, unknown>, key: string): string[] {
   return value as string[];
 }
 
+function historyList(meta: Record<string, unknown>): HistoryEntry[] {
+  const value = meta.history;
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error('field "history" must be a list');
+  return value.map((row) => {
+    const entry = row as Record<string, unknown>;
+    if (typeof entry?.at !== 'string' || !isStatus(entry.status)) {
+      throw new Error('each history entry needs an "at" time and a valid "status"');
+    }
+    const by = entry.by;
+    if (by !== undefined && typeof by !== 'string') {
+      throw new Error('history "by" must be a string');
+    }
+    return by === undefined
+      ? { at: entry.at, status: entry.status }
+      : { at: entry.at, status: entry.status, by };
+  });
+}
+
 export function parseTaskFile(text: string): Task {
   const match = FRONTMATTER_RE.exec(text);
   if (!match) throw new Error('task file has no YAML frontmatter block');
@@ -82,6 +109,8 @@ export function parseTaskFile(text: string): Task {
     replacedBy: idList(meta, 'replaced_by'),
     created: requireString(meta, 'created'),
     updated: requireString(meta, 'updated'),
+    createdBy: optionalString(meta, 'created_by'),
+    history: historyList(meta),
     resolvedAt: optionalString(meta, 'resolved_at'),
     body: match[2]!.replace(/^\n/, '').replace(/\n+$/, ''),
   };
