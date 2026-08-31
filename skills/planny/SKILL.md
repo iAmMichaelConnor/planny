@@ -49,9 +49,10 @@ Rules that keep the store consistent:
   that has a `.planny` store, check whether the UI is already up
   (`planny url` prints the address, and exits 1 when it is not); if not,
   start `planny serve` as a background process and tell the operator the
-  URL — including an SSH port-forward hint
-  (`ssh -L 5891:127.0.0.1:5891 <host>`) when they work on this machine
-  remotely.
+  URL. The server binds 127.0.0.1 only, so when the operator works on
+  this machine remotely, also give them the forward to run from their own
+  machine, ports matching the served port:
+  `ssh -L 5891:127.0.0.1:5891 <host>`, then open http://localhost:5891.
 - **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
   at the start of a session (or pass `--session <id>` before any
   subcommand). Creates then stamp `created_by`, and the task's history logs
@@ -222,6 +223,10 @@ their file; `--replaced-by` rewires dependants onto the successors).
 Kinds: `ai`, `operator` by convention (free-form for new kinds); `--model`
 records a preferred model, advisory only — reassign at load time if that
 model is unavailable.
+Updating: `npm update -g planny` refreshes the CLI and this skill together
+— the skill ships inside the npm package, so a skills directory that
+symlinks it follows automatically; a plugin install updates through its
+marketplace instead.
 Reading the plan — the exact query for each question:
 
 - What is left to do? `planny list --status todo,in-progress --json`
