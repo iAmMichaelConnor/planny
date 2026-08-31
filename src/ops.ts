@@ -2,7 +2,7 @@ import { buildGraph, type Graph } from './graph.js';
 import { withLock } from './lock.js';
 import { bumpPriority, repairDependencyOrder, type BumpTarget } from './priority.js';
 import type { Store } from './store.js';
-import { isActive, type Status, type Task, type TaskType } from './types.js';
+import { holderOf, isActive, sameTeam, type Status, type Task, type TaskType } from './types.js';
 
 /**
  * Every mutation of the task store goes through this module. The CLI and the
@@ -228,13 +228,27 @@ function logStatus(task: Task, status: Status, actor: string | undefined): void 
   task.history.push(entry);
 }
 
+export interface StatusOptions {
+  /** Take over a task another team started (records the takeover). */
+  take?: boolean;
+}
+
 export function setStatus(
   store: Store,
   id: string,
   status: Exclude<Status, 'cancelled'>,
   actor?: string,
+  options: StatusOptions = {},
 ): OpResult {
-  return withLock(store.root, () => doSetStatus(store, id, status, actor));
+  return withLock(store.root, () => doSetStatus(store, id, status, actor, options));
+}
+
+/** Warn when an actor closes out work a different team started. */
+function warnIfForeignHolder(m: Mutation, task: Task, actor: string | undefined, verb: string): void {
+  const holder = holderOf(task);
+  if (holder?.by !== undefined && !sameTeam(actor, holder.by)) {
+    m.warn(`${verb} ${task.id}, which ${holder.by} started`);
+  }
 }
 
 function doSetStatus(
@@ -242,9 +256,28 @@ function doSetStatus(
   id: string,
   status: Exclude<Status, 'cancelled'>,
   actor?: string,
+  options: StatusOptions = {},
 ): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
+
+  // The claim: starting a task another team already started needs an
+  // explicit takeover, so two agents cannot silently double-claim.
+  if (status === 'in-progress' && task.status === 'in-progress') {
+    const holder = holderOf(task);
+    if (holder?.by === undefined) {
+      m.warn(`${id} is already in progress (unattributed)`);
+    } else if (!sameTeam(actor, holder.by)) {
+      if (options.take !== true) {
+        throw new Error(
+          `${id} is already in progress, started by ${holder.by} — pass --take to take it over`,
+        );
+      }
+      task.history.push({ at: new Date().toISOString(), status: 'in-progress', by: actor });
+      m.warn(`took over ${id} from ${holder.by}`);
+    }
+  }
+  if (status === 'done') warnIfForeignHolder(m, task, actor, 'finishing');
   if (status === 'done') {
     const graph = m.graph();
     const blockers = graph.activeBlockers(id);
@@ -279,6 +312,7 @@ export function cancelTask(
 function doCancelTask(store: Store, id: string, replacedBy: string[], actor?: string): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
+  warnIfForeignHolder(m, task, actor, 'cancelling');
   const replacements = [...new Set(replacedBy)];
   for (const replacementId of replacements) {
     m.get(replacementId);

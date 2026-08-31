@@ -132,6 +132,9 @@ you are deep in something else only displaces working context.
 - There is no agent-facing watch mode, deliberately. File watching exists
   only as harness plumbing (the serve UI's live refresh); an agent that
   polls or subscribes mid-task is doing it wrong.
+- While catching up, also run `planny next --kind operator` and tell the
+  operator what is waiting on them — operator tasks move only when a
+  human sees them.
 
 ## Priorities
 

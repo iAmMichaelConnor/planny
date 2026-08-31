@@ -53,3 +53,23 @@ export function isTaskType(value: unknown): value is TaskType {
 export function isActive(task: Task): boolean {
   return ACTIVE_STATUSES.includes(task.status);
 }
+
+/** The session holding an in-progress task: the latest starter on record. */
+export function holderOf(task: Task): { by?: string; at: string } | undefined {
+  if (task.status !== 'in-progress') return undefined;
+  for (let i = task.history.length - 1; i >= 0; i--) {
+    const entry = task.history[i]!;
+    if (entry.status === 'in-progress') return { by: entry.by, at: entry.at };
+  }
+  return undefined;
+}
+
+/**
+ * Actor ids are hierarchical: an orchestrator suffixes per subagent
+ * (sess-abc/builder). Two actors sharing the root before the first '/'
+ * are one team.
+ */
+export function sameTeam(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  return a.split('/')[0] === b.split('/')[0];
+}

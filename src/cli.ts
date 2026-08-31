@@ -22,7 +22,7 @@ import {
   taskLabel,
 } from './render.js';
 import { findRoot, initRepo, openStore, type Store } from './store.js';
-import { isStatus, isTaskType, STATUSES, type Status, type TaskType } from './types.js';
+import { holderOf, isStatus, isTaskType, STATUSES, type Status, type TaskType } from './types.js';
 
 export interface CliIo {
   cwd: string;
@@ -211,8 +211,17 @@ function buildProgram(io: CliIo): Command {
       report(result, `updated ${id}`);
     });
 
+  program
+    .command('start')
+    .description('mark a task in progress (claims it for your session)')
+    .argument('<id>', 'task id', normalizeId)
+    .option('--take', 'take over a task another session started')
+    .action((id, options) => {
+      const result = setStatus(open(), id, 'in-progress', actor(), { take: options.take });
+      report(result, `${id} → in-progress`);
+    });
+
   for (const [command, status, description] of [
-    ['start', 'in-progress', 'mark a task in progress'],
     ['done', 'done', 'mark a task done'],
     ['todo', 'todo', 'mark a task todo (reopen)'],
   ] as const) {
@@ -374,6 +383,7 @@ function buildProgram(io: CliIo): Command {
               task: item.task,
               ancestors: item.path.map((t) => t.id),
               unlocks: item.unlocks.map((t) => t.id),
+              holder: holderOf(item.task)?.by ?? null,
             })),
             null,
             2,

@@ -1,7 +1,7 @@
 import { buildGraph, type Graph } from './graph.js';
 import { sortByPriority } from './priority.js';
 import { computeProgress, type Progress } from './query.js';
-import { isActive, type Status, type Task, type TaskType } from './types.js';
+import { holderOf, isActive, type Status, type Task, type TaskType } from './types.js';
 
 /** Text output: markdown export, terminal lists and trees. Read-only. */
 
@@ -108,6 +108,12 @@ export function renderShow(task: Task, allTasks: Task[], filePath: string): stri
   const facts = [`status: ${task.status}`, `type: ${task.type}`, `kind: ${task.kind}`];
   if (task.model !== undefined) facts.push(`model: ${task.model}`);
   lines.push(facts.join('   '));
+
+  if (task.createdBy !== undefined) lines.push(`created by: ${task.createdBy}`);
+  const holder = holderOf(task);
+  if (holder !== undefined) {
+    lines.push(`started by: ${holder.by ?? '(unattributed)'} at ${holder.at}`);
+  }
 
   const position = activePosition(allTasks, task);
   if (position !== undefined) lines.push(`position: ${position.index} of ${position.total} active`);

@@ -318,9 +318,24 @@ describe('attribution and catch-up', () => {
   });
 });
 
+describe('ownership', () => {
+  it('start refuses a held task without --take and shows the holder in show', async () => {
+    await run('init');
+    await run('add', 'contested');
+    await run('--session', 'sess-a', 'start', 't1');
+    expect(await run('--session', 'sess-b', 'start', 't1')).toBe(1);
+    expect(err.join('\n')).toContain('sess-a');
+    expect(await run('--session', 'sess-b', 'start', 't1', '--take')).toBe(0);
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toContain('started by: sess-b');
+  });
+});
+
 describe('catchup command', () => {
   it('returns the delta for a consumer and advances its cursor', async () => {
     await seedTrio();
+    await new Promise((r) => setTimeout(r, 5)); // separate timestamps: delivery is at-least-once
     out = [];
     await run('catchup', '--as', 'agent-x', '--json');
     const first = JSON.parse(allOut());

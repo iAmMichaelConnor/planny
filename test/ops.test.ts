@@ -300,6 +300,45 @@ describe('attribution', () => {
   });
 });
 
+describe('claim protection', () => {
+  beforeEach(() => {
+    addTask(store, { name: 'contested' });
+  });
+
+  it('refuses to start a task another team holds, naming the holder', () => {
+    setStatus(store, 't1', 'in-progress', 'sess-a');
+    expect(() => setStatus(store, 't1', 'in-progress', 'sess-b')).toThrow(/sess-a.*--take/s);
+  });
+
+  it('take proceeds and records the takeover', () => {
+    setStatus(store, 't1', 'in-progress', 'sess-a');
+    const { warnings } = setStatus(store, 't1', 'in-progress', 'sess-b', { take: true });
+    expect(warnings.join(' ')).toContain('sess-a');
+    const history = store.load('t1').history;
+    expect(history.at(-1)).toMatchObject({ status: 'in-progress', by: 'sess-b' });
+  });
+
+  it('the same team passes freely, including suffixed subagents', () => {
+    setStatus(store, 't1', 'in-progress', 'sess-a/planner');
+    expect(() => setStatus(store, 't1', 'in-progress', 'sess-a/builder')).not.toThrow();
+  });
+
+  it('an unattributed holder warns instead of refusing', () => {
+    setStatus(store, 't1', 'in-progress');
+    const { warnings } = setStatus(store, 't1', 'in-progress', 'sess-b');
+    expect(warnings.join(' ')).toMatch(/already in progress/i);
+  });
+
+  it('finishing or cancelling another team\'s in-progress task warns', () => {
+    setStatus(store, 't1', 'in-progress', 'sess-a');
+    const done = setStatus(store, 't1', 'done', 'sess-b');
+    expect(done.warnings.join(' ')).toContain('sess-a');
+    setStatus(store, 't1', 'in-progress', 'sess-a', { take: true });
+    const cancelled = cancelTask(store, 't1', [], 'sess-b');
+    expect(cancelled.warnings.join(' ')).toContain('sess-a');
+  });
+});
+
 describe('bumpTask', () => {
   it('persists the new order', () => {
     addTask(store, { name: 'a' });

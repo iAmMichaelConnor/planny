@@ -124,7 +124,7 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
         res,
         status === 'cancelled'
           ? cancelTask(store, id!, asIdList(body.replacedBy), actorOf(body))
-          : setStatus(store, id!, status, actorOf(body)),
+          : setStatus(store, id!, status, actorOf(body), { take: body.take === true }),
       );
       return;
     }

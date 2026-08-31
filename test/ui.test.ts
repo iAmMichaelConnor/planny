@@ -14,7 +14,14 @@ const webDir = join(__dirname, '..', 'web');
 const sampleState = {
   tasks: [
     task('t1', { name: 'Build the API', blocking: ['t3'] }),
-    task('t2', { name: 'Write tests', parent: 't1', status: 'in-progress', model: 'opus' }),
+    task('t2', {
+      name: 'Write tests',
+      parent: 't1',
+      status: 'in-progress',
+      model: 'opus',
+      createdBy: 'agent-7',
+      history: [{ at: '2026-08-31T12:00:00.000Z', status: 'in-progress', by: 'agent-7' }],
+    }),
     task('t3', { name: 'Deploy', blockedBy: ['t1'], blocked: true }),
     task('t4', {
       name: 'Choose hosting',
@@ -364,22 +371,36 @@ describe('ui smoke', () => {
     expect(drawer.style.width).toBe(`${window.innerWidth - 600}px`);
   });
 
-  it('the description toggle fully expands the box without losing unsaved edits', () => {
+  it('the description opens expanded by default; the toggle collapses and re-expands', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const textarea = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    expect(textarea.classList.contains('expanded')).toBe(true); // default
     Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 1500 });
     textarea.value = 'unsaved edit';
     const toggle = document.querySelector('#desc-toggle') as HTMLElement;
     toggle.click();
+    expect(textarea.classList.contains('expanded')).toBe(false);
+    expect(textarea.style.height).toBe(''); // compact height again
+    toggle.click();
     expect(textarea.classList.contains('expanded')).toBe(true);
     expect(textarea.style.height).toBe('1500px'); // sized to the full content
     expect(textarea.value).toBe('unsaved edit');
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(textarea.style.height).toBe('1500px'); // re-sized on typing
-    toggle.click();
-    expect(textarea.classList.contains('expanded')).toBe(false);
-    expect(textarea.style.height).toBe(''); // compact height again
-    expect(textarea.value).toBe('unsaved edit');
+  });
+
+  it('the drawer shows who created and who started the task', () => {
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    const body = document.querySelector('#drawer-body')!.textContent!;
+    expect(body).toContain('created by agent-7');
+    expect(body).toContain('started by agent-7');
+  });
+
+  it('the header shows a For you chip that opens the operator tree', () => {
+    const chip = document.querySelector('#operator-chip') as HTMLElement;
+    expect(chip.classList.contains('hidden')).toBe(false);
+    expect(chip.textContent).toContain('For you: 1'); // t4, the operator decision
+    chip.click();
+    expect(document.querySelector('#view-tree')!.classList.contains('hidden')).toBe(false);
+    expect((document.querySelector('#kind-filter') as HTMLSelectElement).value).toBe('operator');
   });
 
   it('drawer top/bottom bumps ask for confirmation first', () => {

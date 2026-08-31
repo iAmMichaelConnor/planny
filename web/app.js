@@ -9,11 +9,11 @@ const state = {
   selected: null, // task id shown in the drawer, or '__new__'
   collapsed: new Set(),
   skippedDecisions: new Set(),
-  descExpanded: false,
   depsMode: readPreference('planny-deps-mode', 'blocks'),
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
   renderedDrawerId: null,
+  descExpanded: readPreference('planny-desc-expanded', '1') === '1',
 };
 
 /** Guardrail for manual state changes: the agent usually does these. */
@@ -57,6 +57,14 @@ async function api(path, method, body) {
     });
     const data = await res.json();
     if (!res.ok) {
+      // A claim conflict offers a deliberate takeover instead of a dead end.
+      if (
+        typeof data.error === 'string' &&
+        data.error.includes('--take') &&
+        confirm(`${data.error.split(' — ')[0]}.\n\nTake it over?`)
+      ) {
+        return api(path, method, { ...body, take: true });
+      }
       toast(data.error || 'request failed', 'error');
       return null;
     }
@@ -172,6 +180,13 @@ function render() {
   $('#progress-text').textContent = `${progress.percent}% · ${progress.done}/${progress.total} done`;
   const openCount = state.data.decisions.filter((d) => !d.blocked).length;
   $('#decision-count').textContent = openCount > 0 ? `(${openCount})` : '';
+
+  const forYou = state.data.tasks.filter(
+    (t) => t.kind === 'operator' && (t.status === 'todo' || t.status === 'in-progress') && !t.blocked,
+  ).length;
+  const chip = $('#operator-chip');
+  chip.classList.toggle('hidden', forYou === 0);
+  chip.textContent = `For you: ${forYou}`;
 
   for (const tab of document.querySelectorAll('.tab')) {
     tab.classList.toggle('active', tab.dataset.view === state.view);
@@ -497,8 +512,18 @@ function renderDrawer() {
   const active = activeTasks();
   const positionValue = active.findIndex((t) => t.id === task.id) + 1;
 
+  const startedEntry = task.status === 'in-progress'
+    ? [...(task.history || [])].reverse().find((e) => e.status === 'in-progress')
+    : undefined;
+  const activity = [
+    ...(task.createdBy ? [`created by ${esc(task.createdBy)}`] : []),
+    ...(startedEntry
+      ? [`started by ${esc(startedEntry.by || '(unattributed)')} at ${esc(startedEntry.at)}`]
+      : []),
+  ];
   const relSection = isNew ? '' : `
     <div class="drawer-section">
+      ${activity.length > 0 ? `<label>activity</label><div>${activity.join(' · ')}</div>` : ''}
       ${ancestorsOf(task.id).length > 0 ? `<label>path</label><div>${ancestorsOf(task.id).reverse().map((a) => `${a.id} ${esc(a.name)}`).join(' › ')}</div>` : ''}
       ${childrenOf(task.id).length > 0 ? `<label>children</label><ul class="rel-list">${childrenOf(task.id).map((c) => `<li data-goto="${c.id}">${c.id} ${esc(c.name)} — ${c.status}</li>`).join('')}</ul>` : ''}
       ${task.blocking.length > 0 ? `<label>blocks</label><ul class="rel-list">${task.blocking.map((id) => { const b = state.byId.get(id); return `<li data-goto="${id}">${id} ${esc(b ? b.name : '')}</li>`; }).join('')}</ul>` : ''}
@@ -587,6 +612,7 @@ function wireDrawer(task, isNew) {
   $('#desc-toggle').onclick = () => {
     // Toggle in place: a re-render would drop unsaved edits in the form.
     state.descExpanded = !state.descExpanded;
+    writePreference('planny-desc-expanded', state.descExpanded ? '1' : '0');
     const textarea = $('#f-desc');
     textarea.classList.toggle('expanded', state.descExpanded);
     $('#desc-toggle').textContent = state.descExpanded ? 'collapse' : 'expand';
@@ -816,6 +842,13 @@ applyDock();
     dragging = false;
   });
 }
+
+$('#operator-chip').onclick = () => {
+  state.view = 'tree';
+  render();
+  $('#kind-filter').value = 'operator';
+  renderTree();
+};
 
 $('#add-btn').onclick = () => {
   if (
