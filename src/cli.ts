@@ -111,6 +111,8 @@ function buildProgram(io: CliIo): Command {
     .exitOverride();
 
   const open = (): Store => openStore(io.cwd);
+  /** First line of human-readable views: which project's plan answered. */
+  const nameStore = (store: Store): void => io.out(`store: ${store.root}`);
   const actor = (): string | undefined => program.opts().session ?? process.env.PLANNY_SESSION;
   const parseTime = (value: string): string => {
     if (Number.isNaN(Date.parse(value))) {
@@ -319,6 +321,7 @@ function buildProgram(io: CliIo): Command {
     .option('--json', 'machine-readable output')
     .action((options) => {
       const store = open();
+      if (!options.json) nameStore(store);
       const tasks = listTasks(store, {
         status: options.status,
         kind: options.kind,
@@ -351,8 +354,10 @@ function buildProgram(io: CliIo): Command {
     .option('--kind <kind>', 'filter by owner kind')
     .option('--type <type>', 'filter: task | decision', parseType)
     .action((options) => {
+      const store = open();
+      nameStore(store);
       io.out(
-        renderTaskList(open().loadAll(), {
+        renderTaskList(store.loadAll(), {
           status: options.status,
           kind: options.kind,
           type: options.type,
@@ -364,7 +369,9 @@ function buildProgram(io: CliIo): Command {
     .command('deps')
     .description('show the dependency order (blockers above the tasks they block)')
     .action(() => {
-      io.out(renderDependencyForest(open().loadAll()));
+      const store = open();
+      nameStore(store);
+      io.out(renderDependencyForest(store.loadAll()));
     });
 
   program
@@ -375,7 +382,9 @@ function buildProgram(io: CliIo): Command {
     .option('--under <id>', 'restrict to the subtree under this task', normalizeId)
     .option('--json', 'machine-readable output')
     .action((n, options) => {
-      const items = nextTasks(open(), n, { kind: options.kind, under: options.under });
+      const store = open();
+      if (!options.json) nameStore(store);
+      const items = nextTasks(store, n, { kind: options.kind, under: options.under });
       if (options.json) {
         io.out(
           JSON.stringify(
@@ -416,7 +425,9 @@ function buildProgram(io: CliIo): Command {
     .option('--parent <id>', 'scope to the subtree under this task', normalizeId)
     .option('--json', 'machine-readable output')
     .action((options) => {
-      const result = progress(open(), options.parent);
+      const store = open();
+      if (!options.json) nameStore(store);
+      const result = progress(store, options.parent);
       io.out(options.json ? JSON.stringify(result, null, 2) : renderProgressLine(result));
     });
 
@@ -496,6 +507,7 @@ function buildProgram(io: CliIo): Command {
     .option('--json', 'machine-readable output')
     .action((options) => {
       const store = open();
+      if (!options.json) nameStore(store);
       if (options.resolved) {
         const resolved = resolvedDecisions(store, options.since);
         if (options.json) {

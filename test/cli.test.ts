@@ -368,6 +368,25 @@ describe('catchup command', () => {
   });
 });
 
+describe('store header', () => {
+  it('view commands name the store they read, first line', async () => {
+    await seedTrio();
+    for (const args of [['tree'], ['deps'], ['list'], ['next'], ['decisions'], ['progress']]) {
+      out = [];
+      await run(...args);
+      expect(out.join('\n').split('\n')[0]).toBe(`store: ${dir}`);
+    }
+  });
+
+  it('json output stays clean for machines', async () => {
+    await seedTrio();
+    out = [];
+    await run('list', '--json');
+    expect(allOut().startsWith('store:')).toBe(false);
+    expect(() => JSON.parse(allOut())).not.toThrow();
+  });
+});
+
 describe('progress and export', () => {
   it('progress prints a percentage', async () => {
     await seedTrio();
