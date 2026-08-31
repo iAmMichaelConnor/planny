@@ -7,12 +7,17 @@ export type TaskType = (typeof TASK_TYPES)[number];
 /** Statuses that count as still needing work. */
 export const ACTIVE_STATUSES: readonly Status[] = ['todo', 'in-progress'];
 
-/** One status change: when, to what, and by whom (a session id or label). */
-export interface HistoryEntry {
-  at: string;
-  status: Status;
-  by?: string;
-}
+/**
+ * One recorded change: when, what, and by whom (a session id or label).
+ * Status entries keep the original {at, status, by} shape; other changes
+ * carry an `event` discriminator. Mechanical rank renumbering never logs.
+ */
+export type HistoryEntry =
+  | { at: string; by?: string; status: Status }
+  | { at: string; by?: string; event: 'priority'; target: string; position: number }
+  | { at: string; by?: string; event: 'parent'; from?: string; to?: string }
+  | { at: string; by?: string; event: 'blocked-by'; added?: string[]; removed?: string[] }
+  | { at: string; by?: string; event: 'rename'; from: string; to: string };
 
 export interface Task {
   id: string;
@@ -59,7 +64,7 @@ export function holderOf(task: Task): { by?: string; at: string } | undefined {
   if (task.status !== 'in-progress') return undefined;
   for (let i = task.history.length - 1; i >= 0; i--) {
     const entry = task.history[i]!;
-    if (entry.status === 'in-progress') return { by: entry.by, at: entry.at };
+    if ('status' in entry && entry.status === 'in-progress') return { by: entry.by, at: entry.at };
   }
   return undefined;
 }

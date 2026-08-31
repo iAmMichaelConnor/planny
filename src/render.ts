@@ -1,7 +1,7 @@
 import { buildGraph, type Graph } from './graph.js';
 import { sortByPriority } from './priority.js';
 import { computeProgress, type Progress } from './query.js';
-import { holderOf, isActive, type Status, type Task, type TaskType } from './types.js';
+import { holderOf, isActive, type HistoryEntry, type Status, type Task, type TaskType } from './types.js';
 
 /** Text output: markdown export, terminal lists and trees. Read-only. */
 
@@ -139,8 +139,35 @@ export function renderShow(task: Task, allTasks: Task[], filePath: string): stri
   lines.push(`file: ${filePath}`);
   lines.push(`created: ${task.created}   updated: ${task.updated}`);
   if (task.resolvedAt !== undefined) lines.push(`resolved: ${task.resolvedAt}`);
+  if (task.history.length > 0) {
+    lines.push('history:');
+    for (const entry of task.history) {
+      const by = entry.by !== undefined ? ` (by ${entry.by})` : '';
+      lines.push(`  ${entry.at} ${describeHistory(entry)}${by}`);
+    }
+  }
   if (task.body !== '') lines.push('', task.body);
   return lines.join('\n');
+}
+
+function describeHistory(entry: HistoryEntry): string {
+  if ('status' in entry) return `→ ${entry.status}`;
+  switch (entry.event) {
+    case 'priority':
+      return `priority → position ${entry.position} (asked for ${entry.target})`;
+    case 'parent':
+      if (entry.to === undefined) return `parent ${entry.from ?? '?'} → none`;
+      return entry.from === undefined ? `parent → ${entry.to}` : `parent ${entry.from} → ${entry.to}`;
+    case 'blocked-by': {
+      const parts = [
+        ...(entry.added ?? []).map((id) => `+${id}`),
+        ...(entry.removed ?? []).map((id) => `-${id}`),
+      ];
+      return `waits-on ${parts.join(' ')}`;
+    }
+    case 'rename':
+      return `renamed "${entry.from}" → "${entry.to}"`;
+  }
 }
 
 function activePosition(

@@ -207,7 +207,7 @@ function buildProgram(io: CliIo): Command {
         addBlocks: options.addBlocks,
         removeBlocks: options.removeBlocks,
         priority: options.priority,
-      });
+      }, actor());
       report(result, `updated ${id}`);
     });
 
@@ -256,7 +256,7 @@ function buildProgram(io: CliIo): Command {
     .argument('<target>', 'top | bottom | 1-based position', parsePriority)
     .action((id, target) => {
       const store = open();
-      const result = bumpTask(store, id, target);
+      const result = bumpTask(store, id, target, actor());
       const active = listTasks(store, { status: ['todo', 'in-progress'] });
       const position = active.findIndex((t) => t.id === id) + 1;
       const where = position > 0 ? `position ${position} of ${active.length} active` : 'the inactive set';

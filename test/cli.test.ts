@@ -332,6 +332,21 @@ describe('ownership', () => {
   });
 });
 
+describe('history in show', () => {
+  it('prints the change log', async () => {
+    await run('init');
+    await run('--session', 'sess-a', 'add', 'traced');
+    await run('--session', 'sess-a', 'start', 't1');
+    await run('--session', 'sess-a', 'bump', 't1', 'top');
+    out = [];
+    await run('show', 't1');
+    const text = allOut();
+    expect(text).toContain('history:');
+    expect(text).toMatch(/in-progress.*sess-a/);
+    expect(text).toMatch(/position 1/);
+  });
+});
+
 describe('catchup command', () => {
   it('returns the delta for a consumer and advances its cursor', async () => {
     await seedTrio();

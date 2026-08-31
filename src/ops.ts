@@ -1,6 +1,6 @@
 import { buildGraph, type Graph } from './graph.js';
 import { withLock } from './lock.js';
-import { bumpPriority, repairDependencyOrder, type BumpTarget } from './priority.js';
+import { bumpPriority, repairDependencyOrder, sortByPriority, type BumpTarget } from './priority.js';
 import type { Store } from './store.js';
 import { holderOf, isActive, sameTeam, type Status, type Task, type TaskType } from './types.js';
 
@@ -122,7 +122,13 @@ function requireName(name: string): string {
   return trimmed;
 }
 
-function setParent(m: Mutation, childId: string, parentId: string | undefined): void {
+function setParent(
+  m: Mutation,
+  childId: string,
+  parentId: string | undefined,
+  actor?: string,
+  log = true,
+): void {
   const child = m.get(childId);
   if (parentId !== undefined) {
     m.get(parentId);
@@ -130,26 +136,54 @@ function setParent(m: Mutation, childId: string, parentId: string | undefined): 
       throw new Error(`parent cycle: ${parentId} is ${childId} or one of its descendants`);
     }
   }
+  if (child.parent === parentId) return;
+  if (log) {
+    logEvent(child, actor, {
+      event: 'parent',
+      ...(child.parent !== undefined && { from: child.parent }),
+      ...(parentId !== undefined && { to: parentId }),
+    });
+  }
   child.parent = parentId;
   m.touch(childId);
 }
 
-function addBlocker(m: Mutation, taskId: string, blockerId: string): void {
+/** Returns true when the edge was actually added; the caller logs. */
+function addBlocker(m: Mutation, taskId: string, blockerId: string): boolean {
   const task = m.get(taskId);
   m.get(blockerId);
-  if (task.blockedBy.includes(blockerId)) return;
+  if (task.blockedBy.includes(blockerId)) return false;
   if (m.graph().wouldCycleDependency(taskId, blockerId)) {
     throw new Error(`dependency cycle: ${blockerId} already waits on ${taskId}`);
   }
   task.blockedBy.push(blockerId);
   m.touch(taskId);
+  return true;
 }
 
-function removeBlocker(m: Mutation, taskId: string, blockerId: string): void {
+/** Returns true when the edge was actually removed; the caller logs. */
+function removeBlocker(m: Mutation, taskId: string, blockerId: string): boolean {
   const task = m.get(taskId);
-  if (!task.blockedBy.includes(blockerId)) return;
+  if (!task.blockedBy.includes(blockerId)) return false;
   task.blockedBy = task.blockedBy.filter((id) => id !== blockerId);
   m.touch(taskId);
+  return true;
+}
+
+/** One blocked-by history entry per task, aggregating an op's edge edits. */
+function logEdgeChanges(
+  m: Mutation,
+  taskId: string,
+  actor: string | undefined,
+  added: string[],
+  removed: string[],
+): void {
+  if (added.length === 0 && removed.length === 0) return;
+  logEvent(m.get(taskId), actor, {
+    event: 'blocked-by',
+    ...(added.length > 0 && { added }),
+    ...(removed.length > 0 && { removed }),
+  });
 }
 
 export function addTask(store: Store, input: AddInput, actor?: string): OpResult {
@@ -177,24 +211,37 @@ function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
     body: input.body ?? '',
   };
   m.add(task);
-  if (input.parent !== undefined) setParent(m, task.id, input.parent);
-  for (const childId of input.children ?? []) setParent(m, childId, task.id);
+  // The new task's own starting state is not history; edits to *other*
+  // tasks (re-parented children, blocked targets) are.
+  if (input.parent !== undefined) setParent(m, task.id, input.parent, actor, false);
+  for (const childId of input.children ?? []) setParent(m, childId, task.id, actor);
   for (const blockerId of input.blockedBy ?? []) addBlocker(m, task.id, blockerId);
-  for (const blockedId of input.blocks ?? []) addBlocker(m, blockedId, task.id);
+  for (const blockedId of input.blocks ?? []) {
+    if (addBlocker(m, blockedId, task.id)) logEdgeChanges(m, blockedId, actor, [task.id], []);
+  }
   m.bump(task.id, input.priority ?? 'bottom');
   m.commit();
   return m.result(task);
 }
 
-export function updateTask(store: Store, id: string, input: UpdateInput): OpResult {
-  return withLock(store.root, () => doUpdateTask(store, id, input));
+export function updateTask(
+  store: Store,
+  id: string,
+  input: UpdateInput,
+  actor?: string,
+): OpResult {
+  return withLock(store.root, () => doUpdateTask(store, id, input, actor));
 }
 
-function doUpdateTask(store: Store, id: string, input: UpdateInput): OpResult {
+function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: string): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
 
-  if (input.name !== undefined) task.name = requireName(input.name);
+  if (input.name !== undefined) {
+    const name = requireName(input.name);
+    if (name !== task.name) logEvent(task, actor, { event: 'rename', from: task.name, to: name });
+    task.name = name;
+  }
   if (input.body !== undefined) task.body = input.body;
   if (input.appendBody !== undefined) {
     task.body = task.body === '' ? input.appendBody : `${task.body}\n\n${input.appendBody}`;
@@ -203,29 +250,58 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput): OpResult {
   if (input.type !== undefined) task.type = input.type;
   if (input.model !== undefined) task.model = input.model ?? undefined;
 
-  if (input.parent !== undefined) setParent(m, id, input.parent ?? undefined);
-  for (const childId of input.addChildren ?? []) setParent(m, childId, id);
+  if (input.parent !== undefined) setParent(m, id, input.parent ?? undefined, actor);
+  for (const childId of input.addChildren ?? []) setParent(m, childId, id, actor);
   for (const childId of input.removeChildren ?? []) {
-    if (m.get(childId).parent === id) setParent(m, childId, undefined);
+    if (m.get(childId).parent === id) setParent(m, childId, undefined, actor);
     else m.warn(`${childId} is not a child of ${id}; nothing removed`);
   }
-  for (const blockerId of input.addBlockedBy ?? []) addBlocker(m, id, blockerId);
-  for (const blockerId of input.removeBlockedBy ?? []) removeBlocker(m, id, blockerId);
-  for (const blockedId of input.addBlocks ?? []) addBlocker(m, blockedId, id);
-  for (const blockedId of input.removeBlocks ?? []) removeBlocker(m, blockedId, id);
+
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const blockerId of input.addBlockedBy ?? []) {
+    if (addBlocker(m, id, blockerId)) added.push(blockerId);
+  }
+  for (const blockerId of input.removeBlockedBy ?? []) {
+    if (removeBlocker(m, id, blockerId)) removed.push(blockerId);
+  }
+  logEdgeChanges(m, id, actor, added, removed);
+  for (const blockedId of input.addBlocks ?? []) {
+    if (addBlocker(m, blockedId, id)) logEdgeChanges(m, blockedId, actor, [id], []);
+  }
+  for (const blockedId of input.removeBlocks ?? []) {
+    if (removeBlocker(m, blockedId, id)) logEdgeChanges(m, blockedId, actor, [], [id]);
+  }
 
   m.touch(id);
-  if (input.priority !== undefined) m.bump(id, input.priority);
+  if (input.priority !== undefined) {
+    m.bump(id, input.priority);
+    logEvent(task, actor, {
+      event: 'priority',
+      target: String(input.priority),
+      position: activePosition(m.tasks, id),
+    });
+  }
   m.commit();
   return m.result(task);
+}
+
+/** Append a typed history record. Mechanical renumbering never comes here. */
+function logEvent(task: Task, actor: string | undefined, fields: Record<string, unknown>): void {
+  const entry = { at: new Date().toISOString(), ...fields } as Task['history'][number];
+  if (actor !== undefined) entry.by = actor;
+  task.history.push(entry);
 }
 
 /** Append a status-change record; skipped when the status did not change. */
 function logStatus(task: Task, status: Status, actor: string | undefined): void {
   if (task.status === status) return;
-  const entry: Task['history'][number] = { at: new Date().toISOString(), status };
-  if (actor !== undefined) entry.by = actor;
-  task.history.push(entry);
+  logEvent(task, actor, { status });
+}
+
+/** 1-based position among active tasks, for priority events. */
+function activePosition(tasks: Task[], id: string): number {
+  return sortByPriority(tasks.filter(isActive)).findIndex((t) => t.id === id) + 1;
 }
 
 export interface StatusOptions {
@@ -328,14 +404,16 @@ function doCancelTask(store: Store, id: string, replacedBy: string[], actor?: st
   for (const other of m.tasks) {
     if (other.id === id || !other.blockedBy.includes(id)) continue;
     removeBlocker(m, other.id, id);
+    const rewired: string[] = [];
     for (const replacementId of replacements) {
       if (replacementId === other.id) continue;
       if (m.graph().wouldCycleDependency(other.id, replacementId)) {
         m.warn(`did not rewire ${other.id} onto ${replacementId}: it would create a dependency cycle`);
         continue;
       }
-      addBlocker(m, other.id, replacementId);
+      if (addBlocker(m, other.id, replacementId)) rewired.push(replacementId);
     }
+    logEdgeChanges(m, other.id, actor, rewired, [id]);
   }
 
   const activeChildren = m.graph().children(id).filter(isActive);
@@ -373,12 +451,17 @@ function doResolveDecision(store: Store, id: string, response: string, actor?: s
   return m.result(task);
 }
 
-export function bumpTask(store: Store, id: string, target: BumpTarget): OpResult {
+export function bumpTask(store: Store, id: string, target: BumpTarget, actor?: string): OpResult {
   return withLock(store.root, () => {
     const m = new Mutation(store);
     const task = m.get(id);
     m.touch(id);
     m.bump(id, target);
+    logEvent(task, actor, {
+      event: 'priority',
+      target: String(target),
+      position: activePosition(m.tasks, id),
+    });
     m.commit();
     return m.result(task);
   });

@@ -27,8 +27,10 @@ export function serializeTaskFile(task: Task): string {
   if (task.resolvedAt !== undefined) meta.resolved_at = task.resolvedAt;
   if (task.history.length > 0) {
     meta.history = task.history.map((entry) => {
-      const row: Record<string, string> = { at: entry.at, status: entry.status };
-      if (entry.by !== undefined) row.by = entry.by;
+      const row: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(entry)) {
+        if (value !== undefined) row[key] = value;
+      }
       return row;
     });
   }
@@ -68,17 +70,35 @@ function historyList(meta: Record<string, unknown>): HistoryEntry[] {
   if (!Array.isArray(value)) throw new Error('field "history" must be a list');
   return value.map((row) => {
     const entry = row as Record<string, unknown>;
-    if (typeof entry?.at !== 'string' || !isStatus(entry.status)) {
-      throw new Error('each history entry needs an "at" time and a valid "status"');
-    }
-    const by = entry.by;
-    if (by !== undefined && typeof by !== 'string') {
+    if (typeof entry?.at !== 'string') throw new Error('each history entry needs an "at" time');
+    if (entry.by !== undefined && typeof entry.by !== 'string') {
       throw new Error('history "by" must be a string');
     }
-    return by === undefined
-      ? { at: entry.at, status: entry.status }
-      : { at: entry.at, status: entry.status, by };
+    const shapeOk =
+      entry.event === undefined
+        ? isStatus(entry.status)
+        : entry.event === 'priority'
+          ? typeof entry.target === 'string' && typeof entry.position === 'number'
+          : entry.event === 'parent'
+            ? isOptionalString(entry.from) && isOptionalString(entry.to)
+            : entry.event === 'blocked-by'
+              ? isOptionalIdList(entry.added) && isOptionalIdList(entry.removed)
+              : entry.event === 'rename'
+                ? typeof entry.from === 'string' && typeof entry.to === 'string'
+                : false;
+    if (!shapeOk) {
+      throw new Error(`malformed history entry${entry.event !== undefined ? ` (event "${String(entry.event)}")` : ''}`);
+    }
+    return entry as unknown as HistoryEntry;
   });
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isOptionalIdList(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
 }
 
 export function parseTaskFile(text: string): Task {

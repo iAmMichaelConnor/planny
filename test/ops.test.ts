@@ -300,6 +300,61 @@ describe('attribution', () => {
   });
 });
 
+describe('typed history events', () => {
+  beforeEach(() => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    addTask(store, { name: 'c' });
+  });
+
+  it('bump logs a priority event with the target, position and actor', () => {
+    bumpTask(store, 't3', 'top', 'sess-1');
+    const entry = store.load('t3').history.at(-1);
+    expect(entry).toMatchObject({ event: 'priority', target: 'top', position: 1, by: 'sess-1' });
+    // Renumbered bystanders log nothing.
+    expect(store.load('t1').history).toEqual([]);
+    expect(store.load('t2').history).toEqual([]);
+  });
+
+  it('re-parenting logs a parent event on the child', () => {
+    updateTask(store, 't2', { parent: 't1' }, 'sess-1');
+    expect(store.load('t2').history.at(-1)).toMatchObject({ event: 'parent', to: 't1', by: 'sess-1' });
+    updateTask(store, 't2', { parent: null }, 'sess-1');
+    expect(store.load('t2').history.at(-1)).toMatchObject({ event: 'parent', from: 't1' });
+  });
+
+  it('dependency edits log blocked-by events on the task that waits', () => {
+    updateTask(store, 't1', { addBlockedBy: ['t2'] });
+    expect(store.load('t1').history.at(-1)).toMatchObject({ event: 'blocked-by', added: ['t2'] });
+    updateTask(store, 't1', { addBlocks: ['t3'] });
+    expect(store.load('t3').history.at(-1)).toMatchObject({ event: 'blocked-by', added: ['t1'] });
+    updateTask(store, 't1', { removeBlockedBy: ['t2'] });
+    expect(store.load('t1').history.at(-1)).toMatchObject({ event: 'blocked-by', removed: ['t2'] });
+  });
+
+  it('cancel rewiring logs on the dependants', () => {
+    updateTask(store, 't2', { addBlockedBy: ['t1'] });
+    cancelTask(store, 't1', ['t3'], 'sess-2');
+    const events = store.load('t2').history.filter((e) => 'event' in e && e.event === 'blocked-by');
+    expect(events.at(-1)).toMatchObject({ removed: ['t1'], added: ['t3'], by: 'sess-2' });
+  });
+
+  it('renames are logged', () => {
+    updateTask(store, 't1', { name: 'a better name' });
+    expect(store.load('t1').history.at(-1)).toMatchObject({
+      event: 'rename',
+      from: 'a',
+      to: 'a better name',
+    });
+  });
+
+  it('creation state logs nothing on the new task, but --blocks logs on the target', () => {
+    addTask(store, { name: 'd', parent: 't1', blockedBy: ['t2'], blocks: ['t3'] });
+    expect(store.load('t4').history).toEqual([]);
+    expect(store.load('t3').history.at(-1)).toMatchObject({ event: 'blocked-by', added: ['t4'] });
+  });
+});
+
 describe('claim protection', () => {
   beforeEach(() => {
     addTask(store, { name: 'contested' });

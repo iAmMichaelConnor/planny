@@ -36,9 +36,11 @@ Rules that keep the store consistent:
   your own head is a request that gets lost.
 - **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
   at the start of a session (or pass `--session <id>` before any
-  subcommand). Creates then stamp `created_by`, and every status change
-  appends `{at, status, by}` to the task's history, so the operator can see
-  which agent did what.
+  subcommand). Creates then stamp `created_by`, and the task's history logs
+  every status change, priority move, re-parent, dependency edit and rename
+  with `{at, …, by}`, so the operator can see which agent did what.
+  Starting a task claims it: `planny start` on a task another session
+  started refuses until you pass `--take`, which records the takeover.
 
 ## The action map
 

@@ -63,9 +63,11 @@ planny serve           # localhost UI: kanban, tree, dependency graph, decisions
 Ids accept a bare number (`planny done 3`).
 
 Attribution: `planny --session <id> <command>` (or `export PLANNY_SESSION=<id>`
-once per shell) records who acted — creates stamp `created_by`, and every
-status change appends `{at, status, by}` to the task's `history`. The
-localhost UI attributes its changes to `operator`.
+once per shell) records who acted — creates stamp `created_by`, and the
+task's `history` logs status changes, priority moves, re-parents, dependency
+edits and renames with `{at, …, by}`. The localhost UI attributes its
+changes to `operator`. `start` claims a task: starting one that another
+session holds needs `--take`, which records the takeover.
 
 ## Decisions
 

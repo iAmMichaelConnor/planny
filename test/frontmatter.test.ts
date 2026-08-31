@@ -107,6 +107,29 @@ describe('parseTaskFile', () => {
     expect(text).not.toContain('created_by:');
   });
 
+  it('round-trips typed history events', () => {
+    const tracked: Task = {
+      ...fullTask,
+      history: [
+        { at: '2026-08-31T12:00:00.000Z', status: 'in-progress', by: 'sess-a' },
+        { at: '2026-08-31T12:01:00.000Z', event: 'priority', target: 'top', position: 1, by: 'sess-a' },
+        { at: '2026-08-31T12:02:00.000Z', event: 'parent', from: 't1', to: 't2' },
+        { at: '2026-08-31T12:03:00.000Z', event: 'blocked-by', added: ['t3'], removed: ['t4'] },
+        { at: '2026-08-31T12:04:00.000Z', event: 'rename', from: 'old', to: 'new' },
+      ],
+    };
+    expect(parseTaskFile(serializeTaskFile(tracked))).toEqual(tracked);
+  });
+
+  it('rejects an unknown history event kind', () => {
+    const tracked: Task = {
+      ...fullTask,
+      history: [{ at: '2026-08-31T12:00:00.000Z', event: 'rename', from: 'a', to: 'b' }],
+    };
+    const text = serializeTaskFile(tracked).replace('event: rename', 'event: mystery');
+    expect(() => parseTaskFile(text)).toThrow(/history/i);
+  });
+
   it('rejects a malformed history entry', () => {
     const tracked: Task = {
       ...fullTask,
