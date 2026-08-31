@@ -9,6 +9,8 @@ const state = {
   selected: null, // task id shown in the drawer, or '__new__'
   collapsed: new Set(),
   skippedDecisions: new Set(),
+  expandedDecisions: new Set(), // open-decision tiles start collapsed
+
   depsMode: readPreference('planny-deps-mode', 'blocks'),
   treeFilters: {
     statuses: new Set(['todo', 'in-progress']),
@@ -483,11 +485,12 @@ function renderDecisions() {
             <button data-action="skip" data-id="${task.id}">Skip for now</button>
           </div>
         </div>`;
-    return `<div class="decision-card${blocked ? ' blocked' : ''}">
-      <h3><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
+    const expanded = state.expandedDecisions.has(task.id);
+    return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}">
+      <h3 data-action="toggle-decision" data-id="${task.id}"><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
       <div class="badges">${badges(task)}</div>
-      <div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
-      ${actions}
+      ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
+      ${actions}` : ''}
     </div>`;
   });
 
@@ -899,6 +902,13 @@ document.addEventListener('click', (event) => {
     }
     if (action === 'top') {
       if (guard(`Move ${id} to the top of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'top' });
+      return;
+    }
+    if (action === 'toggle-decision') {
+      state.expandedDecisions.has(id)
+        ? state.expandedDecisions.delete(id)
+        : state.expandedDecisions.add(id);
+      renderDecisions();
       return;
     }
     if (action === 'skip') {

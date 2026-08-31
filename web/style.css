@@ -235,6 +235,10 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 #view-decisions { max-width: 860px; margin: 0 auto; }
 .decision-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
 .decision-card h3 { margin: 0 0 4px; }
+.decision-card h3[data-action="toggle-decision"] { cursor: pointer; user-select: none; }
+.decision-card .disclose { display: inline-block; width: 1em; font-size: 0.8em; }
+.decision-card.collapsed { padding: 10px 20px; margin-bottom: 8px; }
+.decision-card.collapsed .badges { margin: 0; }
 .decision-card.blocked { opacity: 0.65; }
 .decision-body { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
 .decision-body h2 { font-size: 15px; margin: 14px 0 4px; }

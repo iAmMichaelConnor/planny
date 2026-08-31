@@ -122,6 +122,14 @@ function clickTab(view: string): void {
   (document.querySelector(`.tab[data-view="${view}"]`) as HTMLElement).click();
 }
 
+function expandDecision(id: string): void {
+  (
+    document.querySelector(
+      `#view-decisions [data-action="toggle-decision"][data-id="${id}"]`,
+    ) as HTMLElement
+  ).click();
+}
+
 beforeEach(async () => {
   await bootApp();
 });
@@ -302,8 +310,31 @@ describe('ui smoke', () => {
     expect(edgeTitle.textContent).toBe('t1 blocks t3 — t3 waits on t1');
   });
 
+  it('decision tiles start collapsed and expand on click', async () => {
+    clickTab('decisions');
+    const tile = () => document.querySelector('#view-decisions .decision-card') as HTMLElement;
+    expect(tile().classList.contains('collapsed')).toBe(true);
+    expect(tile().textContent).toContain('Choose hosting'); // the header still names it
+    expect(tile().querySelector('.decision-body')).toBeNull(); // no body while collapsed
+    expect(tile().querySelector('button[data-action="accept"]')).toBeNull(); // no actions either
+
+    expandDecision('t4');
+    expect(tile().classList.contains('collapsed')).toBe(false);
+    expect(tile().querySelector('.decision-body strong')!.textContent).toBe('Fly.io');
+
+    // A background refresh must not snap the tile shut.
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(tile().classList.contains('collapsed')).toBe(false);
+
+    expandDecision('t4'); // a second click collapses again
+    expect(tile().classList.contains('collapsed')).toBe(true);
+    expect(tile().querySelector('.decision-body')).toBeNull();
+  });
+
   it('renders open and resolved decisions with markdown bodies', () => {
     clickTab('decisions');
+    expandDecision('t4');
     const view = document.querySelector('#view-decisions')!;
     expect(view.textContent).toContain('Choose hosting');
     expect(view.querySelector('.decision-body strong')!.textContent).toBe('Fly.io');
@@ -326,6 +357,7 @@ describe('ui smoke', () => {
 
   it('a skipped decision moves to a visible skipped list and can come back', () => {
     clickTab('decisions');
+    expandDecision('t4');
     (document.querySelector('button[data-action="skip"][data-id="t4"]') as HTMLElement).click();
     const view = document.querySelector('#view-decisions')!;
     expect(view.textContent).toContain('Skipped for now');
@@ -343,6 +375,7 @@ describe('ui smoke', () => {
 
   it('accepting a decision posts a resolve', () => {
     clickTab('decisions');
+    expandDecision('t4');
     (document.querySelector('button[data-action="accept"][data-id="t4"]') as HTMLElement).click();
     const resolve = fetchCalls.find((c) => c.path === '/api/tasks/t4/resolve');
     expect(resolve).toBeDefined();
@@ -456,6 +489,7 @@ describe('ui smoke', () => {
 
   it('a background refresh keeps decision drafts and focus', async () => {
     clickTab('decisions');
+    expandDecision('t4');
     const draft = () =>
       document.querySelector('textarea[data-role="response"][data-id="t4"]') as HTMLTextAreaElement;
     draft().value = 'leaning towards yes';

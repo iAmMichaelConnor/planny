@@ -29,7 +29,8 @@ Rules that keep the store consistent:
   keeps relationships one-sided (children and "blocks" are derived), rejects
   cycles, and keeps priority consistent with dependencies. Reading the raw
   files (grep, cat) is fine and encouraged.
-- Write task names and bodies in Simplified Technical English in spirit:
+- Write task names and bodies in Simplified Technical English (STE) in
+  spirit:
   short sentences, active voice, one meaning per word, no project shorthand
   without a definition.
 - A task that needs several owners (plan, build, review) becomes child tasks,
