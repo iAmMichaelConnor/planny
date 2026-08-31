@@ -19,6 +19,16 @@ npm install -g planny
 
 Node 20+. Then, in any project: `planny init`.
 
+To teach Claude Code the planny skill, this repo doubles as a plugin
+marketplace:
+
+```
+/plugin marketplace add iAmMichaelConnor/planny
+/plugin install planny@planny
+```
+
+The plugin carries the skill; the CLI still comes from npm (above).
+
 To work on planny itself, install from source instead:
 
 ```bash

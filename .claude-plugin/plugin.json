@@ -1,0 +1,13 @@
+{
+  "name": "planny",
+  "description": "Task and decision tracker for AI-driven projects: the plan lives as markdown task files managed through the planny CLI, not a plan.md.",
+  "version": "0.1.1",
+  "author": {
+    "name": "Michael Connor",
+    "url": "https://github.com/iAmMichaelConnor"
+  },
+  "homepage": "https://github.com/iAmMichaelConnor/planny",
+  "repository": "https://github.com/iAmMichaelConnor/planny",
+  "license": "MIT",
+  "keywords": ["tasks", "planning", "decisions", "ai-agents"]
+}

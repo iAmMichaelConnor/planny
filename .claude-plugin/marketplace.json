@@ -1,0 +1,15 @@
+{
+  "name": "planny",
+  "owner": {
+    "name": "Michael Connor",
+    "url": "https://github.com/iAmMichaelConnor"
+  },
+  "description": "The planny skill: plan-of-record task and decision tracking for AI-driven projects, straight from the tool's own repository.",
+  "plugins": [
+    {
+      "name": "planny",
+      "source": "./",
+      "description": "Task and decision tracker for AI-driven projects. Ships the planny skill; the CLI itself installs with: npm install -g planny"
+    }
+  ]
+}
