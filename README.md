@@ -154,7 +154,7 @@ planny decisions                       # what the operator still needs to answer
 planny resolve t4 --response "Fly.io"  # record the answer; t3 unblocks
 planny tree                            # the hierarchy at a glance
 planny deps                            # blockers above the tasks they block
-planny progress                        # ████░░ 33% — 1/4 done…
+planny progress                        # █████░░░░░░░░░░░░░░░ 25% — 1/4 done…
 planny export --out plan.md            # the whole plan as one document
 planny serve                           # localhost UI: kanban, tree, deps, decisions
 planny url                             # where that UI is being served
