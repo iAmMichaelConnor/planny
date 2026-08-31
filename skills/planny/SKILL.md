@@ -113,10 +113,25 @@ at the decision, so the queue reflects what each answer unlocks.
   How to test: … Runs at: …"`.
 - `planny decide` is the operator's own interactive loop; don't run it
   yourself — you are the interpreter when you're in the loop.
-- Catching up after being away (the operator may have run `planny decide`
-  without you): `planny decisions --resolved --since <time> --json` gives
-  the answers recorded since then, each with the tasks it unblocked;
-  `planny list --changed-since <time> --json` gives everything that moved.
+### Staying current
+
+Catch up at boundaries — when you start work, between tasks, and before
+choosing what to do next. Never mid-task: information that arrives while
+you are deep in something else only displaces working context.
+
+- `planny catchup --json` is the default (it uses your `PLANNY_SESSION` as
+  the consumer id; `--as <id>` overrides). It returns every task changed
+  and every decision resolved since you last asked, then advances your
+  stored cursor — you carry no state. `--peek` looks without advancing.
+  Delivery is at-least-once: treat the delta as idempotent facts.
+- Explicit windows, when a cursor is not what you mean:
+  `planny decisions --resolved --since <time> --json` (answers, each with
+  the tasks it unblocked) and `planny list --changed-since <time> --json`.
+- Skip your own footprints: entries whose `by` (in `history`/`created_by`)
+  shares your session root are changes you already know about.
+- There is no agent-facing watch mode, deliberately. File watching exists
+  only as harness plumbing (the serve UI's live refresh); an agent that
+  polls or subscribes mid-task is doing it wrong.
 
 ## Priorities
 

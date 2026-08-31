@@ -53,6 +53,7 @@ planny serve           # localhost UI: kanban, tree, dependency graph, decisions
 | `progress [--parent id]` | completion percentage (excludes cancelled) |
 | `export [--out plan.md]` | the plan as one markdown document |
 | `decisions [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
+| `catchup [--as id] [--peek]` | everything changed since this consumer last asked, then advance its stored cursor (`.planny/cursors.json`) |
 | `decide` | interactive: step through decisions, answer or skip |
 | `resolve <id> --response …\|--accept` | record the operator's answer, mark done |
 | `path <id>` | print the task's file path |

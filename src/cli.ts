@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Command, CommanderError } from 'commander';
+import { catchup } from './catchup.js';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -428,6 +429,53 @@ function buildProgram(io: CliIo): Command {
       } else {
         io.out(text.trimEnd());
       }
+    });
+
+  program
+    .command('catchup')
+    .description('everything that changed since this consumer last asked, then advance its cursor')
+    .option('--as <id>', 'consumer id (defaults to --session / $PLANNY_SESSION)')
+    .option('--peek', 'look without advancing the cursor')
+    .option('--json', 'machine-readable output')
+    .action((options) => {
+      const consumer: string | undefined = options.as ?? actor();
+      if (consumer === undefined) {
+        throw new Error('give --as <id>, or set --session / $PLANNY_SESSION');
+      }
+      const store = open();
+      const result = catchup(store, consumer, { peek: options.peek });
+      if (options.json) {
+        io.out(
+          JSON.stringify(
+            {
+              ...result,
+              resolved: result.resolved.map(({ task, unblocks }) => ({
+                task,
+                unblocks: unblocks.map((t) => t.id),
+              })),
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+      const header =
+        result.since === undefined
+          ? `first catch-up for ${consumer}: full state follows`
+          : `changes since ${result.since}`;
+      io.out(header);
+      if (result.changed.length === 0) {
+        io.out('Nothing changed.');
+      } else {
+        const graph = buildGraph(store.loadAll());
+        io.out(result.changed.map((task) => taskLabel(task, graph)).join('\n'));
+      }
+      for (const { task, unblocks } of result.resolved) {
+        const tail = unblocks.length > 0 ? ` (unblocked ${unblocks.map((t) => t.id).join(', ')})` : '';
+        io.out(`resolved: ${task.id} ${task.name}${tail}`);
+      }
+      if (options.peek) io.out('(peek: cursor not advanced)');
     });
 
   program

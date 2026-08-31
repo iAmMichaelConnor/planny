@@ -318,6 +318,26 @@ describe('attribution and catch-up', () => {
   });
 });
 
+describe('catchup command', () => {
+  it('returns the delta for a consumer and advances its cursor', async () => {
+    await seedTrio();
+    out = [];
+    await run('catchup', '--as', 'agent-x', '--json');
+    const first = JSON.parse(allOut());
+    expect(first.changed).toHaveLength(3);
+    await new Promise((r) => setTimeout(r, 5));
+    out = [];
+    await run('catchup', '--as', 'agent-x', '--json');
+    expect(JSON.parse(allOut()).changed).toHaveLength(0);
+  });
+
+  it('requires a consumer id from --as or the session', async () => {
+    await run('init');
+    expect(await run('catchup')).toBe(1);
+    expect(err.join('\n')).toMatch(/--as|PLANNY_SESSION/);
+  });
+});
+
 describe('progress and export', () => {
   it('progress prints a percentage', async () => {
     await seedTrio();
