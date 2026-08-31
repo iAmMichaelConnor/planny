@@ -126,10 +126,10 @@ beforeEach(async () => {
 });
 
 describe('ui smoke', () => {
-  it('shows the project name and path in the header', () => {
+  it('shows the project name and its directory in the header', () => {
     const label = document.querySelector('#store-label') as HTMLElement;
-    expect(label.textContent).toBe('rocket');
-    expect(label.title).toBe('/home/me/projects/rocket');
+    expect(label.textContent).toContain('rocket');
+    expect(label.textContent).toContain('/home/me/projects/rocket'); // visibly, not hover-only
   });
 
   it('board chips slice the cards by kind and type', () => {

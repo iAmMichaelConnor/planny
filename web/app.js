@@ -221,8 +221,9 @@ function renderMarkdown(text) {
 function render() {
   const { progress } = state.data;
   const label = $('#store-label');
-  label.textContent = state.data.store ? state.data.store.name : '';
-  label.title = state.data.store ? state.data.store.root : '';
+  label.innerHTML = state.data.store
+    ? `${esc(state.data.store.name)} <span class="store-path">${esc(state.data.store.root)}</span>`
+    : '';
   $('#progress-fill').style.width = `${progress.percent}%`;
   $('#progress-text').textContent = `${progress.percent}% · ${progress.done}/${progress.total} done`;
   const openCount = state.data.decisions.filter((d) => !d.blocked).length;

@@ -106,6 +106,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 
 /* Board */
 #store-label { font-size: 12.5px; }
+#store-label .store-path { font-size: 11px; opacity: 0.65; font-family: ui-monospace, monospace; margin-left: 4px; }
 #board-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; }
 #board-filters { margin-bottom: 12px; }
 .column { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }

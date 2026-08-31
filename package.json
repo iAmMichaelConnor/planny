@@ -23,6 +23,22 @@
     "node": ">=20"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iAmMichaelConnor/planny-wanny.git"
+  },
+  "homepage": "https://github.com/iAmMichaelConnor/planny-wanny#readme",
+  "bugs": {
+    "url": "https://github.com/iAmMichaelConnor/planny-wanny/issues"
+  },
+  "keywords": [
+    "tasks",
+    "planning",
+    "ai-agents",
+    "cli",
+    "kanban",
+    "decisions"
+  ],
   "dependencies": {
     "commander": "^14.0.2",
     "yaml": "^2.8.2"
