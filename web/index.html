@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>planny</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>planny</h1>
+  <div id="progress-wrap" title="done / all non-cancelled tasks">
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <span id="progress-text"></span>
+  </div>
+  <nav id="tabs">
+    <button class="tab active" data-view="board">Board</button>
+    <button class="tab" data-view="tree">Tree</button>
+    <button class="tab" data-view="deps">Dependencies</button>
+    <button class="tab" data-view="decisions">Decisions <span id="decision-count"></span></button>
+  </nav>
+  <button id="add-btn" class="primary">+ Add task</button>
+</header>
+
+<main>
+  <section id="view-board" class="view"></section>
+
+  <section id="view-tree" class="view hidden">
+    <div id="tree-filters" class="filters">
+      <span class="filter-group" id="status-filters">
+        <label><input type="checkbox" data-status="todo" checked> todo</label>
+        <label><input type="checkbox" data-status="in-progress" checked> in progress</label>
+        <label><input type="checkbox" data-status="done" checked> done</label>
+        <label><input type="checkbox" data-status="cancelled"> cancelled</label>
+      </span>
+      <select id="kind-filter"><option value="">any kind</option></select>
+      <select id="type-filter">
+        <option value="">any type</option>
+        <option value="task">task</option>
+        <option value="decision">decision</option>
+      </select>
+      <label><input type="checkbox" id="deps-badges" checked> show dependencies</label>
+    </div>
+    <div id="tree-list"></div>
+  </section>
+
+  <section id="view-deps" class="view hidden">
+    <p class="hint">Blockers sit left of the tasks they block. Click a task to edit it.</p>
+    <div id="deps-scroll"><svg id="deps-svg"></svg></div>
+  </section>
+
+  <section id="view-decisions" class="view hidden"></section>
+</main>
+
+<aside id="drawer" class="hidden">
+  <div id="drawer-head">
+    <span id="drawer-title"></span>
+    <button id="drawer-close" title="close">×</button>
+  </div>
+  <div id="drawer-body"></div>
+</aside>
+
+<div id="toasts"></div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -494,5 +494,22 @@ function buildProgram(io: CliIo): Command {
       io.out(`\n${remaining.length} open decision${remaining.length === 1 ? '' : 's'} remaining.`);
     });
 
+  program
+    .command('serve')
+    .description('start the localhost control site')
+    .option('--port <port>', 'port to listen on', (v: string) => Number(v), 5891)
+    .action(async (options) => {
+      const store = open();
+      const { startServer } = await import('./server.js');
+      const running = await startServer(store, options.port);
+      io.out(`planny ui: http://127.0.0.1:${running.port} (ctrl-c to stop)`);
+      // Keep the process alive until interrupted.
+      await new Promise<void>((resolve) => {
+        process.once('SIGINT', resolve);
+        process.once('SIGTERM', resolve);
+      });
+      await running.close();
+    });
+
   return program;
 }

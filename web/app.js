@@ -1,0 +1,594 @@
+'use strict';
+
+const $ = (sel) => document.querySelector(sel);
+
+const state = {
+  data: null,
+  byId: new Map(),
+  view: 'board',
+  selected: null, // task id shown in the drawer, or '__new__'
+  collapsed: new Set(),
+  skippedDecisions: new Set(),
+};
+
+// ---------- data ----------
+
+async function refresh() {
+  const res = await fetch('/api/state');
+  state.data = await res.json();
+  state.byId = new Map(state.data.tasks.map((t) => [t.id, t]));
+  render();
+}
+
+async function api(path, method, body) {
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast(data.error || 'request failed', 'error');
+      return null;
+    }
+    for (const w of data.warnings || []) toast(w, 'warn');
+    await refresh();
+    return data;
+  } catch (err) {
+    toast(err.message, 'error');
+    return null;
+  }
+}
+
+// ---------- helpers ----------
+
+function esc(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
+function toast(message, cls = '') {
+  const div = document.createElement('div');
+  div.className = `toast ${cls}`;
+  div.textContent = message;
+  $('#toasts').appendChild(div);
+  setTimeout(() => div.remove(), 4500);
+}
+
+function childrenOf(id) {
+  return state.data.tasks.filter((t) => t.parent === id);
+}
+
+function activeTasks() {
+  return state.data.tasks.filter((t) => t.status === 'todo' || t.status === 'in-progress');
+}
+
+function ancestorsOf(id) {
+  const out = [];
+  let current = state.byId.get(id);
+  const seen = new Set([id]);
+  while (current && current.parent && state.byId.has(current.parent) && !seen.has(current.parent)) {
+    current = state.byId.get(current.parent);
+    out.push(current);
+    seen.add(current.id);
+  }
+  return out;
+}
+
+function subtreeCounts(id) {
+  let done = 0;
+  let total = 0;
+  const walk = (taskId) => {
+    const task = state.byId.get(taskId);
+    if (!task) return;
+    if (task.status !== 'cancelled') {
+      total += 1;
+      if (task.status === 'done') done += 1;
+    }
+    for (const child of childrenOf(taskId)) walk(child.id);
+  };
+  walk(id);
+  return { done, total };
+}
+
+function badges(task) {
+  const parts = [];
+  if (task.type === 'decision') parts.push('<span class="badge decision">decision</span>');
+  if (task.kind !== 'ai') parts.push(`<span class="badge operator">${esc(task.kind)}</span>`);
+  if (task.model) parts.push(`<span class="badge">${esc(task.model)}</span>`);
+  if (task.blocked) {
+    const blockers = task.blockedBy.filter((id) => {
+      const b = state.byId.get(id);
+      return b && (b.status === 'todo' || b.status === 'in-progress');
+    });
+    parts.push(`<span class="badge blocked">waits on ${esc(blockers.join(', '))}</span>`);
+  }
+  return parts.join('');
+}
+
+// Tiny markdown renderer for decision bodies: headings, bold, italic,
+// inline code, bullet lists, paragraphs.
+function renderMarkdown(text) {
+  const inline = (s) =>
+    esc(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  const blocks = text.split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const heading = /^(#{1,4})\s+(.*)$/.exec(block.trim());
+      if (heading) {
+        const level = Math.min(heading[1].length + 1, 5);
+        return `<h${level}>${inline(heading[2])}</h${level}>`;
+      }
+      const lines = block.split('\n');
+      if (lines.every((l) => /^\s*[-*]\s+/.test(l))) {
+        return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ''))}</li>`).join('')}</ul>`;
+      }
+      return `<p>${lines.map(inline).join('<br>')}</p>`;
+    })
+    .join('\n');
+}
+
+// ---------- rendering ----------
+
+function render() {
+  const { progress } = state.data;
+  $('#progress-fill').style.width = `${progress.percent}%`;
+  $('#progress-text').textContent = `${progress.percent}% · ${progress.done}/${progress.total} done`;
+  const openCount = state.data.decisions.filter((d) => !d.blocked).length;
+  $('#decision-count').textContent = openCount > 0 ? `(${openCount})` : '';
+
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.classList.toggle('active', tab.dataset.view === state.view);
+  }
+  for (const view of document.querySelectorAll('.view')) view.classList.add('hidden');
+  $(`#view-${state.view}`).classList.remove('hidden');
+
+  if (state.view === 'board') renderBoard();
+  if (state.view === 'tree') renderTree();
+  if (state.view === 'deps') renderDeps();
+  if (state.view === 'decisions') renderDecisions();
+  renderDrawer();
+}
+
+function cardHtml(task) {
+  const quick = [];
+  if (task.status === 'todo') quick.push(`<button data-action="start" data-id="${task.id}">start</button>`);
+  if (task.status === 'in-progress') quick.push(`<button data-action="finish" data-id="${task.id}">done</button>`);
+  if (task.status === 'todo' || task.status === 'in-progress') {
+    quick.push(`<button data-action="top" data-id="${task.id}" title="bump to top">▲ top</button>`);
+  }
+  const classes = ['card', task.type === 'decision' ? 'decision' : '', task.blocked ? 'blocked-card' : ''];
+  return `<div class="${classes.join(' ')}" data-id="${task.id}">
+    <span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
+    <div class="badges">${badges(task)}</div>
+    <div class="quick">${quick.join('')}</div>
+  </div>`;
+}
+
+function renderBoard() {
+  const columns = [
+    ['todo', 'To do'],
+    ['in-progress', 'In progress'],
+    ['done', 'Done'],
+    ['cancelled', 'Cancelled'],
+  ];
+  $('#view-board').innerHTML = columns
+    .filter(([status]) => status !== 'cancelled' || state.data.tasks.some((t) => t.status === status))
+    .map(([status, title]) => {
+      const cards = state.data.tasks.filter((t) => t.status === status).map(cardHtml).join('');
+      return `<div class="column"><h2>${title}</h2>${cards || '<p class="muted">—</p>'}</div>`;
+    })
+    .join('');
+}
+
+function treeFilters() {
+  const statuses = [...document.querySelectorAll('#status-filters input:checked')].map(
+    (el) => el.dataset.status,
+  );
+  return {
+    statuses: new Set(statuses),
+    kind: $('#kind-filter').value,
+    type: $('#type-filter').value,
+    showDeps: $('#deps-badges').checked,
+  };
+}
+
+function renderTree() {
+  const kinds = [...new Set(state.data.tasks.map((t) => t.kind))].sort();
+  const kindFilter = $('#kind-filter');
+  const current = kindFilter.value;
+  kindFilter.innerHTML =
+    '<option value="">any kind</option>' +
+    kinds.map((k) => `<option${k === current ? ' selected' : ''}>${esc(k)}</option>`).join('');
+
+  const filters = treeFilters();
+  const matches = (t) =>
+    filters.statuses.has(t.status) &&
+    (filters.kind === '' || t.kind === filters.kind) &&
+    (filters.type === '' || t.type === filters.type);
+  const visible = new Set();
+  for (const task of state.data.tasks) {
+    if (!matches(task)) continue;
+    visible.add(task.id);
+    for (const a of ancestorsOf(task.id)) visible.add(a.id);
+  }
+
+  const nodeHtml = (task) => {
+    if (!visible.has(task.id)) return '';
+    const children = childrenOf(task.id);
+    const isCollapsed = state.collapsed.has(task.id);
+    const twist = children.length > 0
+      ? `<span class="twist" data-action="toggle" data-id="${task.id}">${isCollapsed ? '▸' : '▾'}</span>`
+      : '<span class="twist"></span>';
+    let progressHtml = '';
+    if (children.length > 0) {
+      const { done, total } = subtreeCounts(task.id);
+      if (total > 0) {
+        progressHtml = `<span class="mini-progress" title="${done}/${total} done"><div style="width:${Math.round((done / total) * 100)}%"></div></span><span class="muted" style="font-size:11px">${done}/${total}</span>`;
+      }
+    }
+    const row = `<div class="tree-row" data-id="${task.id}">
+      ${twist}<span class="status-dot ${task.status}"></span>
+      <span class="id">${task.id}</span>
+      <span class="name${task.status === 'done' ? ' done-name' : ''}">${esc(task.name)}</span>
+      ${progressHtml}${filters.showDeps ? badges(task) : badges({ ...task, blocked: false })}
+    </div>`;
+    const childHtml = !isCollapsed && children.length > 0
+      ? `<div class="tree-children">${children.map(nodeHtml).join('')}</div>`
+      : '';
+    return `<div class="tree-node">${row}${childHtml}</div>`;
+  };
+
+  const roots = state.data.tasks.filter((t) => !t.parent || !state.byId.has(t.parent));
+  $('#tree-list').innerHTML =
+    roots.map(nodeHtml).join('') || '<p class="muted">No tasks match the filters.</p>';
+}
+
+function renderDeps() {
+  const involved = state.data.tasks.filter(
+    (t) => t.blocking.length > 0 || t.blockedBy.some((id) => state.byId.has(id)),
+  );
+  const scroll = $('#deps-scroll');
+  if (involved.length === 0) {
+    scroll.innerHTML = '<p class="muted" style="padding:16px">No dependencies between tasks.</p>';
+    return;
+  }
+  if (!$('#deps-svg')) scroll.innerHTML = '<svg id="deps-svg"></svg>';
+
+  const layerOf = new Map();
+  const layer = (id, trail = new Set()) => {
+    if (layerOf.has(id)) return layerOf.get(id);
+    if (trail.has(id)) return 0;
+    trail.add(id);
+    const task = state.byId.get(id);
+    const blockers = task.blockedBy.filter((b) => state.byId.has(b));
+    const value = blockers.length === 0 ? 0 : 1 + Math.max(...blockers.map((b) => layer(b, trail)));
+    layerOf.set(id, value);
+    return value;
+  };
+  for (const t of involved) layer(t.id);
+
+  const perLayer = new Map();
+  const position = new Map();
+  for (const t of involved) {
+    const l = layerOf.get(t.id);
+    const row = perLayer.get(l) || 0;
+    perLayer.set(l, row + 1);
+    position.set(t.id, { l, row });
+  }
+  const boxW = 200;
+  const boxH = 48;
+  const gapX = 70;
+  const gapY = 18;
+  const x = (l) => 20 + l * (boxW + gapX);
+  const y = (row) => 20 + row * (boxH + gapY);
+  const maxLayer = Math.max(...layerOf.values());
+  const maxRows = Math.max(...perLayer.values());
+
+  const edges = [];
+  for (const t of involved) {
+    for (const b of t.blockedBy) {
+      if (!position.has(b)) continue;
+      const from = position.get(b);
+      const to = position.get(t.id);
+      const x1 = x(from.l) + boxW;
+      const y1 = y(from.row) + boxH / 2;
+      const x2 = x(to.l);
+      const y2 = y(to.row) + boxH / 2;
+      const mid = (x1 + x2) / 2;
+      edges.push(`<path class="dep-edge" d="M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2 - 6},${y2}"/>`);
+    }
+  }
+  const nodes = involved.map((t) => {
+    const { l, row } = position.get(t.id);
+    const name = t.name.length > 26 ? `${t.name.slice(0, 25)}…` : t.name;
+    const cls = t.status === 'done' || t.status === 'cancelled' ? 'dep-node done' : 'dep-node';
+    return `<g class="${cls}" data-id="${t.id}" transform="translate(${x(l)},${y(row)})">
+      <rect width="${boxW}" height="${boxH}"/>
+      <text x="10" y="20">${esc(t.id)} ${esc(name)}</text>
+      <text x="10" y="36" class="sub">${t.status}${t.type === 'decision' ? ' · decision' : ''}</text>
+    </g>`;
+  });
+  const svg = $('#deps-svg');
+  svg.setAttribute('width', x(maxLayer) + boxW + 20);
+  svg.setAttribute('height', y(maxRows - 1) + boxH + 20);
+  svg.innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.65"/></marker></defs>${edges.join('')}${nodes.join('')}`;
+}
+
+function renderDecisions() {
+  const view = $('#view-decisions');
+  const items = state.data.decisions
+    .map(({ id, blocked }) => ({ task: state.byId.get(id), blocked }))
+    .filter((d) => d.task && !state.skippedDecisions.has(d.task.id));
+  const past = state.data.tasks.filter((t) => t.type === 'decision' && t.status === 'done');
+
+  const openHtml = items.map(({ task, blocked }) => {
+    const actions = blocked
+      ? `<p class="muted">Waiting on ${esc(task.blockedBy.join(', '))} — answer those first.</p>`
+      : `<div class="decision-actions">
+          <textarea placeholder="Your decision (free-form)…" data-role="response" data-id="${task.id}"></textarea>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="primary" data-action="respond" data-id="${task.id}">Respond</button>
+            <button data-action="accept" data-id="${task.id}">Accept proposal</button>
+            <button data-action="skip" data-id="${task.id}">Skip for now</button>
+          </div>
+        </div>`;
+    return `<div class="decision-card${blocked ? ' blocked' : ''}">
+      <h3><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
+      <div class="badges">${badges(task)}</div>
+      <div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
+      ${actions}
+    </div>`;
+  });
+
+  const pastHtml = past.length > 0
+    ? `<details><summary class="muted">${past.length} resolved decision${past.length === 1 ? '' : 's'}</summary>
+        ${past.map((t) => `<div class="decision-card"><h3><span class="id muted">${t.id}</span> ${esc(t.name)}</h3><div class="decision-body">${renderMarkdown(t.body)}</div></div>`).join('')}
+       </details>`
+    : '';
+
+  view.innerHTML =
+    (openHtml.join('') || '<p class="muted">No open decisions.</p>') + pastHtml;
+}
+
+// ---------- drawer ----------
+
+function renderDrawer() {
+  const drawer = $('#drawer');
+  if (state.selected === null) {
+    drawer.classList.add('hidden');
+    return;
+  }
+  drawer.classList.remove('hidden');
+  const isNew = state.selected === '__new__';
+  const task = isNew
+    ? { name: '', body: '', type: 'task', kind: 'ai', model: '', parent: '', blockedBy: [], status: 'todo' }
+    : state.byId.get(state.selected);
+  if (!task) {
+    state.selected = null;
+    drawer.classList.add('hidden');
+    return;
+  }
+  $('#drawer-title').textContent = isNew ? 'New task' : `${task.id} · ${task.status}`;
+
+  const options = state.data.tasks
+    .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)
+    .join('');
+  const active = activeTasks();
+  const positionValue = active.findIndex((t) => t.id === task.id) + 1;
+
+  const relSection = isNew ? '' : `
+    <div class="drawer-section">
+      ${ancestorsOf(task.id).length > 0 ? `<label>path</label><div>${ancestorsOf(task.id).reverse().map((a) => `${a.id} ${esc(a.name)}`).join(' › ')}</div>` : ''}
+      ${childrenOf(task.id).length > 0 ? `<label>children</label><ul class="rel-list">${childrenOf(task.id).map((c) => `<li data-goto="${c.id}">${c.id} ${esc(c.name)} — ${c.status}</li>`).join('')}</ul>` : ''}
+      ${task.blocking.length > 0 ? `<label>blocks</label><ul class="rel-list">${task.blocking.map((id) => { const b = state.byId.get(id); return `<li data-goto="${id}">${id} ${esc(b ? b.name : '')}</li>`; }).join('')}</ul>` : ''}
+      <label>file</label><div class="file-path">.planny/tasks/${task.id}.md</div>
+    </div>`;
+
+  const statusButtons = isNew ? '' : `
+    <label>status</label>
+    <div class="status-buttons">
+      ${['todo', 'in-progress', 'done'].map((s) => `<button data-status="${s}" class="${task.status === s ? 'current' : ''}">${s}</button>`).join('')}
+      <button data-status="cancelled" class="${task.status === 'cancelled' ? 'current' : ''}">cancel…</button>
+    </div>
+    <div id="cancel-extra" class="hidden">
+      <label>replaced by (comma-separated ids, optional)</label>
+      <input id="f-replaced-by" placeholder="t4, t5">
+      <button id="confirm-cancel" style="margin-top:6px">Confirm cancel</button>
+    </div>`;
+
+  const resolveSection = !isNew && task.type === 'decision' && (task.status === 'todo' || task.status === 'in-progress')
+    ? `<div class="drawer-section">
+        <label>resolve this decision</label>
+        <textarea id="f-resolution" placeholder="The decision, free-form…"></textarea>
+        <div class="row" style="margin-top:6px">
+          <button class="primary" id="resolve-btn">Resolve</button>
+          <button id="accept-btn">Accept proposal</button>
+        </div>
+      </div>`
+    : '';
+
+  const prioritySection = isNew
+    ? `<label>priority</label>
+       <select id="f-priority"><option value="bottom">bottom of list</option><option value="top">top of list</option></select>`
+    : `<label>priority position (of ${active.length} active)</label>
+       <div class="row">
+         <input id="f-position" type="number" min="1" value="${positionValue > 0 ? positionValue : ''}" ${positionValue > 0 ? '' : 'disabled'}>
+         <button data-bump="top">▲ top</button>
+         <button data-bump="bottom">▼ bottom</button>
+         ${positionValue > 0 ? '<button id="set-position">set</button>' : ''}
+       </div>`;
+
+  $('#drawer-body').innerHTML = `
+    <label>name</label><input id="f-name" value="${esc(task.name)}">
+    <label>description (markdown)</label><textarea id="f-desc">${esc(task.body)}</textarea>
+    <div class="row">
+      <div><label>type</label><select id="f-type">
+        <option value="task"${task.type === 'task' ? ' selected' : ''}>task</option>
+        <option value="decision"${task.type === 'decision' ? ' selected' : ''}>decision</option>
+      </select></div>
+      <div><label>kind (owner)</label><input id="f-kind" list="kind-list" value="${esc(task.kind)}">
+        <datalist id="kind-list"><option>ai</option><option>operator</option></datalist></div>
+    </div>
+    <div class="row">
+      <div><label>model (optional)</label><input id="f-model" value="${esc(task.model || '')}"></div>
+      <div><label>parent (optional)</label><input id="f-parent" list="task-ids" value="${esc(task.parent || '')}">
+        <datalist id="task-ids">${options}</datalist></div>
+    </div>
+    <label>waits on (comma-separated ids)</label>
+    <input id="f-blocked-by" value="${esc(task.blockedBy.join(', '))}">
+    ${prioritySection}
+    <div style="margin-top:14px"><button class="primary" id="save-btn">${isNew ? 'Create task' : 'Save changes'}</button></div>
+    ${statusButtons}
+    ${resolveSection}
+    ${relSection}`;
+
+  wireDrawer(task, isNew);
+}
+
+function parseIdList(value) {
+  return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function wireDrawer(task, isNew) {
+  const body = $('#drawer-body');
+  $('#save-btn').onclick = () => {
+    const fields = {
+      name: $('#f-name').value,
+      body: $('#f-desc').value,
+      type: $('#f-type').value,
+      kind: $('#f-kind').value || 'ai',
+      model: $('#f-model').value || null,
+      parent: $('#f-parent').value || null,
+    };
+    const blockedBy = parseIdList($('#f-blocked-by').value);
+    if (isNew) {
+      api('/api/tasks', 'POST', {
+        ...fields,
+        model: fields.model || undefined,
+        parent: fields.parent || undefined,
+        blockedBy,
+        priority: $('#f-priority').value,
+      }).then((res) => {
+        if (res) state.selected = res.task.id;
+      });
+      return;
+    }
+    const addBlockedBy = blockedBy.filter((id) => !task.blockedBy.includes(id));
+    const removeBlockedBy = task.blockedBy.filter((id) => !blockedBy.includes(id));
+    api(`/api/tasks/${task.id}`, 'PATCH', { ...fields, addBlockedBy, removeBlockedBy });
+  };
+
+  if (!isNew) {
+    for (const btn of body.querySelectorAll('[data-status]')) {
+      btn.onclick = () => {
+        if (btn.dataset.status === 'cancelled') {
+          $('#cancel-extra').classList.toggle('hidden');
+          return;
+        }
+        api(`/api/tasks/${task.id}/status`, 'POST', { status: btn.dataset.status });
+      };
+    }
+    const confirmCancel = $('#confirm-cancel');
+    if (confirmCancel) {
+      confirmCancel.onclick = () =>
+        api(`/api/tasks/${task.id}/status`, 'POST', {
+          status: 'cancelled',
+          replacedBy: parseIdList($('#f-replaced-by').value),
+        });
+    }
+    for (const btn of body.querySelectorAll('[data-bump]')) {
+      btn.onclick = () => api(`/api/tasks/${task.id}/bump`, 'POST', { target: btn.dataset.bump });
+    }
+    const setPosition = $('#set-position');
+    if (setPosition) {
+      setPosition.onclick = () =>
+        api(`/api/tasks/${task.id}/bump`, 'POST', { target: Number($('#f-position').value) });
+    }
+    const resolveBtn = $('#resolve-btn');
+    if (resolveBtn) {
+      resolveBtn.onclick = () => {
+        const text = $('#f-resolution').value.trim();
+        if (text === '') {
+          toast('write the decision first, or use Accept proposal', 'warn');
+          return;
+        }
+        api(`/api/tasks/${task.id}/resolve`, 'POST', { response: text });
+      };
+      $('#accept-btn').onclick = () =>
+        api(`/api/tasks/${task.id}/resolve`, 'POST', { response: 'Accepted the proposal.' });
+    }
+    for (const li of body.querySelectorAll('[data-goto]')) {
+      li.onclick = () => {
+        state.selected = li.dataset.goto;
+        renderDrawer();
+      };
+    }
+  }
+}
+
+// ---------- events ----------
+
+document.addEventListener('click', (event) => {
+  const actionEl = event.target.closest('[data-action]');
+  if (actionEl) {
+    const { action, id } = actionEl.dataset;
+    event.stopPropagation();
+    if (action === 'toggle') {
+      state.collapsed.has(id) ? state.collapsed.delete(id) : state.collapsed.add(id);
+      renderTree();
+      return;
+    }
+    if (action === 'start') return void api(`/api/tasks/${id}/status`, 'POST', { status: 'in-progress' });
+    if (action === 'finish') return void api(`/api/tasks/${id}/status`, 'POST', { status: 'done' });
+    if (action === 'top') return void api(`/api/tasks/${id}/bump`, 'POST', { target: 'top' });
+    if (action === 'skip') {
+      state.skippedDecisions.add(id);
+      renderDecisions();
+      return;
+    }
+    if (action === 'accept') return void api(`/api/tasks/${id}/resolve`, 'POST', { response: 'Accepted the proposal.' });
+    if (action === 'respond') {
+      const textarea = document.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
+      const text = textarea ? textarea.value.trim() : '';
+      if (text === '') {
+        toast('write the decision first, or use Accept proposal', 'warn');
+        return;
+      }
+      return void api(`/api/tasks/${id}/resolve`, 'POST', { response: text });
+    }
+  }
+
+  const tab = event.target.closest('.tab');
+  if (tab) {
+    state.view = tab.dataset.view;
+    render();
+    return;
+  }
+
+  const opener = event.target.closest('.card[data-id], .tree-row[data-id], .dep-node[data-id]');
+  if (opener) {
+    state.selected = opener.dataset.id;
+    renderDrawer();
+  }
+});
+
+$('#add-btn').onclick = () => {
+  state.selected = '__new__';
+  renderDrawer();
+};
+$('#drawer-close').onclick = () => {
+  state.selected = null;
+  renderDrawer();
+};
+for (const el of document.querySelectorAll('#tree-filters input, #tree-filters select')) {
+  el.addEventListener('change', renderTree);
+}
+window.addEventListener('focus', refresh);
+
+refresh().catch((err) => toast(err.message, 'error'));
