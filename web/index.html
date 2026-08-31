@@ -9,15 +9,9 @@
 </head>
 <body>
 <header>
-  <div id="brand">
-    <h1>planny</h1>
-    <span id="store-label" class="muted"></span>
-  </div>
-  <button id="theme-btn" class="mini" title="theme: auto">🌓</button>
-  <div id="progress-wrap" title="done / all non-cancelled tasks">
-    <div id="progress-bar"><div id="progress-fill"></div></div>
-    <span id="progress-text"></span>
-  </div>
+  <div class="header-main">
+  <h1>planny</h1>
+  <button id="theme-btn" title="theme: auto">🌓</button>
   <nav id="tabs">
     <button class="tab active" data-view="board">Board</button>
     <button class="tab" data-view="tree">Tree</button>
@@ -25,6 +19,14 @@
     <button class="tab" data-view="decisions">Decisions <span id="decision-count"></span></button>
   </nav>
   <button id="add-btn" class="primary">+ Add task</button>
+  </div>
+  <div class="header-sub">
+    <span id="store-label" class="muted"></span>
+    <div id="progress-wrap" title="done / all non-cancelled tasks">
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+      <span id="progress-text"></span>
+    </div>
+  </div>
 </header>
 
 <main>

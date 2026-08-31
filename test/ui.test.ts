@@ -126,12 +126,15 @@ beforeEach(async () => {
 });
 
 describe('ui smoke', () => {
-  it('stacks the project name and directory under the planny title', () => {
+  it('name/path and progress share a second header row; moon sits left of the tabs', () => {
     const label = document.querySelector('#store-label') as HTMLElement;
     expect(label.textContent).toContain('rocket');
-    expect(label.textContent).toContain('/home/me/projects/rocket'); // visibly, not hover-only
-    expect(label.parentElement!.id).toBe('brand'); // stacked in the brand column
-    expect(label.parentElement!.querySelector('h1')).not.toBeNull();
+    expect(label.textContent).toContain('/home/me/projects/rocket');
+    const sub = label.parentElement as HTMLElement;
+    expect(sub.classList.contains('header-sub')).toBe(true); // the row below
+    expect(sub.querySelector('#progress-wrap')).not.toBeNull(); // progress lives there too
+    const theme = document.querySelector('#theme-btn') as HTMLElement;
+    expect(theme.nextElementSibling!.id).toBe('tabs'); // 🌓 directly left of Board
   });
 
   it('the page declares the emoji favicon', () => {
