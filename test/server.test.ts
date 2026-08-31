@@ -121,6 +121,35 @@ describe('mutations', () => {
   });
 });
 
+describe('events', () => {
+  it('streams a change event when a task file changes', async () => {
+    const res = await fetch(`${base}/api/events`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    addTask(store, { name: 'trigger' });
+    let text = '';
+    const deadline = Date.now() + 3000;
+    while (!text.includes('changed') && Date.now() < deadline) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((r) =>
+          setTimeout(() => r({ done: true, value: undefined }), 300),
+        ),
+      ]);
+      if (chunk.value !== undefined) text += decoder.decode(chunk.value);
+    }
+    expect(text).toContain('changed');
+    await reader.cancel();
+  });
+
+  it('open event streams do not prevent the server from closing', async () => {
+    await fetch(`${base}/api/events`);
+    // afterEach closes the server; hanging there would fail this test by timeout.
+  });
+});
+
 describe('errors', () => {
   it('400s an unknown task id with the message', async () => {
     const res = await patch('/api/tasks/t9', { name: 'x' });

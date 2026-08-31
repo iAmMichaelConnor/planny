@@ -51,8 +51,39 @@ function task(id: string, overrides: Record<string, unknown> = {}) {
 
 const fetchCalls: Array<{ path: string; init?: RequestInit }> = [];
 
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  onmessage: ((event: { data: string }) => void) | null = null;
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this);
+  }
+  close(): void {}
+}
+
+let bootAbort: AbortController | undefined;
+
 function bootApp(): Promise<void> {
   localStorage.clear(); // preferences persist per jsdom origin; each boot starts clean
+  // app.js attaches document/window listeners at boot. The page never boots
+  // twice in real life, but each test re-runs it, so stale instances would
+  // keep handling events. Route every listener through an abort signal and
+  // cut the previous boot's listeners off here.
+  bootAbort?.abort();
+  bootAbort = new AbortController();
+  const signal = bootAbort.signal;
+  for (const target of [document, window] as Array<EventTarget & { __plannyAdd?: typeof EventTarget.prototype.addEventListener }>) {
+    target.__plannyAdd ??= target.addEventListener.bind(target);
+    target.addEventListener = ((
+      type: string,
+      fn: EventListenerOrEventListenerObject,
+      opts?: boolean | AddEventListenerOptions,
+    ) => {
+      const options = typeof opts === 'boolean' ? { capture: opts } : { ...(opts ?? {}) };
+      target.__plannyAdd!(type, fn, { ...options, signal });
+    }) as typeof EventTarget.prototype.addEventListener;
+  }
+  FakeEventSource.instances.length = 0;
+  vi.stubGlobal('EventSource', FakeEventSource);
   const html = readFileSync(join(webDir, 'index.html'), 'utf8');
   document.body.innerHTML = /<body>([\s\S]*)<\/body>/.exec(html)![1]!.replace(
     /<script[\s\S]*?<\/script>/,
@@ -195,11 +226,82 @@ describe('ui smoke', () => {
     expect(JSON.parse(resolve!.init!.body as string).response).toContain('Accepted');
   });
 
-  it('quick actions on cards post status and bump', () => {
+  it('quick actions on cards confirm first, then post status and bump', () => {
+    const declined = vi.fn(() => false);
+    vi.stubGlobal('confirm', declined);
+    (document.querySelector('button[data-action="start"][data-id="t1"]') as HTMLElement).click();
+    expect(declined).toHaveBeenCalledOnce();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
+
+    vi.stubGlobal('confirm', vi.fn(() => true));
     (document.querySelector('button[data-action="start"][data-id="t1"]') as HTMLElement).click();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(true);
     (document.querySelector('button[data-action="top"][data-id="t3"]') as HTMLElement).click();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(true);
+  });
+
+  it('drawer status buttons confirm first', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    (document.querySelector('#drawer-body button[data-status="done"]') as HTMLElement).click();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('#drawer-body button[data-status="done"]') as HTMLElement).click();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(true);
+  });
+
+  it('the set button sits directly beside the position input', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const input = document.querySelector('#f-position') as HTMLElement;
+    expect(input.nextElementSibling?.id).toBe('set-position');
+  });
+
+  it('side-docked drawers start below the header; the bottom dock does not', () => {
+    const header = document.querySelector('header') as HTMLElement;
+    Object.defineProperty(header, 'offsetHeight', { configurable: true, value: 64 });
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const drawer = document.querySelector('#drawer') as HTMLElement;
+
+    (document.querySelector('.dock-btn[data-dock="right"]') as HTMLElement).click();
+    expect(drawer.style.top).toBe('64px');
+    (document.querySelector('.dock-btn[data-dock="left"]') as HTMLElement).click();
+    expect(drawer.style.top).toBe('64px');
+    (document.querySelector('.dock-btn[data-dock="bottom"]') as HTMLElement).click();
+    expect(drawer.style.top).toBe('');
+  });
+
+  it('connects an event stream and refreshes when it fires', async () => {
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0]!.url).toBe('/api/events');
+    const before = fetchCalls.filter((c) => c.path === '/api/state').length;
+    FakeEventSource.instances[0]!.onmessage!({ data: 'changed' });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls.filter((c) => c.path === '/api/state').length).toBe(before + 1);
+  });
+
+  it('a background refresh keeps unsaved drawer edits', async () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'half-typed thought';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect((document.querySelector('#f-desc') as HTMLTextAreaElement).value).toBe(
+      'half-typed thought',
+    );
+  });
+
+  it('a background refresh keeps decision drafts and focus', async () => {
+    clickTab('decisions');
+    const draft = () =>
+      document.querySelector('textarea[data-role="response"][data-id="t4"]') as HTMLTextAreaElement;
+    draft().value = 'leaning towards yes';
+    draft().dispatchEvent(new Event('input', { bubbles: true }));
+    draft().focus();
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(draft().value).toBe('leaning towards yes');
+    expect(document.activeElement).toBe(draft());
   });
 
   it('the drawer left edge drags to resize', () => {
@@ -269,7 +371,35 @@ describe('ui smoke', () => {
     expect(drawer.style.height).toBe(''); // dragged size cleared on dock switch
   });
 
+  it('clicking off the drawer closes it; unsaved edits ask first', async () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const drawer = document.querySelector('#drawer')!;
+    expect(drawer.classList.contains('hidden')).toBe(false);
+    (document.querySelector('main') as HTMLElement).click();
+    expect(drawer.classList.contains('hidden')).toBe(true);
+
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'precious edit';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    (document.querySelector('main') as HTMLElement).click();
+    expect(drawer.classList.contains('hidden')).toBe(false); // decline keeps it open
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('main') as HTMLElement).click();
+    expect(drawer.classList.contains('hidden')).toBe(true);
+  });
+
+  it('the add-task button suggests the agent first and respects a decline', () => {
+    const declined = vi.fn(() => false);
+    vi.stubGlobal('confirm', declined);
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    expect(declined).toHaveBeenCalledOnce();
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(true);
+  });
+
   it('the new-task drawer creates via POST', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
     (document.querySelector('#add-btn') as HTMLElement).click();
     (document.querySelector('#f-name') as HTMLInputElement).value = 'Brand new';
     (document.querySelector('#save-btn') as HTMLElement).click();

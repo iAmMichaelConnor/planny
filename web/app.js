@@ -12,7 +12,16 @@ const state = {
   descExpanded: false,
   depsMode: readPreference('planny-deps-mode', 'blocks'),
   drawerDock: readPreference('planny-drawer-dock', 'right'),
+  drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
+  renderedDrawerId: null,
 };
+
+/** Guardrail for manual state changes: the agent usually does these. */
+function guard(question) {
+  return confirm(
+    `${question}\n\nTip: an AI agent working this plan can make these changes for you — consider asking it instead.`,
+  );
+}
 
 function readPreference(key, fallback) {
   try {
@@ -370,6 +379,14 @@ function renderDeps() {
 
 function renderDecisions() {
   const view = $('#view-decisions');
+  // A background refresh must not eat a half-typed response: carry drafts
+  // (and focus) across the rebuild.
+  const drafts = new Map();
+  let focusedId = null;
+  for (const textarea of view.querySelectorAll('textarea[data-role="response"]')) {
+    if (textarea.value !== '') drafts.set(textarea.dataset.id, textarea.value);
+    if (document.activeElement === textarea) focusedId = textarea.dataset.id;
+  }
   const items = state.data.decisions
     .map(({ id, blocked }) => ({ task: state.byId.get(id), blocked }))
     .filter((d) => d.task && !state.skippedDecisions.has(d.task.id));
@@ -402,6 +419,18 @@ function renderDecisions() {
 
   view.innerHTML =
     (openHtml.join('') || '<p class="muted">No open decisions.</p>') + pastHtml;
+
+  for (const [id, value] of drafts) {
+    const textarea = view.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
+    if (textarea) textarea.value = value;
+  }
+  if (focusedId !== null) {
+    const textarea = view.querySelector(`textarea[data-role="response"][data-id="${focusedId}"]`);
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+  }
 }
 
 // ---------- drawer ----------
@@ -410,9 +439,13 @@ function renderDrawer() {
   const drawer = $('#drawer');
   if (state.selected === null) {
     drawer.classList.add('hidden');
+    state.renderedDrawerId = null;
+    state.drawerDirty = false;
     return;
   }
   drawer.classList.remove('hidden');
+  // A background refresh must not rebuild a form the user is editing.
+  if (state.selected === state.renderedDrawerId && state.drawerDirty) return;
   const isNew = state.selected === '__new__';
   const task = isNew
     ? { name: '', body: '', type: 'task', kind: 'ai', model: '', parent: '', blockedBy: [], status: 'todo' }
@@ -469,9 +502,9 @@ function renderDrawer() {
     : `<label>priority position (of ${active.length} active)</label>
        <div class="row">
          <input id="f-position" type="number" min="1" value="${positionValue > 0 ? positionValue : ''}" ${positionValue > 0 ? '' : 'disabled'}>
+         ${positionValue > 0 ? '<button id="set-position" title="move to the typed position">set</button>' : ''}
          <button data-bump="top" title="move to the top of the priority order">▲ top</button>
          <button data-bump="bottom" title="move to the bottom of the priority order">▼ bottom</button>
-         ${positionValue > 0 ? '<button id="set-position" title="move to the typed position">set</button>' : ''}
        </div>`;
 
   $('#drawer-body').innerHTML = `
@@ -502,6 +535,8 @@ function renderDrawer() {
     ${relSection}`;
 
   wireDrawer(task, isNew);
+  state.renderedDrawerId = state.selected;
+  state.drawerDirty = false;
 }
 
 function parseIdList(value) {
@@ -531,6 +566,7 @@ function wireDrawer(task, isNew) {
   });
   if (state.descExpanded) autosizeDesc();
   $('#save-btn').onclick = () => {
+    state.drawerDirty = false; // saving hands the form back to refreshes
     const fields = {
       name: $('#f-name').value,
       body: $('#f-desc').value,
@@ -564,27 +600,33 @@ function wireDrawer(task, isNew) {
           $('#cancel-extra').classList.toggle('hidden');
           return;
         }
+        if (!guard(`Mark ${task.id} ${btn.dataset.status}?`)) return;
         api(`/api/tasks/${task.id}/status`, 'POST', { status: btn.dataset.status });
       };
     }
     const confirmCancel = $('#confirm-cancel');
     if (confirmCancel) {
-      confirmCancel.onclick = () =>
+      confirmCancel.onclick = () => {
+        if (!guard(`Cancel ${task.id}?`)) return;
         api(`/api/tasks/${task.id}/status`, 'POST', {
           status: 'cancelled',
           replacedBy: parseIdList($('#f-replaced-by').value),
         });
+      };
     }
     for (const btn of body.querySelectorAll('[data-bump]')) {
       btn.onclick = () => {
-        if (!confirm(`Move ${task.id} to the ${btn.dataset.bump} of the priority order?`)) return;
+        if (!guard(`Move ${task.id} to the ${btn.dataset.bump} of the priority order?`)) return;
         api(`/api/tasks/${task.id}/bump`, 'POST', { target: btn.dataset.bump });
       };
     }
     const setPosition = $('#set-position');
     if (setPosition) {
-      setPosition.onclick = () =>
-        api(`/api/tasks/${task.id}/bump`, 'POST', { target: Number($('#f-position').value) });
+      setPosition.onclick = () => {
+        const position = Number($('#f-position').value);
+        if (!guard(`Move ${task.id} to position ${position}?`)) return;
+        api(`/api/tasks/${task.id}/bump`, 'POST', { target: position });
+      };
     }
     const resolveBtn = $('#resolve-btn');
     if (resolveBtn) {
@@ -620,9 +662,18 @@ document.addEventListener('click', (event) => {
       renderTree();
       return;
     }
-    if (action === 'start') return void api(`/api/tasks/${id}/status`, 'POST', { status: 'in-progress' });
-    if (action === 'finish') return void api(`/api/tasks/${id}/status`, 'POST', { status: 'done' });
-    if (action === 'top') return void api(`/api/tasks/${id}/bump`, 'POST', { target: 'top' });
+    if (action === 'start') {
+      if (guard(`Start ${id} (mark it in progress)?`)) api(`/api/tasks/${id}/status`, 'POST', { status: 'in-progress' });
+      return;
+    }
+    if (action === 'finish') {
+      if (guard(`Mark ${id} done?`)) api(`/api/tasks/${id}/status`, 'POST', { status: 'done' });
+      return;
+    }
+    if (action === 'top') {
+      if (guard(`Move ${id} to the top of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'top' });
+      return;
+    }
     if (action === 'skip') {
       state.skippedDecisions.add(id);
       renderDecisions();
@@ -651,8 +702,26 @@ document.addEventListener('click', (event) => {
   if (opener) {
     state.selected = opener.dataset.id;
     renderDrawer();
+    return;
+  }
+
+  // A click on dead space, anywhere outside the drawer, closes it.
+  if (
+    state.selected !== null &&
+    !event.target.closest('#drawer') &&
+    !event.target.closest('button, input, select, textarea, label, a, summary')
+  ) {
+    if (state.drawerDirty && !confirm('Close the panel and discard unsaved changes?')) return;
+    state.selected = null;
+    renderDrawer();
   }
 });
+
+/** Side docks start below the header so the tabs stay reachable. */
+function positionDrawer() {
+  $('#drawer').style.top =
+    state.drawerDock === 'bottom' ? '' : `${document.querySelector('header').offsetHeight}px`;
+}
 
 function applyDock() {
   const drawer = $('#drawer');
@@ -660,6 +729,7 @@ function applyDock() {
   drawer.classList.toggle('dock-bottom', state.drawerDock === 'bottom');
   drawer.style.width = '';
   drawer.style.height = '';
+  positionDrawer();
   for (const btn of document.querySelectorAll('.dock-btn')) {
     btn.classList.toggle('active', btn.dataset.dock === state.drawerDock);
   }
@@ -703,9 +773,24 @@ applyDock();
 }
 
 $('#add-btn').onclick = () => {
+  if (
+    !confirm(
+      'Add a task by hand?\n\nTip: you can also ask your AI agent to add it — it fills in the description, relationships and priority for you.',
+    )
+  ) {
+    return;
+  }
   state.selected = '__new__';
   renderDrawer();
 };
+$('#drawer-body').addEventListener('input', () => {
+  state.drawerDirty = true;
+});
+window.addEventListener('resize', positionDrawer);
+if (typeof EventSource !== 'undefined') {
+  // The server pushes an event whenever any task file changes (CLI edits included).
+  new EventSource('/api/events').onmessage = () => refresh();
+}
 $('#drawer-close').onclick = () => {
   state.selected = null;
   renderDrawer();

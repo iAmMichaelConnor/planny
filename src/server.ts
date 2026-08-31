@@ -1,6 +1,8 @@
+import { watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { dirname } from 'node:path';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -43,7 +45,27 @@ class HttpError extends Error {
 }
 
 export async function startServer(store: Store, port: number): Promise<RunningServer> {
+  // Live updates: watch the task files and tell every open page to re-fetch.
+  const clients = new Set<ServerResponse>();
+  let debounce: NodeJS.Timeout | undefined;
+  const watcher = watch(dirname(store.path('t0')), { persistent: false }, () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      for (const client of clients) client.write('data: changed\n\n');
+    }, 80);
+  });
+
   const server = createServer((req, res) => {
+    if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/api/events') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+      });
+      res.write('retry: 1000\n\n');
+      clients.add(res);
+      req.on('close', () => clients.delete(res));
+      return;
+    }
     handle(store, req, res).catch((error: unknown) => {
       const status = error instanceof HttpError ? error.status : 400;
       sendJson(res, status, { error: (error as Error).message });
@@ -52,8 +74,15 @@ export async function startServer(store: Store, port: number): Promise<RunningSe
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   return {
     port: (server.address() as AddressInfo).port,
-    close: () =>
-      new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    close: () => {
+      clearTimeout(debounce);
+      watcher.close();
+      for (const client of clients) client.end();
+      clients.clear();
+      return new Promise((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    },
   };
 }
 

@@ -188,7 +188,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   width: 50vw;
   min-width: 320px;
   max-width: 95vw;
-  height: 100vh;
+  bottom: 0;
+  height: auto;
   background: var(--panel);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow);
