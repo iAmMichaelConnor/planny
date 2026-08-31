@@ -24,6 +24,18 @@ const state = {
   descExpanded: true, // always the default on open; collapse is per-view only
 };
 
+/** An edit happened in the drawer: enable Save and show the reminder. */
+function markDirty() {
+  state.drawerDirty = true;
+  const save = $('#save-btn');
+  if (save) {
+    save.disabled = false;
+    save.removeAttribute('title');
+  }
+  const note = $('#unsaved-note');
+  if (note) note.hidden = false;
+}
+
 /** Guardrail for manual state changes: the agent usually does these. */
 function guard(question) {
   return confirm(
@@ -550,9 +562,6 @@ function renderDrawer() {
   const otherOptions = others
     .map((t) => `<option value="${t.id}"${t.id === task.parent ? ' selected' : ''}>${t.id} ${esc(t.name)}</option>`)
     .join('');
-  const blockedOptions = others
-    .map((t) => `<option value="${t.id}"${task.blockedBy.includes(t.id) ? ' selected' : ''}>${t.id} ${esc(t.name)}</option>`)
-    .join('');
   const active = activeTasks();
   const positionValue = task.position ?? 0; // served by the API; 0 when inactive or new
 
@@ -640,15 +649,21 @@ function renderDrawer() {
         </div>
         <datalist id="task-ids">${options}</datalist></div>
     </div>
-    <label>waits on (comma-separated ids)</label>
-    <div class="combo">
-      <input id="f-blocked-by" value="${esc(task.blockedBy.join(', '))}">
-      <select id="f-blocked-pick" multiple size="4" title="pick blockers (adds to the text box)">
-        ${blockedOptions}
-      </select>
+    <label>waits on (comma-separated ids — click for a picker)</label>
+    <div class="picker-wrap">
+      <input id="f-blocked-by" value="${esc(task.blockedBy.join(', '))}" autocomplete="off">
+      <div id="blocked-menu" class="picker-menu" hidden>
+        ${others
+          .map(
+            (t) =>
+              `<label class="picker-item"><input type="checkbox" value="${t.id}"${task.blockedBy.includes(t.id) ? ' checked' : ''}> ${t.id} ${esc(t.name)}</label>`,
+          )
+          .join('')}
+      </div>
     </div>
     ${prioritySection}
-    <div style="margin-top:14px"><button class="primary" id="save-btn"${isNew ? '' : ' disabled title="type a change first"'}>${isNew ? 'Create task' : 'Save changes'}</button></div>
+    <div style="margin-top:14px"><button class="primary" id="save-btn"${isNew ? '' : ' disabled title="type a change first"'}>${isNew ? 'Create task' : 'Save changes'}</button>
+      <span id="unsaved-note" class="muted" hidden>changes not saved</span></div>
     ${statusButtons}
     ${relSection}`;
 
@@ -697,6 +712,8 @@ function wireDrawer(task, isNew) {
   });
   $('#save-btn').onclick = () => {
     state.drawerDirty = false; // saving hands the form back to refreshes
+    const note = $('#unsaved-note');
+    if (note) note.hidden = true;
     const fields = {
       name: $('#f-name').value,
       body: $('#f-desc').value,
@@ -727,22 +744,34 @@ function wireDrawer(task, isNew) {
   if (parentPick) {
     parentPick.onchange = () => {
       $('#f-parent').value = parentPick.value;
-      state.drawerDirty = true;
-      const save = $('#save-btn');
-      if (save) save.disabled = false;
+      markDirty();
     };
   }
-  const blockedPick = $('#f-blocked-pick');
-  if (blockedPick) {
-    blockedPick.onchange = () => {
-      const known = new Set([...blockedPick.options].map((o) => o.value));
-      const typedUnknown = parseIdList($('#f-blocked-by').value).filter((id) => !known.has(id));
-      const picked = [...blockedPick.selectedOptions].map((o) => o.value);
-      $('#f-blocked-by').value = [...typedUnknown, ...picked].join(', ');
-      state.drawerDirty = true;
-      const save = $('#save-btn');
-      if (save) save.disabled = false;
+  const blockedMenu = $('#blocked-menu');
+  if (blockedMenu) {
+    const blockedInput = $('#f-blocked-by');
+    const syncChecks = () => {
+      const current = new Set(parseIdList(blockedInput.value));
+      for (const box of blockedMenu.querySelectorAll('input[type="checkbox"]')) {
+        box.checked = current.has(box.value);
+      }
     };
+    blockedInput.addEventListener('focus', () => {
+      syncChecks();
+      blockedMenu.hidden = false;
+    });
+    blockedInput.addEventListener('input', syncChecks);
+    blockedMenu.addEventListener('change', () => {
+      const known = new Set(
+        [...blockedMenu.querySelectorAll('input[type="checkbox"]')].map((b) => b.value),
+      );
+      const typedUnknown = parseIdList(blockedInput.value).filter((id) => !known.has(id));
+      const picked = [...blockedMenu.querySelectorAll('input[type="checkbox"]:checked')].map(
+        (b) => b.value,
+      );
+      blockedInput.value = [...typedUnknown, ...picked].join(', ');
+      markDirty();
+    });
   }
   const addChild = $('#add-child-btn');
   if (addChild) {
@@ -822,6 +851,10 @@ function wireDrawer(task, isNew) {
 // ---------- events ----------
 
 document.addEventListener('click', (event) => {
+  // The waits-on picker closes on any click outside its wrap.
+  const blockedMenu = $('#blocked-menu');
+  if (blockedMenu && !event.target.closest('.picker-wrap')) blockedMenu.hidden = true;
+
   const filterChip = event.target.closest('.chip[data-scope]');
   if (filterChip) {
     const { scope, status, kind, type, toggle } = filterChip.dataset;
@@ -992,14 +1025,7 @@ $('#add-note-dismiss').onclick = () => {
   writePreference('planny-add-note-dismissed', '1');
   openNewTaskForm();
 };
-$('#drawer-body').addEventListener('input', () => {
-  state.drawerDirty = true;
-  const save = $('#save-btn');
-  if (save) {
-    save.disabled = false;
-    save.removeAttribute('title');
-  }
-});
+$('#drawer-body').addEventListener('input', markDirty);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !$('#add-note').classList.contains('hidden')) {
     event.preventDefault();

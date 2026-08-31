@@ -532,22 +532,52 @@ describe('ui smoke', () => {
     expect((document.querySelector('#desc-toggle') as HTMLElement).getAttribute('tabindex')).toBe('-1');
   });
 
-  it('parent and waits-on offer pickers alongside the text inputs', () => {
+  it('parent offers a picker alongside the text input', () => {
     (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
     const parentPick = document.querySelector('#f-parent-pick') as HTMLSelectElement;
     expect(parentPick).not.toBeNull();
     parentPick.value = 't1';
     parentPick.dispatchEvent(new Event('change', { bubbles: true }));
     expect((document.querySelector('#f-parent') as HTMLInputElement).value).toBe('t1');
+  });
 
-    const blockedPick = document.querySelector('#f-blocked-pick') as HTMLSelectElement;
-    expect(blockedPick.multiple).toBe(true);
-    const optionT2 = [...blockedPick.options].find((o) => o.value === 't2')!;
-    optionT2.selected = true;
-    blockedPick.dispatchEvent(new Event('change', { bubbles: true }));
-    const text = (document.querySelector('#f-blocked-by') as HTMLInputElement).value;
-    expect(text).toContain('t1'); // existing blocker kept
-    expect(text).toContain('t2'); // picked one added
+  it('waits-on is one input whose menu opens on focus and truly multi-toggles', () => {
+    (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
+    expect(document.querySelector('#f-blocked-pick')).toBeNull(); // the second box is gone
+    const input = document.querySelector('#f-blocked-by') as HTMLInputElement;
+    const menu = document.querySelector('#blocked-menu') as HTMLElement;
+    expect(menu.hidden).toBe(true);
+    input.dispatchEvent(new Event('focus'));
+    expect(menu.hidden).toBe(false);
+
+    const boxT1 = menu.querySelector('input[value="t1"]') as HTMLInputElement;
+    expect(boxT1.checked).toBe(true); // reflects the existing blocker
+    const boxT2 = menu.querySelector('input[value="t2"]') as HTMLInputElement;
+    boxT2.checked = true;
+    boxT2.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(input.value).toContain('t1');
+    expect(input.value).toContain('t2'); // clicking another adds, comma-separated
+
+    boxT1.checked = false;
+    boxT1.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(input.value).not.toContain('t1'); // unclicking removes
+    expect(input.value).toContain('t2');
+
+    (document.querySelector('main') as HTMLElement).click();
+    expect(menu.hidden).toBe(true); // clicking elsewhere closes the menu
+  });
+
+  it('an edited form says "changes not saved" until save is clicked', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const note = document.querySelector('#unsaved-note') as HTMLElement;
+    expect(note.hidden).toBe(true);
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'edited';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toMatch(/changes not saved/i);
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    expect((document.querySelector('#unsaved-note') as HTMLElement).hidden).toBe(true);
   });
 
   it('the quoted Do-this copy button sits beside the title', async () => {
