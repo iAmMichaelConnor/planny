@@ -413,8 +413,41 @@ describe('ui smoke', () => {
     expect(bumped('bottom')).toBe(true);
     const input = tile().querySelector('input[data-role="pos-input"]') as HTMLInputElement;
     input.value = '2';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     (tile().querySelector('button[data-action="set-pos"]') as HTMLElement).click();
     expect(bumped(2)).toBe(true);
+  });
+
+  it('set stays disabled until the position number actually changes', () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const tile = () =>
+      document.querySelector('#view-decisions .decision-card[data-id="t4"]') as HTMLElement;
+    const setBtn = () => tile().querySelector('button[data-action="set-pos"]') as HTMLButtonElement;
+    const input = () => tile().querySelector('input[data-role="pos-input"]') as HTMLInputElement;
+
+    expect(setBtn().disabled).toBe(true); // untouched: nothing to set
+    input().value = '2';
+    input().dispatchEvent(new Event('input', { bubbles: true }));
+    expect(setBtn().disabled).toBe(false); // modified: now clickable
+    input().value = '';
+    input().dispatchEvent(new Event('input', { bubbles: true }));
+    expect(setBtn().disabled).toBe(true); // back to the original: disabled again
+  });
+
+  it('skip explains it deletes nothing, and cancel closes the decision', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    clickTab('decisions');
+    expandDecision('t4');
+    const tile = () =>
+      document.querySelector('#view-decisions .decision-card[data-id="t4"]') as HTMLElement;
+    const skip = tile().querySelector('button[data-action="skip"]') as HTMLElement;
+    expect(skip.title).toMatch(/nothing is deleted/i);
+
+    (tile().querySelector('button[data-action="cancel-decision"]') as HTMLElement).click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status');
+    expect(call).toBeDefined();
+    expect(JSON.parse(call!.init!.body as string).status).toBe('cancelled');
   });
 
   it('renders open and resolved decisions with markdown bodies', () => {

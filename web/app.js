@@ -492,16 +492,17 @@ function renderDecisions() {
           <div style="display:flex;flex-direction:column;gap:6px">
             <button class="primary" data-action="respond" data-id="${task.id}">Respond</button>
             <button data-action="accept" data-id="${task.id}">Accept proposal</button>
-            <button data-action="skip" data-id="${task.id}">Skip for now</button>
+            <button data-action="skip" data-id="${task.id}" title="Hide this decision in this tab until the page reloads. It stays open for everyone and nothing is deleted or written to the store.">Skip for now</button>
+            <button data-action="cancel-decision" data-id="${task.id}" title="Mark the decision cancelled: the question no longer needs an answer. The task keeps its file — nothing is deleted.">Cancel decision</button>
           </div>
         </div>`;
     const expanded = state.expandedDecisions.has(task.id);
     // Priority moves reuse the shared bump funnel (same delegated actions
     // and API the cards and drawer use).
     const priority = `<div class="decision-priority row">
-        <span class="muted">priority${task.position > 0 ? ` #${task.position}` : ''} of ${activeTasks().length} active</span>
-        <input type="number" min="1" data-role="pos-input" data-id="${task.id}" value="${task.position > 0 ? task.position : ''}">
-        <button class="mini" data-action="set-pos" data-id="${task.id}" title="move to the typed position">set</button>
+        <span class="muted">priority${task.position > 0 ? ` #${task.position}` : ''} of ${activeTasks().length} open tasks</span>
+        <input type="number" min="1" data-role="pos-input" data-id="${task.id}" data-initial="${task.position > 0 ? task.position : ''}" value="${task.position > 0 ? task.position : ''}">
+        <button class="mini" data-action="set-pos" data-id="${task.id}" title="move to the typed position" disabled>set</button>
         <button class="mini" data-action="top" data-id="${task.id}" title="move to the top of the priority order">▲ top</button>
         <button class="mini" data-action="bottom" data-id="${task.id}" title="move to the bottom of the priority order">▼ bottom</button>
       </div>`;
@@ -634,7 +635,7 @@ function renderDrawer() {
   const prioritySection = isNew
     ? `<label>priority</label>
        <select id="f-priority"><option value="bottom">bottom of list</option><option value="top">top of list</option></select>`
-    : `<label>priority position (of ${active.length} active)</label>
+    : `<label>priority position (of ${active.length} open tasks)</label>
        <div class="row">
          <input id="f-position" type="number" min="1" value="${positionValue > 0 ? positionValue : ''}" ${positionValue > 0 ? '' : 'disabled'}>
          ${positionValue > 0 ? '<button id="set-position" title="move to the typed position">set</button>' : ''}
@@ -929,6 +930,11 @@ document.addEventListener('click', (event) => {
       if (guard(`Move ${id} to the bottom of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'bottom' });
       return;
     }
+    if (action === 'cancel-decision') {
+      if (guard(`Cancel ${id}? The question stays on file as cancelled — nothing is deleted.`))
+        api(`/api/tasks/${id}/status`, 'POST', { status: 'cancelled' });
+      return;
+    }
     if (action === 'set-pos') {
       const input = document.querySelector(`input[data-role="pos-input"][data-id="${id}"]`);
       const position = Number(input && input.value);
@@ -1062,6 +1068,15 @@ function openNewTaskForm(parentId) {
   state.drawerDirty = false;
   renderDrawer();
 }
+
+// The set button only means something once the typed position differs
+// from the task's current one.
+document.addEventListener('input', (event) => {
+  const input = event.target.closest?.('input[data-role="pos-input"]');
+  if (!input) return;
+  const btn = document.querySelector(`button[data-action="set-pos"][data-id="${input.dataset.id}"]`);
+  if (btn) btn.disabled = input.value === input.dataset.initial;
+});
 
 $('#search').addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
