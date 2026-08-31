@@ -496,11 +496,20 @@ function renderDecisions() {
           </div>
         </div>`;
     const expanded = state.expandedDecisions.has(task.id);
+    // Priority moves reuse the shared bump funnel (same delegated actions
+    // and API the cards and drawer use).
+    const priority = `<div class="decision-priority row">
+        <span class="muted">priority${task.position > 0 ? ` #${task.position}` : ''} of ${activeTasks().length} active</span>
+        <input type="number" min="1" data-role="pos-input" data-id="${task.id}" value="${task.position > 0 ? task.position : ''}">
+        <button class="mini" data-action="set-pos" data-id="${task.id}" title="move to the typed position">set</button>
+        <button class="mini" data-action="top" data-id="${task.id}" title="move to the top of the priority order">▲ top</button>
+        <button class="mini" data-action="bottom" data-id="${task.id}" title="move to the bottom of the priority order">▼ bottom</button>
+      </div>`;
     return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}" data-action="toggle-decision" data-id="${task.id}">
       <h3><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
       <div class="badges">${badges(task)}</div>
       ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
-      ${actions}` : ''}
+      ${actions}${priority}` : ''}
     </div>`;
   });
 
@@ -914,6 +923,20 @@ document.addEventListener('click', (event) => {
     }
     if (action === 'top') {
       if (guard(`Move ${id} to the top of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'top' });
+      return;
+    }
+    if (action === 'bottom') {
+      if (guard(`Move ${id} to the bottom of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'bottom' });
+      return;
+    }
+    if (action === 'set-pos') {
+      const input = document.querySelector(`input[data-role="pos-input"][data-id="${id}"]`);
+      const position = Number(input && input.value);
+      if (!Number.isInteger(position) || position < 1) {
+        toast('type a position number first', 'warn');
+        return;
+      }
+      api(`/api/tasks/${id}/bump`, 'POST', { target: position });
       return;
     }
     if (action === 'toggle-decision') {

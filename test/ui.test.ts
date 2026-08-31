@@ -394,6 +394,29 @@ describe('ui smoke', () => {
     expect(document.querySelector('#view-decisions .skipped-row')).not.toBeNull();
   });
 
+  it('an expanded decision tile offers priority controls that post bumps', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    clickTab('decisions');
+    expandDecision('t4');
+    const tile = () =>
+      document.querySelector('#view-decisions .decision-card[data-id="t4"]') as HTMLElement;
+    const bumped = (target: unknown) =>
+      fetchCalls.some(
+        (c) =>
+          c.path === '/api/tasks/t4/bump' &&
+          JSON.parse(c.init!.body as string).target === target,
+      );
+
+    (tile().querySelector('button[data-action="top"]') as HTMLElement).click();
+    expect(bumped('top')).toBe(true);
+    (tile().querySelector('button[data-action="bottom"]') as HTMLElement).click();
+    expect(bumped('bottom')).toBe(true);
+    const input = tile().querySelector('input[data-role="pos-input"]') as HTMLInputElement;
+    input.value = '2';
+    (tile().querySelector('button[data-action="set-pos"]') as HTMLElement).click();
+    expect(bumped(2)).toBe(true);
+  });
+
   it('renders open and resolved decisions with markdown bodies', () => {
     clickTab('decisions');
     expandDecision('t4');

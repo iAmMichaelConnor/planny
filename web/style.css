@@ -253,6 +253,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .decision-card[data-action="toggle-decision"] { cursor: pointer; }
 .decision-card h3 { user-select: none; }
 .decision-card .decision-actions { cursor: auto; }
+.decision-priority { display: flex; align-items: center; gap: 8px; margin-top: 12px; cursor: auto; font-size: 13px; }
+.decision-priority input { width: 60px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; color: inherit; font: inherit; }
 .decision-card .disclose { display: inline-block; width: 1em; font-size: 0.8em; }
 .decision-card.collapsed { padding: 10px 20px; margin-bottom: 8px; }
 .decision-card.collapsed .badges { margin: 0; }
