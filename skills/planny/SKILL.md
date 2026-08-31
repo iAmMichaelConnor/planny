@@ -142,6 +142,19 @@ Write the body using the section layout in
 before writing your first decision. Blocked work gets `--blocked-by` pointing
 at the decision, so the queue reflects what each answer unlocks.
 
+**Uncertainty gates work.** When you are unsure an approach is right, when
+you have flagged complexity, risk or downsides, or when the operator has
+expressed concern or uncertainty about a piece of work — the go/no-go
+becomes a decision task before any agent builds it. If a plain task
+already covers the work, either convert it
+(`planny update <id> --type decision --kind operator`, rewriting the body
+into the decision layout with the analysis folded in) or add a decision
+alongside that blocks it (`planny add "Decide …" --type decision
+--kind operator --blocks <id>`). Convert when the whole task *is* the
+question; add alongside when the task has agreed work plus one contested
+aspect. Either way, an agent walking the queue then meets an operator
+decision instead of silently attempting contested work.
+
 ### Working the decision queue
 
 - `planny decisions [--json]` lists open decisions in answering order
