@@ -29,6 +29,11 @@ Rules that keep the store consistent:
   without a definition.
 - A task that needs several owners (plan, build, review) becomes child tasks,
   each with one owner.
+- **Every feature request, bug report, or change of plan becomes a task
+  first** — `planny add` it the moment the user asks, in any phrasing,
+  including a mid-conversation aside. Then work it: `start` when you begin,
+  `done` when it ships. A request tracked only in chat, a TODO comment, or
+  your own head is a request that gets lost.
 
 ## The action map
 
@@ -36,7 +41,7 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 
 | The user says | Run |
 | --- | --- |
-| "add a task …", "we should also …" | `planny add "<name>" -d "<detail>" [--parent] [--blocked-by] [--kind] [--model]` |
+| "add a task …", "we should also …", any feature request or bug report | `planny add "<name>" -d "<detail>" [--parent] [--blocked-by] [--kind] [--model]` — record it before building it |
 | "break X into pieces" | `planny add "<piece>" --parent <X>` per piece |
 | "X is done" / "start X" / "reopen X" | `planny done <X>` / `planny start <X>` / `planny todo <X>` |
 | "drop X" / "X is replaced by Y" | `planny cancel <X> [--replaced-by <Y>]` |
