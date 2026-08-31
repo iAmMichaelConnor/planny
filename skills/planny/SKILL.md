@@ -56,10 +56,11 @@ Rules that keep the store consistent:
 - **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
   at the start of a session (or pass `--session <id>` before any
   subcommand). If your harness runs each command in a fresh shell, the
-  export does not survive between commands — prefix each command instead:
-  `PLANNY_SESSION=<id> planny …`. Do not stash the flag in a shell
-  variable (`S="--session <id>"; planny $S …`): zsh does not word-split
-  unquoted variables, so the whole string arrives as one unknown option.
+  export does not survive between commands. The form that works in every
+  shell and every harness is the environment prefix, written out on each
+  command: `PLANNY_SESSION=<id> planny …`. Type it in full each time; do
+  not build command fragments in shell variables — expansion rules differ
+  between shells, and the flag can arrive as one broken token.
   Creates then stamp `created_by`, and the task's history logs
   every status change, priority move, re-parent, dependency edit and rename
   with `{at, …, by}`, so the operator can see which agent did what.
