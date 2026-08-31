@@ -403,9 +403,11 @@ function renderDecisions() {
     if (textarea.value !== '') drafts.set(textarea.dataset.id, textarea.value);
     if (document.activeElement === textarea) focusedId = textarea.dataset.id;
   }
-  const items = state.data.decisions
+  const all = state.data.decisions
     .map(({ id, blocked }) => ({ task: state.byId.get(id), blocked }))
-    .filter((d) => d.task && !state.skippedDecisions.has(d.task.id));
+    .filter((d) => d.task);
+  const items = all.filter((d) => !state.skippedDecisions.has(d.task.id));
+  const skipped = all.filter((d) => state.skippedDecisions.has(d.task.id));
   const past = state.data.tasks.filter((t) => t.type === 'decision' && t.status === 'done');
 
   const openHtml = items.map(({ task, blocked }) => {
@@ -433,8 +435,22 @@ function renderDecisions() {
        </details>`
     : '';
 
+  const skippedHtml = skipped.length > 0
+    ? `<div class="skipped-list">
+        <h4 class="muted">Skipped for now (still open)</h4>
+        ${skipped
+          .map(
+            ({ task }) => `<div class="skipped-row">
+              <span class="id muted">${task.id}</span> ${esc(task.name)}
+              <button class="mini" data-action="unskip" data-id="${task.id}">bring back</button>
+            </div>`,
+          )
+          .join('')}
+      </div>`
+    : '';
+
   view.innerHTML =
-    (openHtml.join('') || '<p class="muted">No open decisions.</p>') + pastHtml;
+    (openHtml.join('') || '<p class="muted">No open decisions.</p>') + skippedHtml + pastHtml;
 
   for (const [id, value] of drafts) {
     const textarea = view.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
@@ -700,6 +716,11 @@ document.addEventListener('click', (event) => {
     }
     if (action === 'skip') {
       state.skippedDecisions.add(id);
+      renderDecisions();
+      return;
+    }
+    if (action === 'unskip') {
+      state.skippedDecisions.delete(id);
       renderDecisions();
       return;
     }

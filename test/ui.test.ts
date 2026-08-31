@@ -233,6 +233,23 @@ describe('ui smoke', () => {
     expect(JSON.parse(patch!.init!.body as string).name).toBe('Renamed');
   });
 
+  it('a skipped decision moves to a visible skipped list and can come back', () => {
+    clickTab('decisions');
+    (document.querySelector('button[data-action="skip"][data-id="t4"]') as HTMLElement).click();
+    const view = document.querySelector('#view-decisions')!;
+    expect(view.textContent).toContain('Skipped for now');
+    expect(view.textContent).toContain('Choose hosting'); // still visible, not vanished
+    expect(document.querySelector('textarea[data-role="response"][data-id="t4"]')).toBeNull();
+
+    (document.querySelector('button[data-action="unskip"][data-id="t4"]') as HTMLElement).click();
+    expect(document.querySelector('textarea[data-role="response"][data-id="t4"]')).not.toBeNull();
+    expect(view.textContent).not.toContain('Skipped for now');
+    // Skipping is a view preference: nothing was written to the store.
+    expect(fetchCalls.some((c) => c.path.includes('/resolve') || c.path.includes('/status'))).toBe(
+      false,
+    );
+  });
+
   it('accepting a decision posts a resolve', () => {
     clickTab('decisions');
     (document.querySelector('button[data-action="accept"][data-id="t4"]') as HTMLElement).click();
