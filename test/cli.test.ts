@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -218,6 +218,51 @@ describe('decisions', () => {
     await seedTrio();
     expect(await run('resolve', 't1', '--response', 'x')).toBe(1);
     expect(err.join('\n')).toMatch(/decision/i);
+  });
+});
+
+describe('doctor', () => {
+  const brokenTask = (id: string, extra: string): string =>
+    `---\nid: ${id}\nname: broken ${id}\nstatus: todo\ntype: task\nkind: ai\npriority: ${Number(id.slice(1)) * 10}\n${extra}created: 2026-08-31T12:00:00.000Z\nupdated: 2026-08-31T12:00:00.000Z\n---\n`;
+
+  it('reports a healthy store and exits 0', async () => {
+    await seedTrio();
+    expect(await run('doctor')).toBe(0);
+    expect(allOut()).toMatch(/healthy/i);
+  });
+
+  it('lists problems and exits 1 when errors exist', async () => {
+    await seedTrio();
+    writeFileSync(join(dir, '.planny', 'tasks', 't1.md'), 'garbage');
+    expect(await run('doctor')).toBe(1);
+    expect(allOut()).toContain('unreadable-file');
+    expect(err.join('\n')).toMatch(/1 error/);
+  });
+
+  it('--fix repairs the safe problems and exits 0', async () => {
+    await seedTrio();
+    writeFileSync(
+      join(dir, '.planny', 'tasks', 't2.md'),
+      brokenTask('t2', 'blocked_by:\n  - t9\n'),
+    );
+    expect(await run('doctor', '--fix')).toBe(0);
+    expect(allOut()).toMatch(/fixed/i);
+    out = [];
+    await run('show', 't2', '--json');
+    expect(JSON.parse(allOut()).blockedBy).toEqual([]);
+  });
+
+  it('--json prints the findings', async () => {
+    await seedTrio();
+    writeFileSync(
+      join(dir, '.planny', 'tasks', 't3.md'),
+      brokenTask('t3', 'parent: t9\n'),
+    );
+    await run('doctor', '--json');
+    const findings = JSON.parse(allOut());
+    expect(findings).toHaveLength(1);
+    expect(findings[0].code).toBe('dangling-parent');
+    expect(findings[0].fixable).toBe(true);
   });
 });
 

@@ -495,6 +495,48 @@ function buildProgram(io: CliIo): Command {
     });
 
   program
+    .command('doctor')
+    .description('check the store for hand-edit damage; --fix repairs the safe problems')
+    .option('--fix', 'apply the safe repairs')
+    .option('--json', 'machine-readable output')
+    .action(async (options) => {
+      const store = open();
+      const { diagnose, fixStore } = await import('./doctor.js');
+      const describe = (f: import('./doctor.js').Finding): string =>
+        `${f.severity === 'error' ? 'error  ' : 'warning'} ${f.code}: ${f.message} (${f.file})${f.fixable ? ' [fixable]' : ''}`;
+      const failOnErrors = (findings: import('./doctor.js').Finding[], fixRan: boolean): void => {
+        const errors = findings.filter((f) => f.severity === 'error');
+        if (errors.length === 0) return;
+        const hint = !fixRan && errors.some((f) => f.fixable)
+          ? ' — `planny doctor --fix` repairs the [fixable] ones'
+          : ' — fix by hand, then re-run planny doctor';
+        throw new Error(`${errors.length} error${errors.length === 1 ? '' : 's'} in the store${hint}`);
+      };
+
+      if (options.fix) {
+        const { applied, remaining } = fixStore(store);
+        if (options.json) {
+          io.out(JSON.stringify({ applied, remaining }, null, 2));
+        } else {
+          for (const f of applied) io.out(`fixed   ${f.code}: ${f.message}`);
+          for (const f of remaining) io.out(describe(f));
+          if (applied.length === 0 && remaining.length === 0) io.out('Store is healthy.');
+        }
+        failOnErrors(remaining, true);
+        return;
+      }
+      const findings = diagnose(store);
+      if (options.json) {
+        io.out(JSON.stringify(findings, null, 2));
+      } else if (findings.length === 0) {
+        io.out('Store is healthy.');
+      } else {
+        for (const f of findings) io.out(describe(f));
+      }
+      failOnErrors(findings, false);
+    });
+
+  program
     .command('serve')
     .description('start the localhost control site')
     .option('--port <port>', 'port to listen on', (v: string) => Number(v), 5891)

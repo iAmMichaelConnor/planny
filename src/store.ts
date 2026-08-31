@@ -7,12 +7,26 @@ const PLANNY_DIR = '.planny';
 const TASKS_DIR = 'tasks';
 const TASK_FILE_RE = /^(t\d+)\.md$/;
 
+export interface ScanFailure {
+  file: string;
+  error: string;
+  code: 'parse' | 'id-mismatch';
+}
+
+export interface ScanResult {
+  tasks: Task[];
+  failures: ScanFailure[];
+}
+
 export interface Store {
   /** Directory that contains `.planny`. */
   root: string;
   path(id: string): string;
   listIds(): string[];
   load(id: string): Task;
+  /** Parse every task file, collecting failures instead of throwing. */
+  scan(): ScanResult;
+  /** Like scan, but throws on the first unparseable file. */
   loadAll(): Task[];
   save(task: Task): void;
   nextId(): string;
@@ -48,6 +62,28 @@ export function openStore(startDir: string): Store {
       .filter((id): id is string => id !== undefined)
       .sort((a, b) => idNumber(a) - idNumber(b));
 
+  const scan = (): ScanResult => {
+    const tasks: Task[] = [];
+    const failures: ScanFailure[] = [];
+    for (const id of listIds()) {
+      try {
+        const task = parseTaskFile(readFileSync(path(id), 'utf8'));
+        if (task.id !== id) {
+          failures.push({
+            file: path(id),
+            error: `frontmatter says id "${task.id}" but the filename says "${id}"`,
+            code: 'id-mismatch',
+          });
+        } else {
+          tasks.push(task);
+        }
+      } catch (error) {
+        failures.push({ file: path(id), error: (error as Error).message, code: 'parse' });
+      }
+    }
+    return { tasks, failures };
+  };
+
   return {
     root,
     path,
@@ -57,8 +93,14 @@ export function openStore(startDir: string): Store {
       if (!existsSync(file)) throw new Error(`no task ${id} (looked for ${file})`);
       return parseTaskFile(readFileSync(file, 'utf8'));
     },
+    scan,
     loadAll(): Task[] {
-      return listIds().map((id) => parseTaskFile(readFileSync(path(id), 'utf8')));
+      const { tasks, failures } = scan();
+      if (failures.length > 0) {
+        const first = failures[0]!;
+        throw new Error(`${first.file}: ${first.error} — run \`planny doctor\` to see all problems`);
+      }
+      return tasks;
     },
     save(task: Task): void {
       writeFileSync(path(task.id), serializeTaskFile(task));

@@ -56,6 +56,7 @@ planny serve           # localhost UI: kanban, tree, dependency graph, decisions
 | `decide` | interactive: step through decisions, answer or skip |
 | `resolve <id> --response …\|--accept` | record the operator's answer, mark done |
 | `path <id>` | print the task's file path |
+| `doctor [--fix]` | check the store for hand-edit damage (dangling ids, cycles, rank clashes, …); `--fix` repairs the safe ones; exits 1 while errors remain |
 | `serve [--port]` | localhost control site |
 
 Ids accept a bare number (`planny done 3`).

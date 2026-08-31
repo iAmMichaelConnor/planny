@@ -1,0 +1,227 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { diagnose, fixStore, type Finding } from '../src/doctor.js';
+import { initRepo, openStore, type Store } from '../src/store.js';
+import type { Task } from '../src/types.js';
+import { makeTask } from './helpers.js';
+
+/**
+ * Broken states are written with store.save / writeFileSync on purpose:
+ * that is exactly the hand editing the doctor exists to catch. The CLI
+ * would reject all of these.
+ */
+
+let dir: string;
+let store: Store;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'planny-doc-'));
+  initRepo(dir);
+  store = openStore(dir);
+});
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function save(...tasks: Task[]): void {
+  for (const task of tasks) store.save(task);
+}
+
+function codes(findings: Finding[]): string[] {
+  return findings.map((f) => f.code).sort();
+}
+
+function byCode(findings: Finding[], code: string): Finding[] {
+  return findings.filter((f) => f.code === code);
+}
+
+describe('diagnose', () => {
+  it('finds nothing wrong with a healthy store', () => {
+    save(
+      makeTask('t1'),
+      makeTask('t2', { parent: 't1', blockedBy: ['t1'], priority: 20 }),
+    );
+    expect(diagnose(store)).toEqual([]);
+  });
+
+  it('reports unreadable files and id mismatches as errors', () => {
+    save(makeTask('t1'));
+    writeFileSync(store.path('t2'), 'garbage');
+    writeFileSync(store.path('t3'), `---\nid: t9\nname: x\nstatus: todo\ntype: task\nkind: ai\npriority: 30\ncreated: c\nupdated: u\n---\n`);
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['id-mismatch', 'unreadable-file']);
+    expect(findings.every((f) => f.severity === 'error' && !f.fixable)).toBe(true);
+    expect(byCode(findings, 'unreadable-file')[0]!.file).toBe(store.path('t2'));
+  });
+
+  it('reports dangling parent, blocker and replacement references as fixable errors', () => {
+    save(
+      makeTask('t1', { parent: 't9' }),
+      makeTask('t2', { blockedBy: ['t8'], priority: 20 }),
+      makeTask('t3', { status: 'cancelled', replacedBy: ['t7'], priority: 30 }),
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['dangling-blocker', 'dangling-parent', 'dangling-replacement']);
+    expect(findings.every((f) => f.severity === 'error' && f.fixable)).toBe(true);
+    expect(byCode(findings, 'dangling-parent')[0]!.message).toContain('t9');
+  });
+
+  it('reports duplicate ranks once per rank, as a fixable warning', () => {
+    save(
+      makeTask('t1', { priority: 10 }),
+      makeTask('t2', { priority: 10 }),
+      makeTask('t3', { priority: 10 }),
+      makeTask('t4', { priority: 40 }),
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['duplicate-rank']);
+    const finding = findings[0]!;
+    expect(finding.severity).toBe('warning');
+    expect(finding.fixable).toBe(true);
+    expect(finding.message).toMatch(/t1.*t2.*t3/);
+  });
+
+  it('reports parent cycles once, with the loop spelled out', () => {
+    save(
+      makeTask('t1', { parent: 't2' }),
+      makeTask('t2', { parent: 't1', priority: 20 }),
+      makeTask('t3', { priority: 30 }),
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['parent-cycle']);
+    expect(findings[0]!.fixable).toBe(false);
+    expect(findings[0]!.message).toContain('t1');
+    expect(findings[0]!.message).toContain('t2');
+  });
+
+  it('reports dependency cycles once per loop', () => {
+    save(
+      makeTask('t1', { blockedBy: ['t2'] }),
+      makeTask('t2', { blockedBy: ['t1'], priority: 20 }),
+      makeTask('t3', { blockedBy: ['t3'], priority: 30 }),
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['dependency-cycle', 'dependency-cycle']);
+  });
+
+  it('reports an active task ranked above its active blocker', () => {
+    save(
+      makeTask('t1', { blockedBy: ['t2'], priority: 10 }),
+      makeTask('t2', { priority: 20 }),
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['order-violation']);
+    expect(findings[0]!.fixable).toBe(true);
+  });
+
+  it('does not report order violations for finished tasks', () => {
+    save(
+      makeTask('t1', { blockedBy: ['t2'], priority: 10, status: 'done' }),
+      makeTask('t2', { priority: 20 }),
+    );
+    expect(diagnose(store)).toEqual([]);
+  });
+
+  it('reports status inconsistencies as warnings', () => {
+    save(
+      makeTask('t1', { status: 'cancelled', replacedBy: ['t4'] }),
+      makeTask('t2', { blockedBy: ['t1'], priority: 20 }), // still waits on a cancelled task
+      makeTask('t3', { type: 'decision', status: 'done', priority: 30 }), // no outcome
+      makeTask('t4', { parent: 't1', priority: 40 }), // active child of cancelled parent
+    );
+    const findings = diagnose(store);
+    expect(codes(findings)).toEqual(['cancelled-blocker', 'cancelled-parent', 'unresolved-decision']);
+    expect(findings.every((f) => f.severity === 'warning')).toBe(true);
+    expect(byCode(findings, 'cancelled-blocker')[0]!.fixable).toBe(true);
+  });
+
+  it('accepts a done decision that has an outcome', () => {
+    save(
+      makeTask('t1', {
+        type: 'decision',
+        status: 'done',
+        resolvedAt: '2026-08-31T12:00:00.000Z',
+        body: '## Outcome\n\nAgreed.',
+      }),
+    );
+    expect(diagnose(store)).toEqual([]);
+  });
+});
+
+describe('fixStore', () => {
+  it('does nothing to a healthy store', () => {
+    save(makeTask('t1'));
+    const before = store.load('t1');
+    const { applied, remaining } = fixStore(store);
+    expect(applied).toEqual([]);
+    expect(remaining).toEqual([]);
+    expect(store.load('t1')).toEqual(before);
+  });
+
+  it('drops dangling references and bumps updated', () => {
+    save(
+      makeTask('t1', { parent: 't9', blockedBy: ['t8'] }),
+      makeTask('t2', { status: 'cancelled', replacedBy: ['t7'], priority: 20 }),
+    );
+    const { remaining } = fixStore(store);
+    expect(remaining).toEqual([]);
+    const t1 = store.load('t1');
+    expect(t1.parent).toBeUndefined();
+    expect(t1.blockedBy).toEqual([]);
+    expect(Date.parse(t1.updated)).toBeGreaterThan(Date.parse(t1.created));
+    expect(store.load('t2').replacedBy).toEqual([]);
+  });
+
+  it('rewires a cancelled blocker onto its replacements', () => {
+    save(
+      makeTask('t1', { status: 'cancelled', replacedBy: ['t3'] }),
+      makeTask('t2', { blockedBy: ['t1'], priority: 20 }),
+      makeTask('t3', { priority: 30 }),
+    );
+    fixStore(store);
+    expect(store.load('t2').blockedBy).toEqual(['t3']);
+  });
+
+  it('re-ranks duplicates preserving order and repairs order violations', () => {
+    save(
+      makeTask('t1', { priority: 10 }),
+      makeTask('t2', { priority: 10 }),
+      makeTask('t3', { blockedBy: ['t4'], priority: 15 }),
+      makeTask('t4', { priority: 20 }),
+    );
+    const { remaining } = fixStore(store);
+    expect(remaining).toEqual([]);
+    const tasks = store.loadAll();
+    const ranks = tasks.map((t) => t.priority);
+    expect(new Set(ranks).size).toBe(ranks.length);
+    expect(store.load('t3').priority).toBeGreaterThan(store.load('t4').priority);
+  });
+
+  it('leaves cycles alone and reports them as remaining', () => {
+    save(
+      makeTask('t1', { parent: 't2' }),
+      makeTask('t2', { parent: 't1', priority: 20 }),
+      makeTask('t3', { blockedBy: ['t3'], priority: 30 }),
+    );
+    const { applied, remaining } = fixStore(store);
+    expect(applied).toEqual([]);
+    expect(codes(remaining)).toEqual(['dependency-cycle', 'parent-cycle']);
+    expect(store.load('t1').parent).toBe('t2');
+  });
+
+  it('skips order repair while a dependency cycle exists', () => {
+    save(
+      makeTask('t1', { blockedBy: ['t2'], priority: 10 }),
+      makeTask('t2', { blockedBy: ['t1'], priority: 20 }),
+      makeTask('t3', { blockedBy: ['t4'], priority: 30 }),
+      makeTask('t4', { priority: 40 }),
+    );
+    const { remaining } = fixStore(store);
+    // The cycle stays; the t3/t4 violation must wait for the operator to cut it.
+    expect(codes(remaining)).toContain('dependency-cycle');
+    expect(codes(remaining)).toContain('order-violation');
+  });
+});

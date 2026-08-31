@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -104,5 +104,51 @@ describe('task io', () => {
     writeFileSync(join(dir, '.planny', 'tasks', 'README.txt'), 'not a task');
     expect(store.loadAll()).toEqual([]);
     expect(store.nextId()).toBe('t1');
+  });
+});
+
+describe('scan', () => {
+  let store: Store;
+
+  beforeEach(() => {
+    initRepo(dir);
+    store = openStore(dir);
+  });
+
+  it('returns every task and no failures for a healthy store', () => {
+    store.save(makeTask('t1'));
+    store.save(makeTask('t2'));
+    const { tasks, failures } = store.scan();
+    expect(tasks.map((t) => t.id).sort()).toEqual(['t1', 't2']);
+    expect(failures).toEqual([]);
+  });
+
+  it('collects unparseable files instead of throwing', () => {
+    store.save(makeTask('t1'));
+    writeFileSync(store.path('t2'), '---\nid: t2\nstatus: wip\n---\n');
+    writeFileSync(store.path('t3'), 'no frontmatter at all');
+    const { tasks, failures } = store.scan();
+    expect(tasks.map((t) => t.id)).toEqual(['t1']);
+    expect(failures).toHaveLength(2);
+    expect(failures[0]!.file).toBe(store.path('t2'));
+    expect(failures[0]!.error).toMatch(/status|missing/i);
+    expect(failures[1]!.error).toMatch(/frontmatter/i);
+  });
+
+  it('loadAll names the broken file when it throws', () => {
+    writeFileSync(store.path('t1'), 'garbage');
+    expect(() => store.loadAll()).toThrow(/t1\.md/);
+  });
+
+  it('flags a frontmatter id that disagrees with the filename', () => {
+    const impostor = makeTask('t5');
+    store.save(impostor);
+    writeFileSync(store.path('t2'), readFileSync(store.path('t5'), 'utf8'));
+    const { tasks, failures } = store.scan();
+    expect(tasks.map((t) => t.id)).toEqual(['t5']);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.code).toBe('id-mismatch');
+    expect(failures[0]!.file).toBe(store.path('t2'));
+    expect(() => store.loadAll()).toThrow(/t2\.md/);
   });
 });

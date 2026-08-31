@@ -50,6 +50,7 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "write the plan to a file" | `planny export --out plan.md [--status todo,in-progress]` |
 | "let's go through the decisions" | see "Working the decision queue" |
 | "open the board" | `planny serve` (localhost UI; leave it to the operator) |
+| "is the store broken?", a command errors on a task file | `planny doctor` (add `--fix` to apply the safe repairs) |
 
 You have a question only the operator can answer → **add a decision task**
 (next section). Do not park the question in chat or a TODO comment.
@@ -120,3 +121,6 @@ model is unavailable.
 Getters: `show <id>`, `list` (`--status --kind --type --model --parent
 --recursive --blocked`), `next`, `decisions`, `progress`, `path <id>`,
 `tree`, `deps` — all machine-readable with `--json` where it matters.
+`planny doctor [--fix] [--json]` checks a store that may have been edited by
+hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
+problems that have one right answer; it exits 1 while errors remain.
