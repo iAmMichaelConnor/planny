@@ -6,10 +6,7 @@ live as one markdown file each, the plan stays current because updating it
 is one cheap command, and an agent loads only the tasks it needs instead of
 a whole document.
 
-The `planny` binary is global; the plan is not. Every command resolves the
-nearest `.planny` directory above the current working directory, exactly as
-git resolves a repo, and human-readable views print `store: <root>` as their
-first line so there is never doubt which project answered.
+![The planny board — this screenshot is planny tracking its own development](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-board.png)
 
 ## Install
 
@@ -19,25 +16,60 @@ npm install -g planny
 
 Node 20+. Then, in any project: `planny init`.
 
-To teach Claude Code the planny skill, this repo doubles as a plugin
-marketplace:
+## Give your agent the skill
+
+planny is built to be driven by agents. The skill
+([skills/planny/SKILL.md](skills/planny/SKILL.md)) teaches an AI the full
+loop: planny as the plan of record (no parallel plan.md or harness todo
+lists), an action map from user phrasing to commands, task- and
+plan-authoring rules, the decision workflow, claiming and attribution,
+staying current, and serving the board at session start.
+
+The fastest install is to paste this at your agent:
+
+> Set up planny in this project: make sure the `planny` CLI is installed
+> (`npm install -g planny`); give yourself the planny skill — in Claude
+> Code, add the plugin marketplace `iAmMichaelConnor/planny` and install
+> the `planny` plugin from it; in Codex or another agent that reads the
+> open SKILL.md format, link `$(npm root -g)/planny/skills/planny` into
+> your skills directory — then run `planny init` and use the planny skill
+> for every task and decision from now on.
+
+Or by hand. Claude Code (the repo doubles as a plugin marketplace):
 
 ```
 /plugin marketplace add iAmMichaelConnor/planny
 /plugin install planny@planny
 ```
 
-The plugin carries the skill; the CLI still comes from npm (above).
-
-To work on planny itself, install from source instead:
+Codex CLI, or any other agent that reads the open SKILL.md format — the
+npm package ships the skill, so link it from the installed package and it
+stays current across upgrades:
 
 ```bash
-git clone https://github.com/iAmMichaelConnor/planny
-cd planny
-npm install
-npm run build
-npm link        # puts `planny` on your PATH
+mkdir -p ~/.codex/skills
+ln -s "$(npm root -g)/planny/skills/planny" ~/.codex/skills/planny
 ```
+
+Restart Codex to pick up new skills; use `.agents/skills/planny` instead
+for a per-repo install. Either way the CLI itself still comes from npm —
+the skill is instructions, not the binary.
+
+## The localhost UI
+
+`planny serve` starts a site on 127.0.0.1 (pictured above) with four
+views: a kanban board (columns in priority order, global `#position` on
+active cards), a tree of parents and children with per-parent progress, a
+dependency graph with a switchable reading (`A blocks B` / `A is blocked
+by B` — labels, arrows and layout all flip), and the decision queue with
+respond / accept / skip. Filter chips slice every view by status, kind and
+type. The edit drawer covers every CLI action, docks to either side or the
+bottom, and resizes.
+
+The server watches the store and pushes events to open tabs, so CLI edits
+appear without a reload; refreshes never clobber a half-typed form. One
+status colour code runs through every view. The UI is three static files
+(`web/`), no framework, no build step.
 
 ## Quickstart
 
@@ -138,22 +170,12 @@ a time you name: `list --changed-since <t>` and
 the same millisecond as a cursor write may repeat, so treat deltas as facts,
 safe to see twice. One task's own timeline is its history: `planny show`.
 
-## The localhost UI
-
-`planny serve` starts a site on 127.0.0.1 with four views: a kanban board
-(columns in priority order, global `#position` on active cards), a tree of
-parents and children with per-parent progress, a dependency graph with a
-switchable reading (`A blocks B` / `A is blocked by B` — labels, arrows and
-layout all flip), and the decision queue with respond / accept / skip.
-Filter chips slice every view by status, kind and type. The edit drawer
-covers every CLI action, docks to either side or the bottom, and resizes.
-
-The server watches the store and pushes events to open tabs, so CLI edits
-appear without a reload; refreshes never clobber a half-typed form. One
-status colour code runs through every view. The UI is three static files
-(`web/`), no framework, no build step.
-
 ## Storage
+
+The `planny` binary is global; the plan is not. Every command resolves the
+nearest `.planny` directory above the current working directory, exactly as
+git resolves a repo, and human-readable views print `store: <root>` as their
+first line so there is never doubt which project answered.
 
 `.planny/tasks/<id>.md`, one file per task — commit the directory; the plan
 travels with the repo. Two design choices worth knowing:
@@ -167,17 +189,17 @@ travels with the repo. Two design choices worth knowing:
   relationships one-sided, refuses cycles, and holds the priority
   invariant. `planny doctor` catches hand-edit damage after the fact.
 
-## The skill
+## Contributing
 
-[skills/planny/SKILL.md](skills/planny/SKILL.md) teaches an AI agent the
-full loop: planny as the plan of record (no parallel plan.md or harness
-todo lists), an action map from user phrasing to commands, task- and
-plan-authoring rules, the decision workflow, claiming and attribution,
-staying current, and serving the board at session start. Symlink or copy it
-into a project's `.claude/skills/` (this repo already does) or your
-`~/.claude/skills/`.
+Install from source:
 
-## Development
+```bash
+git clone https://github.com/iAmMichaelConnor/planny
+cd planny
+npm install
+npm run build
+npm link        # puts `planny` on your PATH
+```
 
 ```bash
 npm test         # vitest across store, frontmatter, graph, priority, ops,
