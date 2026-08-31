@@ -53,23 +53,36 @@ instructions, and every command's `--help` teaches the rest.
 
 ## The localhost UI
 
-`planny serve` starts a site on 127.0.0.1 (pictured above) with four
-views: a kanban board (columns in priority order, global `#position` on
-active cards), a tree of parents and children with per-parent progress, a
-dependency graph with a switchable reading (`A blocks B` / `A is blocked
-by B` — labels, arrows and layout all flip), and the decision queue with
-respond / accept / skip. Filter chips slice every view by status, kind and
-type. The edit drawer covers every CLI action, docks to either side or the
-bottom, and resizes.
+The CLI is the main tool — it is what your agent uses. `planny serve`
+adds a localhost UI as a bonus for humans:
+
+- **Track what the AI is doing.** The board updates live as your agent
+  works — tasks change columns the moment their status changes.
+- **Add or edit tasks without interrupting your agent** (although you
+  can also just ask your agent).
+- **Read through and resolve the outstanding project decisions your
+  agent has asked you**, one at a time, in answering order (or, again,
+  just tell your agent your answers).
 
 ![The board — this screenshot is planny tracking its own development](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-board.png)
 
-![The decision queue, with the edit drawer docked on the right](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-decisions.png)
+![The tree view, on a small demo store — per-parent progress, holders, models, and waits-on links](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-tree.png)
 
-The server watches the store and pushes events to open tabs, so CLI edits
-appear without a reload; refreshes never clobber a half-typed form. One
-status colour code runs through every view. The UI is three static files
-(`web/`), no framework, no build step.
+![The decision queue](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-decisions.png)
+
+![The edit drawer, docked on the right](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-drawer.png)
+
+The detail, for the curious: four views — a kanban board (columns in
+priority order, global `#position` on active cards), a tree of parents
+and children with per-parent progress, a dependency graph with a
+switchable reading (`A blocks B` / `A is blocked by B` — labels, arrows
+and layout all flip), and the decision queue with respond / accept /
+skip. Filter chips slice every view by status, kind and type. The edit
+drawer covers every CLI action, docks to either side or the bottom, and
+resizes. The server watches the store and pushes events to open tabs, so
+CLI edits appear without a reload; refreshes never clobber a half-typed
+form. One status colour code runs through every view. The UI is three
+static files (`web/`), no framework, no build step.
 
 ## Quickstart
 
