@@ -124,6 +124,14 @@ describe('renderShow', () => {
   });
 });
 
+describe('markdown escaping in exports', () => {
+  it('escapes hostile names in the export but not in terminal output', () => {
+    const hostile = [makeTask('t1', { name: 'fix *urgent* [x] `now`' })];
+    expect(renderExport(hostile, {})).toContain('fix \\*urgent\\* \\[x\\] \\`now\\`');
+    expect(renderTaskList(hostile, {})).toContain('fix *urgent* [x] `now`');
+  });
+});
+
 describe('renderExport', () => {
   it('produces a markdown document with tasks, dependencies and decisions', () => {
     const text = renderExport(family, {});

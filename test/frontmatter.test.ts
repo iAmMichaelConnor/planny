@@ -76,6 +76,19 @@ describe('parseTaskFile', () => {
     expect(parsed.name).toBe('fix: handle "quotes" & colons: everywhere');
   });
 
+  it('preserves unknown frontmatter keys through the round-trip', () => {
+    const text = serializeTaskFile(fullTask).replace(
+      'created:',
+      'custom_note: keep me\nfuture_field: 42\ncreated:',
+    );
+    const parsed = parseTaskFile(text);
+    expect(parsed.extras).toEqual({ custom_note: 'keep me', future_field: 42 });
+    const rewritten = serializeTaskFile(parsed);
+    expect(rewritten).toContain('custom_note: keep me');
+    expect(rewritten).toContain('future_field: 42');
+    expect(parseTaskFile(rewritten)).toEqual(parsed);
+  });
+
   it('rejects text without frontmatter', () => {
     expect(() => parseTaskFile('just some markdown')).toThrow(/frontmatter/i);
   });

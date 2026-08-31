@@ -45,6 +45,11 @@ export interface Task {
   resolvedAt?: string;
   /** Markdown description. For decisions, uses the structured section layout. */
   body: string;
+  /**
+   * Frontmatter keys this version does not recognize, preserved verbatim
+   * so hand-added fields and newer versions' fields survive a rewrite.
+   */
+  extras?: Record<string, unknown>;
 }
 
 export function isStatus(value: unknown): value is Status {

@@ -300,6 +300,17 @@ describe('attribution', () => {
   });
 });
 
+describe('unknown-key survival', () => {
+  it('a mutation does not strip keys it does not know', () => {
+    addTask(store, { name: 'a' });
+    const raw = store.load('t1');
+    raw.extras = { custom_note: 'keep me' };
+    store.save(raw);
+    setStatus(store, 't1', 'done');
+    expect(store.load('t1').extras).toEqual({ custom_note: 'keep me' });
+  });
+});
+
 describe('input validation at the ops funnel', () => {
   it('rejects an invalid type, listing the valid ones', () => {
     expect(() => addTask(store, { name: 'x', type: 'epic' as never })).toThrow(/task or decision/);

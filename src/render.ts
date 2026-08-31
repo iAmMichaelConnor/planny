@@ -16,10 +16,18 @@ export interface ListRenderOptions {
   status?: Status[];
   kind?: string;
   type?: TaskType;
+  /** Escape markdown in names — for exported documents, not terminals. */
+  mdSafe?: boolean;
 }
 
-export function taskLabel(task: Task, graph: Graph, showBlockers = true): string {
-  const parts = [`${STATUS_MARK[task.status]} ${task.id} ${task.name}`];
+/** Backslash-escape characters markdown would interpret inside a name. */
+function escapeMd(name: string): string {
+  return name.replace(/[\\`*_[\]<>]/g, (c) => `\\${c}`);
+}
+
+export function taskLabel(task: Task, graph: Graph, showBlockers = true, mdSafe = false): string {
+  const name = mdSafe ? escapeMd(task.name) : task.name;
+  const parts = [`${STATUS_MARK[task.status]} ${task.id} ${name}`];
   if (task.type === 'decision') parts.push('(decision)');
   if (task.kind !== 'ai') parts.push(`(${task.kind})`);
   const holder = holderOf(task);
@@ -54,7 +62,7 @@ export function renderTaskList(tasks: Task[], options: ListRenderOptions): strin
   const lines: string[] = [];
   const walk = (task: Task, depth: number): void => {
     if (visible.has(task.id)) {
-      lines.push(`${'  '.repeat(depth)}- ${taskLabel(task, graph)}`);
+      lines.push(`${'  '.repeat(depth)}- ${taskLabel(task, graph, true, options.mdSafe)}`);
     }
     for (const child of graph.children(task.id)) walk(child, depth + 1);
   };
@@ -67,7 +75,7 @@ export function renderTaskList(tasks: Task[], options: ListRenderOptions): strin
  * that blocks it. A task with several blockers appears once per blocker,
  * annotated with the others.
  */
-export function renderDependencyForest(tasks: Task[]): string {
+export function renderDependencyForest(tasks: Task[], mdSafe = false): string {
   const graph = buildGraph(tasks);
   const present = new Set(tasks.map((t) => t.id));
   const hasEdges = tasks.some((t) => t.blockedBy.some((id) => present.has(id)));
@@ -77,7 +85,7 @@ export function renderDependencyForest(tasks: Task[]): string {
   const walk = (task: Task, depth: number, via: string | undefined): void => {
     const others = task.blockedBy.filter((id) => id !== via && present.has(id));
     const note = via !== undefined && others.length > 0 ? ` (also waits on ${others.join(', ')})` : '';
-    lines.push(`${'  '.repeat(depth)}- ${taskLabel(task, graph, false)}${note}`);
+    lines.push(`${'  '.repeat(depth)}- ${taskLabel(task, graph, false, mdSafe)}${note}`);
     for (const blocked of graph.blocking(task.id)) walk(blocked, depth + 1, task.id);
   };
   const roots = sortByPriority(
@@ -181,15 +189,15 @@ export function renderExport(tasks: Task[], options: ExportOptions): string {
     '# Plan',
     renderProgressLine(computeProgress(tasks)),
     '## Tasks',
-    renderTaskList(tasks, options),
+    renderTaskList(tasks, { ...options, mdSafe: true }),
     '## Dependencies',
-    renderDependencyForest(tasks),
+    renderDependencyForest(tasks, true),
   ];
   const open = sortByPriority(tasks.filter((t) => t.type === 'decision' && isActive(t)));
   if (open.length > 0) {
     sections.push(
       '## Open decisions',
-      open.map((t) => `- ${taskLabel(t, graph)}`).join('\n'),
+      open.map((t) => `- ${taskLabel(t, graph, true, true)}`).join('\n'),
     );
   }
   return `${sections.join('\n\n')}\n`;

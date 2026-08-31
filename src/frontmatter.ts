@@ -34,6 +34,9 @@ export function serializeTaskFile(task: Task): string {
       return row;
     });
   }
+  for (const [key, value] of Object.entries(task.extras ?? {})) {
+    if (!(key in meta)) meta[key] = value;
+  }
 
   const yaml = YAML.stringify(meta).trimEnd();
   const body = task.body === '' ? '' : `${task.body.replace(/\n+$/, '')}\n`;
@@ -102,6 +105,24 @@ function isOptionalIdList(value: unknown): boolean {
   return value === undefined || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
 }
 
+const KNOWN_KEYS = new Set([
+  'id',
+  'name',
+  'status',
+  'type',
+  'kind',
+  'model',
+  'priority',
+  'parent',
+  'blocked_by',
+  'replaced_by',
+  'created',
+  'updated',
+  'created_by',
+  'resolved_at',
+  'history',
+]);
+
 export function parseTaskFile(text: string): Task {
   const match = FRONTMATTER_RE.exec(text);
   if (!match) throw new Error('task file has no YAML frontmatter block');
@@ -121,7 +142,13 @@ export function parseTaskFile(text: string): Task {
   const priority = meta.priority;
   if (typeof priority !== 'number') throw new Error('field "priority" must be a number');
 
+  const extras: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    if (!KNOWN_KEYS.has(key)) extras[key] = value;
+  }
+
   return {
+    ...(Object.keys(extras).length > 0 && { extras }),
     id: requireString(meta, 'id'),
     name: requireString(meta, 'name'),
     status,
