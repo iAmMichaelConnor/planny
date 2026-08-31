@@ -332,6 +332,23 @@ describe('ui smoke', () => {
     expect(tile().querySelector('.decision-body')).toBeNull();
   });
 
+  it('the whole tile toggles, except interactive controls', () => {
+    clickTab('decisions');
+    const tile = () => document.querySelector('#view-decisions .decision-card') as HTMLElement;
+    tile().click(); // anywhere on the tile, not just the header
+    expect(tile().classList.contains('collapsed')).toBe(false);
+
+    // The typing target must not collapse the tile.
+    (
+      document.querySelector('textarea[data-role="response"][data-id="t4"]') as HTMLElement
+    ).click();
+    expect(tile().classList.contains('collapsed')).toBe(false);
+
+    // A button inside the tile acts without also toggling it.
+    (document.querySelector('button[data-action="skip"][data-id="t4"]') as HTMLElement).click();
+    expect(document.querySelector('#view-decisions .skipped-row')).not.toBeNull();
+  });
+
   it('renders open and resolved decisions with markdown bodies', () => {
     clickTab('decisions');
     expandDecision('t4');

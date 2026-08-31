@@ -486,8 +486,8 @@ function renderDecisions() {
           </div>
         </div>`;
     const expanded = state.expandedDecisions.has(task.id);
-    return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}">
-      <h3 data-action="toggle-decision" data-id="${task.id}"><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
+    return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}" data-action="toggle-decision" data-id="${task.id}">
+      <h3><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
       <div class="badges">${badges(task)}</div>
       ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
       ${actions}` : ''}
@@ -905,6 +905,11 @@ document.addEventListener('click', (event) => {
       return;
     }
     if (action === 'toggle-decision') {
+      // The whole tile toggles — but not clicks on things with their own
+      // behavior (typing, links; buttons carry their own data-action and
+      // never reach here), and not a click that ends a text selection.
+      if (event.target.closest('textarea, a, button, input, select')) return;
+      if (String(window.getSelection?.() ?? '') !== '') return;
       state.expandedDecisions.has(id)
         ? state.expandedDecisions.delete(id)
         : state.expandedDecisions.add(id);
