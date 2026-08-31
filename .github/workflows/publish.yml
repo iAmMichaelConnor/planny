@@ -1,15 +1,15 @@
 name: Publish to npm
 
-# Manual trigger only. Needs the NPM_TOKEN repository secret (added by the
-# operator from their own browser — the token never touches a dev machine).
-# After the first published version, configure npm trusted publishing for
-# this repo+workflow and delete the token; provenance is already enabled.
+# Manual trigger only. Auth is npm trusted publishing (OIDC): npmjs.com
+# trusts this exact repo + workflow file, so no token or secret exists
+# anywhere. Trusted publishing needs npm >= 11.5.1, hence Node 24 here.
+# Provenance is generated automatically on the OIDC path.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write # npm --provenance
+  id-token: write # the OIDC exchange with npmjs.com
 
 jobs:
   publish:
@@ -18,11 +18,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish --access public
