@@ -140,6 +140,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .dep-node.done rect { opacity: 0.55; }
 .dep-edge { stroke: var(--muted); stroke-width: 1.3; fill: none; opacity: 0.65; marker-end: url(#arrow); }
 .dep-edge:hover { stroke: var(--accent); stroke-width: 2.5; opacity: 1; }
+.dep-label { fill: var(--muted); font-size: 9.5px; }
 
 /* Decisions */
 #view-decisions { max-width: 860px; margin: 0 auto; }
@@ -180,6 +181,40 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   font-weight: 600;
 }
 #drawer-close { border: none; background: none; font-size: 20px; color: var(--muted); }
+#drawer-controls { display: flex; align-items: center; gap: 2px; }
+.dock-btn { border: none; background: none; color: var(--muted); font-size: 14px; padding: 2px 5px; }
+.dock-btn.active { color: var(--accent); }
+
+#drawer.dock-left {
+  left: 0;
+  right: auto;
+  border-left: none;
+  border-right: 1px solid var(--line);
+}
+#drawer.dock-left #drawer-resize { left: auto; right: 0; }
+#drawer.dock-bottom {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  height: 45vh;
+  min-height: 160px;
+  max-height: 90vh;
+  border-left: none;
+  border-top: 1px solid var(--line);
+}
+#drawer.dock-bottom #drawer-resize {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  width: auto;
+  height: 6px;
+  cursor: ns-resize;
+}
 #drawer-resize {
   position: absolute;
   left: 0;

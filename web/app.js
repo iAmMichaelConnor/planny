@@ -10,7 +10,25 @@ const state = {
   collapsed: new Set(),
   skippedDecisions: new Set(),
   descExpanded: false,
+  depsMode: readPreference('planny-deps-mode', 'blocks'),
+  drawerDock: readPreference('planny-drawer-dock', 'right'),
 };
+
+function readPreference(key, fallback) {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writePreference(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode: the preference just does not stick */
+  }
+}
 
 // ---------- data ----------
 
@@ -251,6 +269,13 @@ function renderTree() {
 }
 
 function renderDeps() {
+  const mode = state.depsMode; // 'blocks' | 'blocked-by'
+  $('#deps-mode').value = mode;
+  $('#deps-hint').textContent =
+    mode === 'blocks'
+      ? 'Arrows point from a blocker to the task it blocks: A → B means A blocks B, so B waits on A. Blockers sit left. Hover an arrow for its two ends; click a task to edit it.'
+      : 'Arrows point from a task to what it waits on: A → B means A is blocked by B. Blocked tasks sit left. Hover an arrow for its two ends; click a task to edit it.';
+
   const involved = state.data.tasks.filter(
     (t) => t.blocking.length > 0 || t.blockedBy.some((id) => state.byId.has(id)),
   );
@@ -286,17 +311,21 @@ function renderDeps() {
   const boxH = 48;
   const gapX = 70;
   const gapY = 18;
-  const x = (l) => 20 + l * (boxW + gapX);
-  const y = (row) => 20 + row * (boxH + gapY);
   const maxLayer = Math.max(...layerOf.values());
   const maxRows = Math.max(...perLayer.values());
+  // In blocked-by mode the whole layout mirrors: blocked tasks sit left.
+  const x = (l) => 20 + (mode === 'blocked-by' ? maxLayer - l : l) * (boxW + gapX);
+  const y = (row) => 20 + row * (boxH + gapY);
 
   const edges = [];
+  const label = mode === 'blocks' ? 'blocks' : 'is blocked by';
   for (const t of involved) {
     for (const b of t.blockedBy) {
       if (!position.has(b)) continue;
-      const from = position.get(b);
-      const to = position.get(t.id);
+      // The arrow leaves the left-hand box and lands on the right-hand one:
+      // blocker → blocked when reading "blocks", blocked → blocker mirrored.
+      const from = position.get(mode === 'blocks' ? b : t.id);
+      const to = position.get(mode === 'blocks' ? t.id : b);
       const x1 = x(from.l) + boxW;
       const y1 = y(from.row) + boxH / 2;
       const x2 = x(to.l);
@@ -304,6 +333,7 @@ function renderDeps() {
       const mid = (x1 + x2) / 2;
       edges.push(
         `<path class="dep-edge" d="M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2 - 6},${y2}"><title>${esc(b)} blocks ${esc(t.id)} — ${esc(t.id)} waits on ${esc(b)}</title></path>`,
+        `<text class="dep-label" x="${mid}" y="${(y1 + y2) / 2 - 5}" text-anchor="middle">${label}</text>`,
       );
     }
   }
@@ -318,7 +348,7 @@ function renderDeps() {
     </g>`;
   });
   const svg = $('#deps-svg');
-  svg.setAttribute('width', x(maxLayer) + boxW + 20);
+  svg.setAttribute('width', x(mode === 'blocked-by' ? 0 : maxLayer) + boxW + 20);
   svg.setAttribute('height', y(maxRows - 1) + boxH + 20);
   svg.innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.65"/></marker></defs>${edges.join('')}${nodes.join('')}`;
 }
@@ -593,8 +623,29 @@ document.addEventListener('click', (event) => {
   }
 });
 
+function applyDock() {
+  const drawer = $('#drawer');
+  drawer.classList.toggle('dock-left', state.drawerDock === 'left');
+  drawer.classList.toggle('dock-bottom', state.drawerDock === 'bottom');
+  drawer.style.width = '';
+  drawer.style.height = '';
+  for (const btn of document.querySelectorAll('.dock-btn')) {
+    btn.classList.toggle('active', btn.dataset.dock === state.drawerDock);
+  }
+}
+
+for (const btn of document.querySelectorAll('.dock-btn')) {
+  btn.onclick = () => {
+    state.drawerDock = btn.dataset.dock;
+    writePreference('planny-drawer-dock', state.drawerDock);
+    applyDock();
+  };
+}
+applyDock();
+
 {
-  // Drag the drawer's left edge to resize it.
+  // Drag the drawer's inner edge to resize it: width when docked to a side,
+  // height when docked to the bottom.
   let dragging = false;
   $('#drawer-resize').addEventListener('mousedown', (event) => {
     dragging = true;
@@ -602,11 +653,18 @@ document.addEventListener('click', (event) => {
   });
   document.addEventListener('mousemove', (event) => {
     if (!dragging) return;
-    const width = Math.min(
-      Math.max(window.innerWidth - event.clientX, 320),
-      Math.round(window.innerWidth * 0.95),
-    );
-    $('#drawer').style.width = `${width}px`;
+    const drawer = $('#drawer');
+    if (state.drawerDock === 'bottom') {
+      const height = Math.min(
+        Math.max(window.innerHeight - event.clientY, 160),
+        Math.round(window.innerHeight * 0.9),
+      );
+      drawer.style.height = `${height}px`;
+      return;
+    }
+    const along = state.drawerDock === 'left' ? event.clientX : window.innerWidth - event.clientX;
+    const width = Math.min(Math.max(along, 320), Math.round(window.innerWidth * 0.95));
+    drawer.style.width = `${width}px`;
   });
   document.addEventListener('mouseup', () => {
     dragging = false;
@@ -624,6 +682,11 @@ $('#drawer-close').onclick = () => {
 for (const el of document.querySelectorAll('#tree-filters input, #tree-filters select')) {
   el.addEventListener('change', renderTree);
 }
+$('#deps-mode').addEventListener('change', () => {
+  state.depsMode = $('#deps-mode').value;
+  writePreference('planny-deps-mode', state.depsMode);
+  renderDeps();
+});
 window.addEventListener('focus', refresh);
 
 refresh().catch((err) => toast(err.message, 'error'));

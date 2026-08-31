@@ -52,6 +52,7 @@ function task(id: string, overrides: Record<string, unknown> = {}) {
 const fetchCalls: Array<{ path: string; init?: RequestInit }> = [];
 
 function bootApp(): Promise<void> {
+  localStorage.clear(); // preferences persist per jsdom origin; each boot starts clean
   const html = readFileSync(join(webDir, 'index.html'), 'utf8');
   document.body.innerHTML = /<body>([\s\S]*)<\/body>/.exec(html)![1]!.replace(
     /<script[\s\S]*?<\/script>/,
@@ -109,6 +110,23 @@ describe('ui smoke', () => {
     const svg = document.querySelector('#deps-svg')!;
     expect(svg.querySelectorAll('.dep-node').length).toBe(2); // t1 and t3
     expect(svg.querySelectorAll('.dep-edge').length).toBe(1);
+  });
+
+  it('annotates every arrow and can flip the perspective', () => {
+    clickTab('deps');
+    const nodeX = (id: string): number =>
+      Number(/translate\((\d+(?:\.\d+)?),/.exec(
+        (document.querySelector(`.dep-node[data-id="${id}"]`) as SVGGElement).getAttribute('transform')!,
+      )![1]);
+    expect(document.querySelector('#deps-svg .dep-label')!.textContent).toBe('blocks');
+    expect(nodeX('t1')).toBeLessThan(nodeX('t3')); // blocker left
+
+    const mode = document.querySelector('#deps-mode') as HTMLSelectElement;
+    mode.value = 'blocked-by';
+    mode.dispatchEvent(new Event('change'));
+    expect(document.querySelector('#deps-svg .dep-label')!.textContent).toBe('is blocked by');
+    expect(nodeX('t3')).toBeLessThan(nodeX('t1')); // blocked task left now
+    expect(document.querySelector('#view-deps .hint')!.textContent).toMatch(/is blocked by/);
   });
 
   it('says which way the arrows point, on the hint and on every edge', () => {
@@ -190,6 +208,31 @@ describe('ui smoke', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
     (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/bump')).toBe(true);
+  });
+
+  it('the drawer docks left, bottom and back right, and remembers the choice', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const drawer = document.querySelector('#drawer') as HTMLElement;
+
+    (document.querySelector('.dock-btn[data-dock="left"]') as HTMLElement).click();
+    expect(drawer.classList.contains('dock-left')).toBe(true);
+
+    (document.querySelector('.dock-btn[data-dock="bottom"]') as HTMLElement).click();
+    expect(drawer.classList.contains('dock-bottom')).toBe(true);
+    expect(drawer.classList.contains('dock-left')).toBe(false);
+    expect(localStorage.getItem('planny-drawer-dock')).toBe('bottom');
+
+    // Bottom dock: the handle resizes height, not width.
+    const handle = document.querySelector('#drawer-resize') as HTMLElement;
+    handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientY: 500 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    expect(drawer.style.height).toBe(`${window.innerHeight - 500}px`);
+    expect(drawer.style.width).toBe('');
+
+    (document.querySelector('.dock-btn[data-dock="right"]') as HTMLElement).click();
+    expect(drawer.classList.contains('dock-bottom')).toBe(false);
+    expect(drawer.style.height).toBe(''); // dragged size cleared on dock switch
   });
 
   it('the new-task drawer creates via POST', () => {

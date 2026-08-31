@@ -45,7 +45,15 @@
   </section>
 
   <section id="view-deps" class="view hidden">
-    <p class="hint">Arrows point from a blocker to the task it blocks: A → B means A blocks B, so B waits on A. Blockers sit left. Hover an arrow for its two ends; click a task to edit it.</p>
+    <div class="filters">
+      <label>arrows read:
+        <select id="deps-mode">
+          <option value="blocks">A → B: A blocks B</option>
+          <option value="blocked-by">A → B: A is blocked by B</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint" id="deps-hint"></p>
     <div id="deps-scroll"><svg id="deps-svg"></svg></div>
   </section>
 
@@ -56,7 +64,12 @@
   <div id="drawer-resize" title="drag to resize"></div>
   <div id="drawer-head">
     <span id="drawer-title"></span>
-    <button id="drawer-close" title="close">×</button>
+    <span id="drawer-controls">
+      <button class="dock-btn" data-dock="left" title="dock left">◧</button>
+      <button class="dock-btn" data-dock="bottom" title="dock bottom">⬓</button>
+      <button class="dock-btn" data-dock="right" title="dock right">◨</button>
+      <button id="drawer-close" title="close">×</button>
+    </span>
   </div>
   <div id="drawer-body"></div>
 </aside>
