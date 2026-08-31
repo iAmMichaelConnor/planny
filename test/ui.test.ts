@@ -111,6 +111,15 @@ describe('ui smoke', () => {
     expect(svg.querySelectorAll('.dep-edge').length).toBe(1);
   });
 
+  it('says which way the arrows point, on the hint and on every edge', () => {
+    clickTab('deps');
+    const hint = document.querySelector('#view-deps .hint')!;
+    expect(hint.textContent).toMatch(/A → B/);
+    expect(hint.textContent).toMatch(/waits on A/);
+    const edgeTitle = document.querySelector('#deps-svg .dep-edge title')!;
+    expect(edgeTitle.textContent).toBe('t1 blocks t3 — t3 waits on t1');
+  });
+
   it('renders open and resolved decisions with markdown bodies', () => {
     clickTab('decisions');
     const view = document.querySelector('#view-decisions')!;

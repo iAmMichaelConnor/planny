@@ -302,7 +302,9 @@ function renderDeps() {
       const x2 = x(to.l);
       const y2 = y(to.row) + boxH / 2;
       const mid = (x1 + x2) / 2;
-      edges.push(`<path class="dep-edge" d="M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2 - 6},${y2}"/>`);
+      edges.push(
+        `<path class="dep-edge" d="M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2 - 6},${y2}"><title>${esc(b)} blocks ${esc(t.id)} — ${esc(t.id)} waits on ${esc(b)}</title></path>`,
+      );
     }
   }
   const nodes = involved.map((t) => {
