@@ -184,6 +184,7 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
     .option('--blocked-by <ids>', 'tasks that must finish first (comma-separated, repeatable)', collectIds)
     .option('--blocks <ids>', 'tasks that must wait for this one (comma-separated, repeatable)', collectIds)
     .option('--priority <pos>', 'top | bottom | 1-based position (default bottom)', parsePriority)
+    .option('--start', 'claim and start the new task immediately (yours to work)')
     .addHelpText(
       'after',
       `
@@ -211,7 +212,13 @@ Examples:
         },
         actor(),
       );
-      report(result, `added ${result.task.id} — ${result.task.name}`);
+      let line = `added ${result.task.id} — ${result.task.name}`;
+      if (options.start) {
+        const started = setStatus(open(), result.task.id, 'in-progress', actor());
+        result.warnings.push(...started.warnings);
+        line += ' · started';
+      }
+      report(result, line);
     });
 
   program

@@ -18,7 +18,7 @@
   --st-cancelled: var(--line);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #12151c;
     --panel: #1b2029;
     --ink: #e6e9ef;
@@ -28,6 +28,17 @@
     --accent-ink: #0d1117;
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
   }
+}
+/* Explicit choice via the theme button overrides the system preference. */
+:root[data-theme="dark"] {
+  --bg: #12151c;
+  --panel: #1b2029;
+  --ink: #e6e9ef;
+  --muted: #98a1b3;
+  --line: #2c3340;
+  --accent: #5b8def;
+  --accent-ink: #0d1117;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -74,6 +85,9 @@ header {
   flex-wrap: wrap;
 }
 header h1 { font-size: 17px; margin: 0; }
+#brand { display: flex; flex-direction: column; line-height: 1.15; }
+#brand #store-label { margin-top: 1px; }
+#theme-btn { border: none; background: none; font-size: 15px; padding: 2px 4px; }
 #progress-wrap { display: flex; align-items: center; gap: 8px; min-width: 220px; }
 #progress-bar { width: 140px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
 #progress-fill { height: 100%; background: var(--ok); width: 0; transition: width 0.3s; }

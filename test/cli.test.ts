@@ -77,6 +77,17 @@ describe('init and add', () => {
     expect(text).toContain('t1');
   });
 
+  it('add --start creates, starts and claims in one command', async () => {
+    await run('init');
+    await run('--session', 'sess-a', 'add', 'grab it', '--start');
+    out = [];
+    await run('show', 't1', '--json');
+    const { task } = JSON.parse(allOut());
+    expect(task.status).toBe('in-progress');
+    expect(task.createdBy).toBe('sess-a');
+    expect(task.history.at(-1)).toMatchObject({ status: 'in-progress', by: 'sess-a' });
+  });
+
   it('rejects a bad reference with exit code 1', async () => {
     await run('init');
     expect(await run('add', 'x', '--parent', 't9')).toBe(1);

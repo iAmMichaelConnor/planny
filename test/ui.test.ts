@@ -126,10 +126,43 @@ beforeEach(async () => {
 });
 
 describe('ui smoke', () => {
-  it('shows the project name and its directory in the header', () => {
+  it('stacks the project name and directory under the planny title', () => {
     const label = document.querySelector('#store-label') as HTMLElement;
     expect(label.textContent).toContain('rocket');
     expect(label.textContent).toContain('/home/me/projects/rocket'); // visibly, not hover-only
+    expect(label.parentElement!.id).toBe('brand'); // stacked in the brand column
+    expect(label.parentElement!.querySelector('h1')).not.toBeNull();
+  });
+
+  it('the page declares the emoji favicon', () => {
+    const html = readFileSync(join(webDir, 'index.html'), 'utf8');
+    expect(html).toContain('rel="icon"');
+    expect(html).toContain('😎');
+  });
+
+  it('the theme button cycles auto → dark → light → auto and persists', () => {
+    const btn = document.querySelector('#theme-btn') as HTMLElement;
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    btn.click();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(localStorage.getItem('planny-theme')).toBe('dark');
+    btn.click();
+    expect(document.documentElement.dataset.theme).toBe('light');
+    btn.click();
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  it('cmd+enter (or ctrl+enter) submits the drawer form', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    (document.querySelector('#add-note-continue') as HTMLElement).click();
+    (document.querySelector('#f-name') as HTMLInputElement).value = 'quick add';
+    document.querySelector('#f-name')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }),
+    );
+    const post = fetchCalls.find((c) => c.path === '/api/tasks' && c.init?.method === 'POST');
+    expect(post).toBeDefined();
+    expect(JSON.parse(post!.init!.body as string).name).toBe('quick add');
   });
 
   it('board chips slice the cards by kind and type', () => {

@@ -105,6 +105,11 @@ agent could pick it up with no other context:
   ("do this after t7" in a description is invisible to `next`).
 - **Decisions** use the section layout in
   [references/decision-format.md](references/decision-format.md).
+- **Take ids from command output — never predict them.** Another writer
+  (the operator's UI, a teammate agent) may take the next id at any
+  moment; a hardcoded guess can claim someone else's task. When the new
+  task is yours to work right now, `planny add "…" --start` creates,
+  starts and claims it in one command, with no id to juggle.
 
 Then sanity-check the plan you just built: `planny tree` (shape),
 `planny deps` (order), `planny next` (is the first actionable task the

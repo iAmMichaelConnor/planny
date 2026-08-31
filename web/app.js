@@ -945,6 +945,27 @@ $('#add-note-dismiss').onclick = () => {
 $('#drawer-body').addEventListener('input', () => {
   state.drawerDirty = true;
 });
+$('#drawer-body').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    const save = $('#save-btn');
+    if (save) save.click();
+  }
+});
+
+// Theme: auto (system) → dark → light → auto, persisted per browser.
+function applyTheme() {
+  const theme = readPreference('planny-theme', '');
+  if (theme === '') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  $('#theme-btn').title = `theme: ${theme === '' ? 'auto' : theme}`;
+}
+$('#theme-btn').onclick = () => {
+  const current = readPreference('planny-theme', '');
+  const next = current === '' ? 'dark' : current === 'dark' ? 'light' : '';
+  writePreference('planny-theme', next);
+  applyTheme();
+};
+applyTheme();
 window.addEventListener('resize', positionDrawer);
 if (typeof EventSource !== 'undefined') {
   // The server pushes an event whenever any task file changes (CLI edits included).
