@@ -72,7 +72,8 @@ adds a localhost UI as a bonus for humans:
 models, and waits-on links.*
 
 ![The decision queue](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-decisions.png)
-*The decision queue.*
+*The decision queue — methodically work through each outstanding
+decision that your agent has asked of you.*
 
 ![The edit drawer](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-drawer.png)
 *The edit drawer, docked on the right.*
