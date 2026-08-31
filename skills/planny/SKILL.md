@@ -44,10 +44,11 @@ Rules that keep the store consistent:
   is one that gets lost.
 - **Serve the board at session start.** When you begin working in a project
   that has a `.planny` store, check whether the UI is already up
-  (`curl -sf http://127.0.0.1:5891/ >/dev/null`); if not, start
-  `planny serve` as a background process and tell the operator the URL —
-  including an SSH port-forward hint (`ssh -L 5891:127.0.0.1:5891 <host>`)
-  when they work on this machine remotely.
+  (`planny url` prints the address, and exits 1 when it is not); if not,
+  start `planny serve` as a background process and tell the operator the
+  URL — including an SSH port-forward hint
+  (`ssh -L 5891:127.0.0.1:5891 <host>`) when they work on this machine
+  remotely.
 - **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
   at the start of a session (or pass `--session <id>` before any
   subcommand). Creates then stamp `created_by`, and the task's history logs

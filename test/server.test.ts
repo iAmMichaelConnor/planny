@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addTask, setStatus } from '../src/ops.js';
-import { startServer, type RunningServer } from '../src/server.js';
+import { currentServeUrl, startServer, type RunningServer } from '../src/server.js';
 import { initRepo, openStore, type Store } from '../src/store.js';
 
 let dir: string;
@@ -231,5 +232,51 @@ describe('errors', () => {
   it('404s unknown api routes', async () => {
     const res = await fetch(`${base}/api/nope`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('the serve record and currentServeUrl', () => {
+  const recordPath = () => join(dir, '.planny', 'serve.json');
+
+  it('records port and pid in .planny/serve.json while serving', () => {
+    const record = JSON.parse(readFileSync(recordPath(), 'utf8'));
+    expect(record.port).toBe(server.port);
+    expect(record.pid).toBe(process.pid);
+  });
+
+  it('close removes the record', async () => {
+    await server.close();
+    expect(existsSync(recordPath())).toBe(false);
+    server = await startServer(store, 0); // afterEach closes it again
+  });
+
+  it('currentServeUrl returns the live address', async () => {
+    expect(await currentServeUrl(store)).toBe(`http://127.0.0.1:${server.port}`);
+  });
+
+  it('currentServeUrl is null when nothing was ever served', async () => {
+    const port = server.port;
+    await server.close();
+    expect(await currentServeUrl(store)).toBeNull();
+    // A stale record left by a crashed server must not be trusted either.
+    writeFileSync(recordPath(), JSON.stringify({ port, pid: 999999 }));
+    expect(await currentServeUrl(store)).toBeNull();
+    // Nor a corrupt one.
+    writeFileSync(recordPath(), 'not json{');
+    expect(await currentServeUrl(store)).toBeNull();
+    server = await startServer(store, 0);
+  });
+
+  it('currentServeUrl is null when the recorded port serves something else', async () => {
+    await server.close();
+    const stranger = createHttpServer((_req, res) => res.end('hi'));
+    await new Promise<void>((resolve) => stranger.listen(0, '127.0.0.1', resolve));
+    const strangerPort = (stranger.address() as { port: number }).port;
+    writeFileSync(recordPath(), JSON.stringify({ port: strangerPort, pid: process.pid }));
+    expect(await currentServeUrl(store)).toBeNull();
+    await new Promise<void>((resolve, reject) =>
+      stranger.close((e) => (e ? reject(e) : resolve())),
+    );
+    server = await startServer(store, 0);
   });
 });

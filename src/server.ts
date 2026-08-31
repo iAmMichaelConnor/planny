@@ -1,8 +1,8 @@
 import { watch } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -81,18 +81,58 @@ export async function startServer(store: Store, port: number): Promise<RunningSe
     });
     server.listen(port, '127.0.0.1', resolve);
   });
+  const boundPort = (server.address() as AddressInfo).port;
+  // Record where this store is served so `planny url` can answer later.
+  // A crash leaves the record behind; readers must probe before trusting it.
+  await writeFile(
+    serveRecordPath(store),
+    `${JSON.stringify({ port: boundPort, pid: process.pid, started: new Date().toISOString() })}\n`,
+  );
   return {
-    port: (server.address() as AddressInfo).port,
-    close: () => {
+    port: boundPort,
+    close: async () => {
       clearTimeout(debounce);
       watcher.close();
       for (const client of clients) client.end();
       clients.clear();
-      return new Promise((resolve, reject) =>
+      await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
+      await rm(serveRecordPath(store), { force: true });
     },
   };
+}
+
+function serveRecordPath(store: Store): string {
+  return join(store.root, '.planny', 'serve.json');
+}
+
+/** Which store root a planny server on this port serves, if any. */
+export async function servedStoreRoot(port: number): Promise<string | undefined> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!res.ok) return undefined;
+    const state = (await res.json()) as { store?: { root?: string } };
+    return typeof state.store?.root === 'string' ? state.store.root : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The address of a live server for this store, or null when nothing serves it. */
+export async function currentServeUrl(store: Store): Promise<string | null> {
+  let recorded: unknown;
+  try {
+    recorded = (JSON.parse(await readFile(serveRecordPath(store), 'utf8')) as { port?: unknown })
+      .port;
+  } catch {
+    return null;
+  }
+  if (typeof recorded !== 'number' || !Number.isInteger(recorded) || recorded <= 0) return null;
+  const root = await servedStoreRoot(recorded);
+  return root === store.root ? `http://127.0.0.1:${recorded}` : null;
 }
 
 async function handle(store: Store, req: IncomingMessage, res: ServerResponse): Promise<void> {

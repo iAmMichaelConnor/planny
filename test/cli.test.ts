@@ -586,3 +586,25 @@ describe('progress and export', () => {
     expect(allOut()).toContain('third task');
   });
 });
+
+describe('url', () => {
+  it('prints the address serving this store', async () => {
+    await run('init');
+    const { openStore } = await import('../src/store.js');
+    const { startServer } = await import('../src/server.js');
+    const srv = await startServer(openStore(dir), 0);
+    try {
+      out = [];
+      expect(await run('url')).toBe(0);
+      expect(allOut()).toBe(`http://127.0.0.1:${srv.port}`);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('fails with guidance when nothing serves the store', async () => {
+    await run('init');
+    expect(await run('url')).toBe(1);
+    expect(err.join('\n')).toMatch(/planny serve/);
+  });
+});

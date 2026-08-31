@@ -97,20 +97,6 @@ function readBody(options: DescOptions): string | undefined {
   return options.desc;
 }
 
-/** Which store root a planny server on this port serves, if any. */
-async function servedStoreRoot(port: number): Promise<string | undefined> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/state`, {
-      signal: AbortSignal.timeout(1000),
-    });
-    if (!res.ok) return undefined;
-    const state = (await res.json()) as { store?: { root?: string } };
-    return typeof state.store?.root === 'string' ? state.store.root : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function buildProgram(io: CliIo): Command {
   const program = new Command();
   program
@@ -773,7 +759,7 @@ Examples:
     .option('--port <port>', 'port to listen on', (v: string) => Number(v), 5891)
     .action(async (options) => {
       const store = open();
-      const { startServer } = await import('./server.js');
+      const { startServer, servedStoreRoot } = await import('./server.js');
       let running;
       try {
         running = await startServer(store, options.port);
@@ -799,6 +785,30 @@ Examples:
         process.once('SIGTERM', resolve);
       });
       await running.close();
+    });
+
+  program
+    .command('url')
+    .description('print the address where the localhost UI serves this store')
+    .addHelpText(
+      'after',
+      `
+Reads the record the server leaves in .planny/serve.json and probes it, so
+a crashed or foreign server is never reported. Exits 1 when nothing serves
+this store.
+
+Examples:
+  planny url                       http://127.0.0.1:5891
+  open "$(planny url)"             jump to the board (macOS)`,
+    )
+    .action(async () => {
+      const store = open();
+      const { currentServeUrl } = await import('./server.js');
+      const url = await currentServeUrl(store);
+      if (url === null) {
+        throw new Error('the UI is not being served for this store — run `planny serve`');
+      }
+      io.out(url);
     });
 
   return program;

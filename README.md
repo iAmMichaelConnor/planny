@@ -53,7 +53,8 @@ ln -s "$(npm root -g)/planny/skills/planny" ~/.codex/skills/planny
 
 Restart Codex to pick up new skills; use `.agents/skills/planny` instead
 for a per-repo install. Either way the CLI itself still comes from npm —
-the skill is instructions, not the binary.
+the skill is the primary instructions, and every command's `--help`
+teaches the rest.
 
 ## The localhost UI
 
@@ -155,6 +156,7 @@ serve UI, cannot interleave and drop writes.
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
 | `serve [--port]` | localhost control site (127.0.0.1 only) |
+| `url` | print the address where the UI serves this store; exits 1 when it is not up |
 
 Every command's `--help` carries examples; mistyped commands get a
 did-you-mean suggestion.
