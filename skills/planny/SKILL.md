@@ -2,12 +2,13 @@
 name: planny
 description: >-
   Track a project's tasks and operator decisions with the planny CLI instead
-  of a plan.md. Use whenever the user asks to add, update, finish, cancel or
-  reprioritize a task; asks what to do next or to work on a task or project;
-  asks for the plan, progress, or dependencies; wants to go through open
-  decisions; or whenever you hit a question only the operator can answer —
-  record that as a decision task, don't just ask in chat. Requires a .planny
-  store in the project (`planny init` creates one).
+  of a plan.md. Use whenever the user asks you to make a plan or break work
+  down (the plan must be built as planny tasks); asks to add, update,
+  finish, cancel or reprioritize a task; asks what to do next or to work on
+  a task or project; asks for the plan, progress, or dependencies; wants to
+  go through open decisions; or whenever you hit a question only the
+  operator can answer — record that as a decision task, don't just ask in
+  chat. Requires a .planny store in the project (`planny init` creates one).
 ---
 
 # planny
@@ -29,11 +30,17 @@ Rules that keep the store consistent:
   without a definition.
 - A task that needs several owners (plan, build, review) becomes child tasks,
   each with one owner.
+- **planny is the plan of record.** Manage every task, decision, and the
+  plan's progress through the CLI — never a parallel plan.md, a harness
+  todo list, or private notes. When the user asks you to make a plan, the
+  plan IS the planny store: you must build it as planny tasks (see
+  "Creating tasks and plans").
 - **Every feature request, bug report, or change of plan becomes a task
   first** — `planny add` it the moment the user asks, in any phrasing,
-  including a mid-conversation aside. Then work it: `start` when you begin,
-  `done` when it ships. A request tracked only in chat, a TODO comment, or
-  your own head is a request that gets lost.
+  including a mid-conversation aside — and the moment you think of one
+  yourself. Then work it: `start` when you begin, `done` when it ships. A
+  request or idea tracked only in chat, a TODO comment, or your own head
+  is one that gets lost.
 - **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
   at the start of a session (or pass `--session <id>` before any
   subcommand). Creates then stamp `created_by`, and the task's history logs
@@ -65,7 +72,37 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "is the store broken?", a command errors on a task file | `planny doctor` (add `--fix` to apply the safe repairs) |
 
 You have a question only the operator can answer → **add a decision task**
-(next section). Do not park the question in chat or a TODO comment.
+(see "Decision tasks"). Asking in the terminal as well is fine — but the
+task must exist regardless, because a question that lives only in chat
+disappears when the operator is away, scrolls past, or answers later.
+Never park a question in chat alone or in a TODO comment.
+
+## Creating tasks and plans
+
+When the user asks for a plan, or you break work down yourself, create one
+task per piece of work with `planny add`. Fill each task in so a fresh
+agent could pick it up with no other context:
+
+- **Name**: short, imperative, specific — "Guard concurrent writes with a
+  lock", never "locking stuff".
+- **Description** (`-d`, or `--desc-file` for long bodies): self-contained
+  STE prose. Say what the task is, why it exists, what done looks like,
+  and give pointers — file paths, commands, the test to run. Include any
+  constraint the name cannot carry. The reader must not need the
+  conversation that produced the task.
+- **Fields at creation, not later**: `--kind` (ai or operator), `--model`
+  when particular model strengths suit the work, `--parent` to place it in
+  the hierarchy, `--blocked-by` / `--blocks` for real orderings,
+  `--priority` when it should not join at the bottom.
+- **Structure**: work needing several owners or stages becomes child
+  tasks, one owner each. Encode order as dependencies, never as prose
+  ("do this after t7" in a description is invisible to `next`).
+- **Decisions** use the section layout in
+  [references/decision-format.md](references/decision-format.md).
+
+Then sanity-check the plan you just built: `planny tree` (shape),
+`planny deps` (order), `planny next` (is the first actionable task the
+right one?).
 
 ## Working tasks
 
