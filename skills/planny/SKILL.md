@@ -1,14 +1,18 @@
 ---
 name: planny
 description: >-
-  Track a project's tasks and operator decisions with the planny CLI instead
-  of a plan.md. Use whenever the user asks you to make a plan or break work
-  down (the plan must be built as planny tasks); asks to add, update,
-  finish, cancel or reprioritize a task; asks what to do next or to work on
-  a task or project; asks for the plan, progress, or dependencies; wants to
-  go through open decisions; or whenever you hit a question only the
-  operator can answer — record that as a decision task, don't just ask in
-  chat. Requires a .planny store in the project (`planny init` creates one).
+  Manage the tasks and outstanding decisions of an AI-driven project, of a
+  single AI session, or both, with the planny CLI: the plan lives in the
+  repo as one markdown file per task — out of your context window, never a
+  stale plan.md. Use whenever the user asks for a plan or to break work
+  down (build the plan as planny tasks); asks to add, update, finish,
+  cancel or reprioritize a task; asks what to do next, what the status is,
+  or what changed; wants progress, dependencies, or the open decisions;
+  when you think of a task yourself — record the idea, don't carry it in
+  your head; and whenever you hit a question only the human operator can
+  answer — record it as a decision task, never a chat aside. Requires a
+  .planny store (`planny init` creates one).
+license: MIT
 ---
 
 # planny
