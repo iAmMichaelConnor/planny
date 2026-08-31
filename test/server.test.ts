@@ -69,6 +69,9 @@ describe('GET /api/state', () => {
     expect(state.decisions).toEqual([{ id: 't2', blocked: true }]);
     expect(state.store.root).toBe(dir);
     expect(state.store.name).toBe(dir.split('/').pop());
+    // Positions come from the server so the client never re-derives order.
+    expect(state.tasks[0].position).toBe(1);
+    expect(state.tasks[1].position).toBe(2);
   });
 });
 
@@ -127,6 +130,12 @@ describe('mutations', () => {
     addTask(store, { name: 'b', blockedBy: ['t1'] });
     const body = await (await post('/api/tasks/t2/status', { status: 'done' })).json();
     expect(body.warnings.join(' ')).toMatch(/blocked/i);
+  });
+});
+
+describe('port conflicts', () => {
+  it('startServer rejects cleanly when the port is taken', async () => {
+    await expect(startServer(store, server.port)).rejects.toThrow(/EADDRINUSE|in use/i);
   });
 });
 

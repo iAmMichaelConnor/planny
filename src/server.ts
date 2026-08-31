@@ -16,7 +16,7 @@ import {
   type UpdateInput,
 } from './ops.js';
 import { computeProgress, nextDecisions } from './query.js';
-import { sortByPriority } from './priority.js';
+import { activePositions, sortByPriority } from './priority.js';
 import type { Store } from './store.js';
 import { isStatus } from './types.js';
 
@@ -73,7 +73,14 @@ export async function startServer(store: Store, port: number): Promise<RunningSe
       sendJson(res, status, { error: (error as Error).message });
     });
   });
-  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', (error) => {
+      clearTimeout(debounce);
+      watcher.close();
+      reject(error);
+    });
+    server.listen(port, '127.0.0.1', resolve);
+  });
   return {
     port: (server.address() as AddressInfo).port,
     close: () => {
@@ -154,12 +161,16 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
 function buildState(store: Store): object {
   const tasks = store.loadAll();
   const graph = buildGraph(tasks);
+  const positions = activePositions(tasks);
   return {
     store: { root: store.root, name: basename(store.root) },
     tasks: sortByPriority(tasks).map((task) => ({
       ...task,
       blocked: graph.isBlocked(task.id),
       blocking: graph.blocking(task.id).map((t) => t.id),
+      // The server owns position: clamping and repairs mean only the
+      // priority engine knows where a task truly stands.
+      position: positions.get(task.id) ?? 0,
     })),
     progress: computeProgress(tasks),
     decisions: nextDecisions(store).map(({ task, blocked }) => ({ id: task.id, blocked })),

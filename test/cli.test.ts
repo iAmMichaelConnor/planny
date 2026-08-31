@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
 
@@ -388,6 +389,103 @@ describe('error clarity and help', () => {
       err = [];
       await run(command, '--help');
       expect(allOut() + err.join('\n'), `${command} --help`).toMatch(/Examples:/);
+    }
+  });
+});
+
+describe('decide loop', () => {
+  function runWithPrompt(answers: string[], ...args: string[]): Promise<number> {
+    const queue = [...answers];
+    return runCli(args, {
+      cwd: dir,
+      out: (line) => out.push(line),
+      err: (line) => err.push(line),
+      prompt: async () => queue.shift() ?? 'q',
+    });
+  }
+
+  beforeEach(async () => {
+    await run('init');
+    await run('add', 'First question', '--type', 'decision', '-d', '## Proposal\n\nDo it.');
+    await run('add', 'Second question', '--type', 'decision', '-d', '## Proposal\n\nAlso.');
+    out = [];
+  });
+
+  it('accept resolves with the proposal, attributed to the operator', async () => {
+    expect(await runWithPrompt(['a', 'q'], 'decide')).toBe(0);
+    const t1 = JSON.parse(await (async () => { out = []; await run('show', 't1', '--json'); return allOut(); })());
+    expect(t1.task.status).toBe('done');
+    expect(t1.task.body).toContain('Accepted the proposal.');
+    expect(t1.task.history.at(-1).by).toBe('operator');
+    out = [];
+    await run('show', 't2', '--json');
+    expect(JSON.parse(allOut()).task.status).toBe('todo'); // quit before it
+  });
+
+  it('respond records the typed answer', async () => {
+    await runWithPrompt(['r', 'Use blue.', 'q'], 'decide');
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toContain('Use blue.');
+  });
+
+  it('skip leaves decisions open and reports the remainder', async () => {
+    await runWithPrompt(['s', 's'], 'decide');
+    expect(allOut()).toMatch(/2 open decisions remaining/);
+    out = [];
+    await run('decisions');
+    expect(allOut()).toContain('First question');
+    expect(allOut()).toContain('Second question');
+  });
+});
+
+describe('path and export filters', () => {
+  it('path prints the task file and fails on an unknown id', async () => {
+    await seedTrio();
+    out = [];
+    await run('path', 't1');
+    expect(allOut().endsWith('t1.md')).toBe(true);
+    expect(await run('path', 't9')).toBe(1);
+  });
+
+  it('export --status keeps only matching tasks', async () => {
+    await seedTrio();
+    await run('done', 't1');
+    out = [];
+    await run('export', '--status', 'done');
+    expect(allOut()).toContain('first task');
+    expect(allOut()).not.toContain('second task');
+  });
+});
+
+describe('serve on a taken port', () => {
+  it('recognizes its own store already serving and exits cleanly', async () => {
+    await run('init');
+    const { openStore } = await import('../src/store.js');
+    const { startServer } = await import('../src/server.js');
+    const running = await startServer(openStore(dir), 0);
+    try {
+      expect(await run('serve', '--port', String(running.port))).toBe(0);
+      expect(allOut()).toMatch(/already serving/i);
+      expect(allOut()).toContain(String(running.port));
+    } finally {
+      await running.close();
+    }
+  });
+
+  it('explains a port held by a different store', async () => {
+    await run('init');
+    const otherDir = mkdtempSync(join(tmpdir(), 'planny-other-'));
+    const { initRepo, openStore } = await import('../src/store.js');
+    const { startServer } = await import('../src/server.js');
+    initRepo(otherDir);
+    const running = await startServer(openStore(otherDir), 0);
+    try {
+      expect(await run('serve', '--port', String(running.port))).toBe(1);
+      expect(err.join('\n')).toMatch(/different store|--port/i);
+    } finally {
+      await running.close();
+      rmSync(otherDir, { recursive: true, force: true });
     }
   });
 });

@@ -175,11 +175,16 @@ function renormalize(tasks: Task[], skipId: string, changed: Set<string>): void 
   for (const id of resequenceRanks(tasks, skipId)) changed.add(id);
 }
 
+/** 1-based positions for every active task, keyed by id. */
+export function activePositions(tasks: readonly Task[]): Map<string, number> {
+  return new Map(sortByPriority(tasks.filter(isActive)).map((t, i) => [t.id, i + 1]));
+}
+
 /** 1-based position among active tasks (0 when the task is not active). */
 export function activePosition(
   tasks: readonly Task[],
   id: string,
 ): { position: number; total: number } {
-  const active = sortByPriority(tasks.filter(isActive));
-  return { position: active.findIndex((t) => t.id === id) + 1, total: active.length };
+  const positions = activePositions(tasks);
+  return { position: positions.get(id) ?? 0, total: positions.size };
 }

@@ -14,7 +14,7 @@ const webDir = join(__dirname, '..', 'web');
 const sampleState = {
   store: { root: '/home/me/projects/rocket', name: 'rocket' },
   tasks: [
-    task('t1', { name: 'Build the API', blocking: ['t3'] }),
+    task('t1', { name: 'Build the API', blocking: ['t3'], position: 1 }),
     task('t2', {
       name: 'Write tests',
       parent: 't1',
@@ -22,8 +22,9 @@ const sampleState = {
       model: 'opus',
       createdBy: 'agent-7',
       history: [{ at: '2026-08-31T12:00:00.000Z', status: 'in-progress', by: 'agent-7' }],
+      position: 7, // deliberately not the naive index: proves the client reads it
     }),
-    task('t3', { name: 'Deploy', blockedBy: ['t1'], blocked: true }),
+    task('t3', { name: 'Deploy', blockedBy: ['t1'], blocked: true, position: 3 }),
     task('t4', {
       name: 'Choose hosting',
       type: 'decision',
@@ -44,6 +45,7 @@ function task(id: string, overrides: Record<string, unknown> = {}) {
     status: 'todo',
     type: 'task',
     kind: 'ai',
+    position: 0,
     priority: Number(id.slice(1)) * 10,
     parent: undefined,
     blockedBy: [],
@@ -160,7 +162,7 @@ describe('ui smoke', () => {
     const cardText = (id: string) =>
       (document.querySelector(`.card[data-id="${id}"]`) as HTMLElement).textContent;
     expect(cardText('t1')).toContain('#1');
-    expect(cardText('t2')).toContain('#2'); // global position across both active columns
+    expect(cardText('t2')).toContain('#7'); // served value, not a client-side recount
     expect(cardText('t3')).toContain('#3');
     expect(cardText('t6')).not.toContain('#'); // done cards carry no position
   });

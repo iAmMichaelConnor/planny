@@ -272,10 +272,6 @@ function renderBoard() {
   const visible = (t) =>
     (f.kinds.size === 0 || f.kinds.has(t.kind)) && (f.types.size === 0 || f.types.has(t.type));
 
-  // Position = index in the active (todo + in-progress) priority order,
-  // shared across both active columns — the same number bump and the
-  // drawer's position field use.
-  const positions = new Map(activeTasks().map((t, i) => [t.id, i + 1]));
   const columns = [
     ['todo', 'To do'],
     ['in-progress', 'In progress'],
@@ -290,7 +286,7 @@ function renderBoard() {
         : '';
       const cards = state.data.tasks
         .filter((t) => t.status === status && visible(t))
-        .map((t) => cardHtml(t, positions.get(t.id)))
+        .map((t) => cardHtml(t, t.position > 0 ? t.position : undefined))
         .join('');
       return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}${ordered}</h2>${cards || '<p class="muted">—</p>'}</div>`;
     })
@@ -542,7 +538,7 @@ function renderDrawer() {
     .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)
     .join('');
   const active = activeTasks();
-  const positionValue = active.findIndex((t) => t.id === task.id) + 1;
+  const positionValue = task.position ?? 0; // served by the API; 0 when inactive or new
 
   const startedEntry = task.status === 'in-progress'
     ? [...(task.history || [])].reverse().find((e) => e.status === 'in-progress')

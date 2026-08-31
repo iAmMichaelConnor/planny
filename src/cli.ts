@@ -28,6 +28,8 @@ export interface CliIo {
   cwd: string;
   out: (text: string) => void;
   err: (text: string) => void;
+  /** Interactive input for `decide`; defaults to readline on stdin. */
+  prompt?: (question: string) => Promise<string>;
 }
 
 /** Parse and run one CLI invocation. Returns the exit code. */
@@ -93,6 +95,20 @@ function readBody(options: DescOptions): string | undefined {
       : readFileSync(options.descFile, 'utf8');
   }
   return options.desc;
+}
+
+/** Which store root a planny server on this port serves, if any. */
+async function servedStoreRoot(port: number): Promise<string | undefined> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!res.ok) return undefined;
+    const state = (await res.json()) as { store?: { root?: string } };
+    return typeof state.store?.root === 'string' ? state.store.root : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildProgram(io: CliIo): Command {
@@ -649,15 +665,19 @@ Examples:
         io.out('No open decisions are ready.');
         return;
       }
-      const { createInterface } = await import('node:readline/promises');
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      let ask = io.prompt;
+      let cleanup = (): void => {};
+      if (ask === undefined) {
+        const { createInterface } = await import('node:readline/promises');
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        ask = (question) => rl.question(question);
+        cleanup = () => rl.close();
+      }
       try {
         for (const item of ready) {
           io.out('');
           io.out(renderShow(item.task, store.loadAll(), store.path(item.task.id)));
-          const choice = (
-            await rl.question('\n[a]ccept proposal / [r]espond / [s]kip / [q]uit: ')
-          )
+          const choice = (await ask('\n[a]ccept proposal / [r]espond / [s]kip / [q]uit: '))
             .trim()
             .toLowerCase();
           if (choice === 'q') break;
@@ -667,7 +687,7 @@ Examples:
               `resolved ${item.task.id}`,
             );
           } else if (choice === 'r') {
-            const answer = (await rl.question('Your decision: ')).trim();
+            const answer = (await ask('Your decision: ')).trim();
             if (answer !== '') {
               report(
                 resolveDecision(store, item.task.id, answer, actor() ?? 'operator'),
@@ -679,7 +699,7 @@ Examples:
           }
         }
       } finally {
-        rl.close();
+        cleanup();
       }
       const remaining = nextDecisions(store);
       io.out(`\n${remaining.length} open decision${remaining.length === 1 ? '' : 's'} remaining.`);
@@ -734,7 +754,24 @@ Examples:
     .action(async (options) => {
       const store = open();
       const { startServer } = await import('./server.js');
-      const running = await startServer(store, options.port);
+      let running;
+      try {
+        running = await startServer(store, options.port);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+        // The skill tells agents to serve at session start, so a taken
+        // port is routine: find out who holds it before complaining.
+        const holder = await servedStoreRoot(options.port);
+        if (holder === store.root) {
+          io.out(`already serving this store at http://127.0.0.1:${options.port}`);
+          return;
+        }
+        throw new Error(
+          holder !== undefined
+            ? `port ${options.port} is serving a different store (${holder}) — pass --port <other>`
+            : `port ${options.port} is in use by something else — pass --port <other>`,
+        );
+      }
       io.out(`planny ui: http://127.0.0.1:${running.port} (ctrl-c to stop)`);
       // Keep the process alive until interrupted.
       await new Promise<void>((resolve) => {
