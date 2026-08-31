@@ -147,16 +147,27 @@ describe('ui smoke', () => {
     expect(cardText('t6')).not.toContain('#'); // done cards carry no position
   });
 
-  it('renders the tree with nesting, per-parent progress and filters', () => {
+  it('renders the tree with nesting and progress; done is hidden by default', () => {
     clickTab('tree');
     const tree = document.querySelector('#tree-list')!;
     expect(tree.querySelector('.tree-children')!.textContent).toContain('Write tests');
     expect(tree.querySelector('.mini-progress')).not.toBeNull();
-    // Uncheck "done": t6 disappears; ancestors of matches stay.
-    const doneBox = document.querySelector('input[data-status="done"]') as HTMLInputElement;
-    doneBox.checked = false;
+    expect(tree.textContent).not.toContain('Settled question'); // done, hidden by default
+    const doneBox = document.querySelector(
+      '#status-filters input[data-status="done"]',
+    ) as HTMLInputElement;
+    expect(doneBox.checked).toBe(false);
+    doneBox.checked = true;
     doneBox.dispatchEvent(new Event('change'));
-    expect(document.querySelector('#tree-list')!.textContent).not.toContain('Settled question');
+    expect(document.querySelector('#tree-list')!.textContent).toContain('Settled question');
+  });
+
+  it('the deps view also starts with done unchecked', () => {
+    clickTab('deps');
+    const doneBox = document.querySelector(
+      '#deps-status input[data-status="done"]',
+    ) as HTMLInputElement;
+    expect(doneBox.checked).toBe(false);
   });
 
   it('renders the dependency graph as SVG nodes and edges', () => {
