@@ -240,4 +240,4 @@ hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
 problems that have one right answer; it exits 1 while errors remain.
 
 A bug in planny itself goes upstream: add a task to your own plan to open
-the issue or PR at <https://github.com/iAmMichaelConnor/planny-wanny>.
+the issue or PR at <https://github.com/iAmMichaelConnor/planny>.

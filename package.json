@@ -1,5 +1,5 @@
 {
-  "name": "planny-wanny",
+  "name": "planny",
   "version": "0.1.0",
   "description": "A file-backed task and decision tracker for AI-driven projects. CLI, markdown store, localhost UI.",
   "type": "module",
@@ -25,11 +25,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iAmMichaelConnor/planny-wanny.git"
+    "url": "git+https://github.com/iAmMichaelConnor/planny.git"
   },
-  "homepage": "https://github.com/iAmMichaelConnor/planny-wanny#readme",
+  "homepage": "https://github.com/iAmMichaelConnor/planny#readme",
   "bugs": {
-    "url": "https://github.com/iAmMichaelConnor/planny-wanny/issues"
+    "url": "https://github.com/iAmMichaelConnor/planny/issues"
   },
   "keywords": [
     "tasks",

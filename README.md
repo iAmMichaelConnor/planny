@@ -1,4 +1,4 @@
-# planny-wanny
+# planny
 
 A CLI task and decision tracker for projects where AI agents do the work and
 a human (the operator) steers. It replaces the ever-growing `plan.md`: tasks
@@ -14,8 +14,8 @@ first line so there is never doubt which project answered.
 ## Install
 
 ```bash
-git clone https://github.com/iAmMichaelConnor/planny-wanny
-cd planny-wanny
+git clone https://github.com/iAmMichaelConnor/planny
+cd planny
 npm install
 npm run build
 npm link        # puts `planny` on your PATH

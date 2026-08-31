@@ -1,4 +1,4 @@
-# planny-wanny
+# planny
 
 A CLI task and decision tracker for AI-driven projects. Tasks live as markdown
 files with YAML frontmatter under `.planny/tasks/`, one file per task, named by
