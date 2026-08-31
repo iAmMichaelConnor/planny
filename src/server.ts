@@ -2,7 +2,7 @@ import { watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -154,6 +154,7 @@ function buildState(store: Store): object {
   const tasks = store.loadAll();
   const graph = buildGraph(tasks);
   return {
+    store: { root: store.root, name: basename(store.root) },
     tasks: sortByPriority(tasks).map((task) => ({
       ...task,
       blocked: graph.isBlocked(task.id),

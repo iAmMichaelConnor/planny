@@ -67,6 +67,8 @@ describe('GET /api/state', () => {
     expect(state.tasks[0].blocking).toEqual(['t2']);
     expect(state.progress.total).toBe(2);
     expect(state.decisions).toEqual([{ id: 't2', blocked: true }]);
+    expect(state.store.root).toBe(dir);
+    expect(state.store.name).toBe(dir.split('/').pop());
   });
 });
 

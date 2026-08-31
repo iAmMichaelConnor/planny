@@ -84,8 +84,30 @@ header h1 { font-size: 17px; margin: 0; }
 
 main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 
+/* Chips */
+.chip-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 2px 11px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.chip .status-dot { margin-right: 5px; }
+.chip-group + .chip-group { margin-left: 10px; }
+
 /* Board */
-#view-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+#store-label { font-size: 12.5px; }
+#board-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+#board-filters { margin-bottom: 12px; }
 .column { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
 .column h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 2px 6px 10px; }
 .card {

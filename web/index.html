@@ -9,6 +9,7 @@
 <body>
 <header>
   <h1>planny</h1>
+  <span id="store-label" class="muted"></span>
   <div id="progress-wrap" title="done / all non-cancelled tasks">
     <div id="progress-bar"><div id="progress-fill"></div></div>
     <span id="progress-text"></span>
@@ -23,24 +24,13 @@
 </header>
 
 <main>
-  <section id="view-board" class="view"></section>
+  <section id="view-board" class="view">
+    <div id="board-filters" class="filters"></div>
+    <div id="board-columns"></div>
+  </section>
 
   <section id="view-tree" class="view hidden">
-    <div id="tree-filters" class="filters">
-      <span class="filter-group" id="status-filters">
-        <label><input type="checkbox" data-status="todo" checked> todo</label>
-        <label><input type="checkbox" data-status="in-progress" checked> in progress</label>
-        <label><input type="checkbox" data-status="done"> done</label>
-        <label><input type="checkbox" data-status="cancelled"> cancelled</label>
-      </span>
-      <select id="kind-filter"><option value="">any kind</option></select>
-      <select id="type-filter">
-        <option value="">any type</option>
-        <option value="task">task</option>
-        <option value="decision">decision</option>
-      </select>
-      <label><input type="checkbox" id="deps-badges" checked> show dependencies</label>
-    </div>
+    <div id="tree-filters" class="filters"></div>
     <div id="tree-list"></div>
   </section>
 
@@ -52,12 +42,7 @@
           <option value="blocked-by">A → B: A is blocked by B</option>
         </select>
       </label>
-      <span class="filter-group legend" id="deps-status">
-        <label><span class="status-dot todo"></span><input type="checkbox" data-status="todo" checked> todo</label>
-        <label><span class="status-dot in-progress"></span><input type="checkbox" data-status="in-progress" checked> in progress</label>
-        <label><span class="status-dot done"></span><input type="checkbox" data-status="done"> done</label>
-        <label><span class="status-dot cancelled"></span><input type="checkbox" data-status="cancelled"> cancelled</label>
-      </span>
+      <span class="chip-group legend" id="deps-status"></span>
     </div>
     <p class="hint" id="deps-hint"></p>
     <div id="deps-scroll"><svg id="deps-svg"></svg></div>

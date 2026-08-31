@@ -10,6 +10,14 @@ const state = {
   collapsed: new Set(),
   skippedDecisions: new Set(),
   depsMode: readPreference('planny-deps-mode', 'blocks'),
+  treeFilters: {
+    statuses: new Set(['todo', 'in-progress']),
+    kinds: new Set(), // empty set = no filter
+    types: new Set(),
+    showDeps: true,
+  },
+  depsStatuses: new Set(['todo', 'in-progress']),
+  boardFilters: { kinds: new Set(), types: new Set() },
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
   renderedDrawerId: null,
@@ -147,6 +155,35 @@ function badges(task) {
   return parts.join('');
 }
 
+// ---------- filter chips ----------
+
+const ALL_STATUSES = ['todo', 'in-progress', 'done', 'cancelled'];
+
+function chip(scope, attr, value, label, active) {
+  return `<button class="chip${active ? ' active' : ''}" data-scope="${scope}" data-${attr}="${esc(value)}">${label}</button>`;
+}
+
+function statusChips(scope, activeSet) {
+  return ALL_STATUSES.map((s) =>
+    chip(scope, 'status', s, `<span class="status-dot ${s}"></span>${s.replace('-', ' ')}`, activeSet.has(s)),
+  ).join('');
+}
+
+function kindChips(scope, activeSet) {
+  const kinds = [...new Set(state.data.tasks.map((t) => t.kind))].sort();
+  if (kinds.length < 2) return '';
+  return kinds.map((k) => chip(scope, 'kind', k, esc(k), activeSet.has(k))).join('');
+}
+
+function typeChips(scope, activeSet) {
+  return ['task', 'decision'].map((t) => chip(scope, 'type', t, t, activeSet.has(t))).join('');
+}
+
+function toggleInSet(set, value) {
+  if (set.has(value)) set.delete(value);
+  else set.add(value);
+}
+
 // Tiny markdown renderer for decision bodies: headings, bold, italic,
 // inline code, bullet lists, paragraphs.
 function renderMarkdown(text) {
@@ -176,6 +213,9 @@ function renderMarkdown(text) {
 
 function render() {
   const { progress } = state.data;
+  const label = $('#store-label');
+  label.textContent = state.data.store ? state.data.store.name : '';
+  label.title = state.data.store ? state.data.store.root : '';
   $('#progress-fill').style.width = `${progress.percent}%`;
   $('#progress-text').textContent = `${progress.percent}% · ${progress.done}/${progress.total} done`;
   const openCount = state.data.decisions.filter((d) => !d.blocked).length;
@@ -218,6 +258,13 @@ function cardHtml(task, position) {
 }
 
 function renderBoard() {
+  const f = state.boardFilters;
+  $('#board-filters').innerHTML =
+    `<span class="chip-group">${kindChips('board', f.kinds)}</span>` +
+    `<span class="chip-group">${typeChips('board', f.types)}</span>`;
+  const visible = (t) =>
+    (f.kinds.size === 0 || f.kinds.has(t.kind)) && (f.types.size === 0 || f.types.has(t.type));
+
   // Position = index in the active (todo + in-progress) priority order,
   // shared across both active columns — the same number bump and the
   // drawer's position field use.
@@ -228,14 +275,14 @@ function renderBoard() {
     ['done', 'Done'],
     ['cancelled', 'Cancelled'],
   ];
-  $('#view-board').innerHTML = columns
+  $('#board-columns').innerHTML = columns
     .filter(([status]) => status !== 'cancelled' || state.data.tasks.some((t) => t.status === status))
     .map(([status, title]) => {
       const ordered = status === 'todo' || status === 'in-progress'
         ? ' <span class="colsub">priority order ↓</span>'
         : '';
       const cards = state.data.tasks
-        .filter((t) => t.status === status)
+        .filter((t) => t.status === status && visible(t))
         .map((t) => cardHtml(t, positions.get(t.id)))
         .join('');
       return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}${ordered}</h2>${cards || '<p class="muted">—</p>'}</div>`;
@@ -243,31 +290,18 @@ function renderBoard() {
     .join('');
 }
 
-function treeFilters() {
-  const statuses = [...document.querySelectorAll('#status-filters input:checked')].map(
-    (el) => el.dataset.status,
-  );
-  return {
-    statuses: new Set(statuses),
-    kind: $('#kind-filter').value,
-    type: $('#type-filter').value,
-    showDeps: $('#deps-badges').checked,
-  };
-}
-
 function renderTree() {
-  const kinds = [...new Set(state.data.tasks.map((t) => t.kind))].sort();
-  const kindFilter = $('#kind-filter');
-  const current = kindFilter.value;
-  kindFilter.innerHTML =
-    '<option value="">any kind</option>' +
-    kinds.map((k) => `<option${k === current ? ' selected' : ''}>${esc(k)}</option>`).join('');
+  const filters = state.treeFilters;
+  $('#tree-filters').innerHTML =
+    `<span class="chip-group">${statusChips('tree', filters.statuses)}</span>` +
+    `<span class="chip-group">${kindChips('tree', filters.kinds)}</span>` +
+    `<span class="chip-group">${typeChips('tree', filters.types)}</span>` +
+    `<span class="chip-group"><button class="chip${filters.showDeps ? ' active' : ''}" data-scope="tree" data-toggle="deps">show dependencies</button></span>`;
 
-  const filters = treeFilters();
   const matches = (t) =>
     filters.statuses.has(t.status) &&
-    (filters.kind === '' || t.kind === filters.kind) &&
-    (filters.type === '' || t.type === filters.type);
+    (filters.kinds.size === 0 || filters.kinds.has(t.kind)) &&
+    (filters.types.size === 0 || filters.types.has(t.type));
   const visible = new Set();
   for (const task of state.data.tasks) {
     if (!matches(task)) continue;
@@ -293,7 +327,7 @@ function renderTree() {
       ${twist}<span class="status-dot ${task.status}"></span>
       <span class="id">${task.id}</span>
       <span class="name${task.status === 'done' ? ' done-name' : ''}">${esc(task.name)}</span>
-      ${progressHtml}${filters.showDeps ? badges(task) : badges({ ...task, blocked: false })}
+      ${progressHtml}${state.treeFilters.showDeps ? badges(task) : badges({ ...task, blocked: false })}
     </div>`;
     const childHtml = !isCollapsed && children.length > 0
       ? `<div class="tree-children">${children.map(nodeHtml).join('')}</div>`
@@ -309,16 +343,14 @@ function renderTree() {
 function renderDeps() {
   const mode = state.depsMode; // 'blocks' | 'blocked-by'
   $('#deps-mode').value = mode;
+  $('#deps-status').innerHTML = statusChips('deps', state.depsStatuses);
   $('#deps-hint').textContent =
     mode === 'blocks'
       ? 'Arrows point from a blocker to the task it blocks: A → B means A blocks B, so B waits on A. Blockers sit left. Hover an arrow for its two ends; click a task to edit it.'
       : 'Arrows point from a task to what it waits on: A → B means A is blocked by B. Blocked tasks sit left. Hover an arrow for its two ends; click a task to edit it.';
 
-  const shown = new Set(
-    [...document.querySelectorAll('#deps-status input:checked')].map((el) => el.dataset.status),
-  );
   const visibleIds = new Set(
-    state.data.tasks.filter((t) => shown.has(t.status)).map((t) => t.id),
+    state.data.tasks.filter((t) => state.depsStatuses.has(t.status)).map((t) => t.id),
   );
   const involved = state.data.tasks.filter(
     (t) =>
@@ -704,6 +736,23 @@ function wireDrawer(task, isNew) {
 // ---------- events ----------
 
 document.addEventListener('click', (event) => {
+  const filterChip = event.target.closest('.chip[data-scope]');
+  if (filterChip) {
+    const { scope, status, kind, type, toggle } = filterChip.dataset;
+    if (scope === 'deps') {
+      toggleInSet(state.depsStatuses, status);
+      renderDeps();
+    } else {
+      const f = scope === 'tree' ? state.treeFilters : state.boardFilters;
+      if (status !== undefined) toggleInSet(f.statuses, status);
+      else if (kind !== undefined) toggleInSet(f.kinds, kind);
+      else if (type !== undefined) toggleInSet(f.types, type);
+      else if (toggle === 'deps') f.showDeps = !f.showDeps;
+      (scope === 'tree' ? renderTree : renderBoard)();
+    }
+    return;
+  }
+
   const chipLink = event.target.closest('[data-goto-task]');
   if (chipLink) {
     event.stopPropagation();
@@ -874,17 +923,11 @@ $('#drawer-close').onclick = () => {
   state.selected = null;
   renderDrawer();
 };
-for (const el of document.querySelectorAll('#tree-filters input, #tree-filters select')) {
-  el.addEventListener('change', renderTree);
-}
 $('#deps-mode').addEventListener('change', () => {
   state.depsMode = $('#deps-mode').value;
   writePreference('planny-deps-mode', state.depsMode);
   renderDeps();
 });
-for (const el of document.querySelectorAll('#deps-status input')) {
-  el.addEventListener('change', renderDeps);
-}
 window.addEventListener('focus', refresh);
 
 refresh().catch((err) => toast(err.message, 'error'));

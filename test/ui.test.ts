@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const webDir = join(__dirname, '..', 'web');
 
 const sampleState = {
+  store: { root: '/home/me/projects/rocket', name: 'rocket' },
   tasks: [
     task('t1', { name: 'Build the API', blocking: ['t3'] }),
     task('t2', {
@@ -123,6 +124,23 @@ beforeEach(async () => {
 });
 
 describe('ui smoke', () => {
+  it('shows the project name and path in the header', () => {
+    const label = document.querySelector('#store-label') as HTMLElement;
+    expect(label.textContent).toBe('rocket');
+    expect(label.title).toBe('/home/me/projects/rocket');
+  });
+
+  it('board chips slice the cards by kind and type', () => {
+    const chips = document.querySelector('#board-filters')!;
+    expect(chips.querySelector('.chip[data-kind="operator"]')).not.toBeNull();
+    (chips.querySelector('.chip[data-type="decision"]') as HTMLElement).click();
+    const board = document.querySelector('#board-columns')!;
+    expect(board.textContent).toContain('Choose hosting'); // the decision
+    expect(board.textContent).not.toContain('Build the API'); // plain task filtered out
+    (chips.querySelector('.chip[data-type="decision"]') as HTMLElement).click();
+    expect(document.querySelector('#board-columns')!.textContent).toContain('Build the API');
+  });
+
   it('renders the board with columns, cards and badges', () => {
     const board = document.querySelector('#view-board')!;
     expect(board.textContent).toContain('Build the API');
@@ -153,21 +171,30 @@ describe('ui smoke', () => {
     expect(tree.querySelector('.tree-children')!.textContent).toContain('Write tests');
     expect(tree.querySelector('.mini-progress')).not.toBeNull();
     expect(tree.textContent).not.toContain('Settled question'); // done, hidden by default
-    const doneBox = document.querySelector(
-      '#status-filters input[data-status="done"]',
-    ) as HTMLInputElement;
-    expect(doneBox.checked).toBe(false);
-    doneBox.checked = true;
-    doneBox.dispatchEvent(new Event('change'));
+    const doneChip = document.querySelector(
+      '#tree-filters .chip[data-status="done"]',
+    ) as HTMLElement;
+    expect(doneChip.classList.contains('active')).toBe(false);
+    doneChip.click();
     expect(document.querySelector('#tree-list')!.textContent).toContain('Settled question');
   });
 
-  it('the deps view also starts with done unchecked', () => {
+  it('tree kind and type chips slice the tree', () => {
+    clickTab('tree');
+    (document.querySelector('#tree-filters .chip[data-kind="operator"]') as HTMLElement).click();
+    const tree = document.querySelector('#tree-list')!;
+    expect(tree.textContent).toContain('Choose hosting'); // operator decision
+    expect(tree.textContent).not.toContain('Deploy'); // ai task, no matching descendant
+    (document.querySelector('#tree-filters .chip[data-kind="operator"]') as HTMLElement).click();
+    expect(document.querySelector('#tree-list')!.textContent).toContain('Deploy');
+  });
+
+  it('the deps view also starts with done inactive', () => {
     clickTab('deps');
-    const doneBox = document.querySelector(
-      '#deps-status input[data-status="done"]',
-    ) as HTMLInputElement;
-    expect(doneBox.checked).toBe(false);
+    const doneChip = document.querySelector(
+      '#deps-status .chip[data-status="done"]',
+    ) as HTMLElement;
+    expect(doneChip.classList.contains('active')).toBe(false);
   });
 
   it('renders the dependency graph as SVG nodes and edges', () => {
@@ -194,13 +221,11 @@ describe('ui smoke', () => {
     expect(document.querySelector('#drawer-title .status-dot')).not.toBeNull();
   });
 
-  it('filters the dependency graph by status', () => {
+  it('filters the dependency graph by status chips', () => {
     clickTab('deps');
-    expect(document.querySelectorAll('#deps-status input').length).toBe(4);
+    expect(document.querySelectorAll('#deps-status .chip').length).toBe(4);
     expect(document.querySelectorAll('#deps-svg .dep-node').length).toBe(2);
-    const todoBox = document.querySelector('#deps-status input[data-status="todo"]') as HTMLInputElement;
-    todoBox.checked = false;
-    todoBox.dispatchEvent(new Event('change'));
+    (document.querySelector('#deps-status .chip[data-status="todo"]') as HTMLElement).click();
     // t1 and t3 are both todo, so nothing with an edge remains.
     expect(document.querySelector('#deps-svg .dep-node')).toBeNull();
     expect(document.querySelector('#deps-scroll')!.textContent).toMatch(/no dependencies/i);
