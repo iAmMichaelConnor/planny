@@ -26,13 +26,14 @@ staying current, and serving the board at session start.
 The fastest install is to paste this at your agent:
 
 ```text
-Set up planny in this project: make sure the planny CLI is installed
-(npm install -g planny); give yourself the planny skill by linking
-$(npm root -g)/planny/skills/planny into your skills directory
-(~/.claude/skills/ for Claude Code, ~/.codex/skills/ for Codex, or
-wherever your agent reads the open SKILL.md format) — then run
-planny init and use the planny skill for every task and decision from
-now on.
+Set up planny in this project:
+1. Make sure the planny CLI is installed: npm install -g planny
+2. Give yourself the planny skill: link $(npm root -g)/planny/skills/planny
+   into your skills directory — ~/.claude/skills/ for Claude Code,
+   ~/.codex/skills/ for Codex, or wherever your agent reads the open
+   SKILL.md format.
+3. Run planny init.
+From now on, use the planny skill for every task and decision.
 ```
 
 Or by hand — the npm package ships the skill, so link it from the
