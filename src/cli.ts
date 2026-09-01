@@ -11,6 +11,7 @@ import {
   setStatus,
   updateTask,
   type OpResult,
+  type ResolveResult,
 } from './ops.js';
 import { activePosition, type BumpTarget } from './priority.js';
 import { listTasks, nextDecisions, nextTasks, progress, resolvedDecisions } from './query.js';
@@ -145,6 +146,11 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
     io.out(`${line} [store: ${join(store.root, '.planny')}]`);
     for (const warning of result.warnings) io.err(`warning: ${warning}`);
   };
+  /** One wording for a resolution everywhere it is reported. */
+  const resolvedLine = (id: string, result: ResolveResult): string =>
+    result.outcomeTask !== undefined
+      ? `resolved ${id} → outcome task ${result.outcomeTask.id}`
+      : `resolved ${id} (rejected — no outcome task)`;
 
   program
     .command('init')
@@ -656,19 +662,27 @@ Examples:
     .option('--response <text>', 'the decision, free-form')
     .option('--response-file <path>', 'read the decision from a file (- for stdin)')
     .option('--accept', 'shorthand for accepting the written proposal')
+    .option('--reject', 'close as decided-no: record the rejection, create no outcome task')
     .addHelpText(
       'after',
       `
-The answer is appended to the task under "## Outcome" and the decision is
-marked done. Afterwards, enrich the record with what was built:
+The answer is appended to the task under "## Outcome", the decision is
+marked done, and an outcome task is created as the decision's child —
+the answer as work an agent picks up. --reject closes the decision as
+decided-no and creates nothing (--response adds the reason). Afterwards,
+enrich the record with what was built:
 planny update <id> --append-desc "Built: … Files: … How to test: …"
 
 Examples:
   planny resolve t5 --accept
   planny resolve t5 --response "Use SQLite; revisit at 10k rows/day."
-  planny resolve t5 --response-file answer.md   (- reads stdin)`,
+  planny resolve t5 --response-file answer.md   (- reads stdin)
+  planny resolve t5 --reject --response "not worth the surface"`,
     )
     .action((id, options) => {
+      if (options.accept && options.reject) {
+        throw new Error('pass --accept or --reject, not both');
+      }
       const response: string | undefined = options.accept
         ? 'Accepted the proposal.'
         : options.responseFile !== undefined
@@ -676,12 +690,14 @@ Examples:
             ? readFileSync(0, 'utf8')
             : readFileSync(options.responseFile, 'utf8')
           : options.response;
-      if (response === undefined || response.trim() === '') {
+      if (options.reject !== true && (response === undefined || response.trim() === '')) {
         throw new Error('give the decision with --response, --response-file or --accept');
       }
       const store = open();
-      const result = resolveDecision(store, id, response, actor());
-      report(store, result, `resolved ${id}`);
+      const result = resolveDecision(store, id, response ?? '', actor(), {
+        reject: options.reject === true,
+      });
+      report(store, result, resolvedLine(id, result));
     });
 
   program
@@ -706,24 +722,24 @@ Examples:
         for (const item of ready) {
           io.out('');
           io.out(renderShow(item.task, store.loadAll(), store.path(item.task.id)));
-          const choice = (await ask('\n[a]ccept proposal / [r]espond / [s]kip / [q]uit: '))
+          const finish = (response: string, reject = false): void => {
+            const result = resolveDecision(store, item.task.id, response, actor() ?? 'operator', {
+              reject,
+            });
+            report(store, result, resolvedLine(item.task.id, result));
+          };
+          const choice = (await ask('\n[a]ccept proposal / [r]espond / [x] reject / [s]kip / [q]uit: '))
             .trim()
             .toLowerCase();
           if (choice === 'q') break;
           if (choice === 'a') {
-            report(
-              store,
-              resolveDecision(store, item.task.id, 'Accepted the proposal.', actor() ?? 'operator'),
-              `resolved ${item.task.id}`,
-            );
+            finish('Accepted the proposal.');
+          } else if (choice === 'x') {
+            finish((await ask('Reason (optional): ')).trim(), true);
           } else if (choice === 'r') {
             const answer = (await ask('Your decision: ')).trim();
             if (answer !== '') {
-              report(
-                store,
-                resolveDecision(store, item.task.id, answer, actor() ?? 'operator'),
-                `resolved ${item.task.id}`,
-              );
+              finish(answer);
             } else {
               io.out('Empty answer; skipped.');
             }

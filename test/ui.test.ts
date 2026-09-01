@@ -1195,6 +1195,66 @@ describe('logged-decision confirmation', () => {
     }
   });
 
+  it('the confirmation names the outcome task when the server reports one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        fetchCalls.push({ path, init });
+        if (path.endsWith('/resolve')) {
+          return {
+            ok: true,
+            json: async () => ({
+              task: task('t4', { status: 'done' }),
+              warnings: [],
+              outcomeTask: task('t9', { name: 'Act on the outcome of t4: Choose hosting' }),
+            }),
+          };
+        }
+        return { ok: true, json: async () => structuredClone(servedState) };
+      }),
+    );
+    clickTab('decisions');
+    expandDecision('t4');
+    (document.querySelector('button[data-action="accept"][data-id="t4"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    const toast = document.querySelector('#toasts .toast.ok') as HTMLElement;
+    expect(toast.textContent).toContain('outcome task t9');
+  });
+
+  it('reject asks for the warned confirmation, then posts reject', async () => {
+    const confirmed = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirmed);
+    clickTab('decisions');
+    expandDecision('t4');
+    const reject = document.querySelector(
+      'button[data-action="reject"][data-id="t4"]',
+    ) as HTMLElement;
+    expect(reject).not.toBeNull();
+    reject.click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(confirmed.mock.calls[0]![0]).toMatch(/no task will be created/i);
+    const post = fetchCalls.find((c) => c.path === '/api/tasks/t4/resolve');
+    expect(post).toBeDefined();
+    expect(JSON.parse(post!.init!.body as string).reject).toBe(true);
+  });
+
+  it('declining the reject warning posts nothing', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    clickTab('decisions');
+    expandDecision('t4');
+    (document.querySelector('button[data-action="reject"][data-id="t4"]') as HTMLElement).click();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t4/resolve')).toBe(false);
+  });
+
+  it('the drawer offers reject too', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    (document.querySelector('#reject-btn') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    const post = fetchCalls.find((c) => c.path === '/api/tasks/t4/resolve');
+    expect(JSON.parse(post!.init!.body as string).reject).toBe(true);
+  });
+
   it('resolving from the drawer also confirms in green', async () => {
     (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
     const resolution = document.querySelector('#f-resolution') as HTMLTextAreaElement;

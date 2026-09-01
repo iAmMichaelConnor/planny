@@ -137,9 +137,16 @@ function esc(text) {
  */
 const LOGGED_NOTE_MS = 60_000; // long enough to copy the commands, then it clears itself
 
-function confirmResolved(id) {
-  state.justResolved.set(id, Date.now());
-  toast(`${id} resolved — logged to the store; your agent will act on it at its next catch-up`, 'ok');
+function confirmResolved(id, outcomeId) {
+  state.justResolved.set(id, { at: Date.now(), outcomeId });
+  toast(
+    typeof outcomeId === 'string'
+      ? `${id} resolved — outcome task ${outcomeId} created; your agent acts on it at its next catch-up`
+      : outcomeId === null
+        ? `${id} rejected and closed — no task will be created from it`
+        : `${id} resolved — logged to the store; your agent will act on it at its next catch-up`,
+    'ok',
+  );
   if (state.view === 'decisions') renderDecisions();
   setTimeout(() => {
     if (state.justResolved.delete(id) && state.view === 'decisions') renderDecisions();
@@ -676,6 +683,7 @@ function renderDecisions() {
           <div style="display:flex;flex-direction:column;gap:6px">
             <button class="primary" data-action="respond" data-id="${task.id}" disabled title="records the typed text as the decision">Respond</button>
             <button data-action="accept" data-id="${task.id}" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
+            <button data-action="reject" data-id="${task.id}" title="close as decided-no: the rejection is recorded and no task is created from it">Reject…</button>
             <button data-action="skip" data-id="${task.id}" title="Hide this decision in this tab until the page reloads. It stays open for everyone and nothing is deleted or written to the store.">Skip for now</button>
             <button data-action="cancel-decision" data-id="${task.id}" title="Mark the decision cancelled: the question no longer needs an answer. The task keeps its file — nothing is deleted.">Cancel decision</button>
           </div>
@@ -720,18 +728,22 @@ function renderDecisions() {
     : '';
 
   const logged = [...state.justResolved.entries()]
-    .filter(([, at]) => Date.now() - at < LOGGED_NOTE_MS)
-    .map(([id]) => state.byId.get(id))
-    .filter((t) => t && t.status === 'done');
+    .filter(([, v]) => Date.now() - v.at < LOGGED_NOTE_MS)
+    .map(([id, v]) => ({ task: state.byId.get(id), outcomeId: v.outcomeId }))
+    .filter((entry) => entry.task && entry.task.status === 'done');
   const loggedHtml = logged
-    .map(
-      (t) => `<div class="decision-logged"><span class="logged-text">✓ <span class="id">${t.id}</span> ${esc(t.name)} —
-        decision logged. Your agent reads resolved decisions at its next catch-up and will
-        create or update tasks where relevant. From a terminal:
+    .map(({ task: t, outcomeId }) => {
+      const what = typeof outcomeId === 'string'
+        ? `decision logged — outcome task <span class="chip-link" data-goto-task="${outcomeId}">${outcomeId}</span> carries the answer for your agent to pick up.`
+        : outcomeId === null
+          ? 'decision rejected and closed — nothing will be created from it.'
+          : 'decision logged. Your agent reads resolved decisions at its next catch-up and will create or update tasks where relevant.';
+      return `<div class="decision-logged"><span class="logged-text">✓ <span class="id">${t.id}</span> ${esc(t.name)} —
+        ${what} From a terminal:
         <code>planny decisions --resolved</code> lists the newest answers;
         <code>planny show ${t.id}</code> shows this one.</span>
-        <button class="mini" data-action="dismiss-logged" data-id="${t.id}" title="discard this note">×</button></div>`,
-    )
+        <button class="mini" data-action="dismiss-logged" data-id="${t.id}" title="discard this note">×</button></div>`;
+    })
     .join('');
 
   view.innerHTML =
@@ -858,6 +870,7 @@ function renderDrawer() {
         <div class="row" style="margin-top:6px">
           <button class="primary" id="resolve-btn" disabled title="records the typed text above as the decision">Resolve</button>
           <button id="accept-btn" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
+          <button id="reject-btn" title="close as decided-no: the rejection is recorded and no task is created from it">Reject…</button>
         </div>
       </div>`
     : '';
@@ -1121,11 +1134,18 @@ function wireDrawer(task, isNew) {
           return;
         }
         api(`/api/tasks/${task.id}/resolve`, 'POST', { response: text })
-          .then((res) => res && confirmResolved(task.id));
+          .then((res) => res && confirmResolved(task.id, res.outcomeTask ? res.outcomeTask.id : undefined));
       };
       $('#accept-btn').onclick = () =>
         api(`/api/tasks/${task.id}/resolve`, 'POST', { response: 'Accepted the proposal.' })
-          .then((res) => res && confirmResolved(task.id));
+          .then((res) => res && confirmResolved(task.id, res.outcomeTask ? res.outcomeTask.id : undefined));
+      $('#reject-btn').onclick = () => {
+        if (!confirm(`Reject ${task.id}? The decision closes as decided-no and no task will be created from it.`)) return;
+        api(`/api/tasks/${task.id}/resolve`, 'POST', {
+          reject: true,
+          response: resolutionBox.value.trim(),
+        }).then((res) => res && confirmResolved(task.id, null));
+      };
     }
     for (const li of body.querySelectorAll('[data-goto]')) {
       li.onclick = () => {
@@ -1265,7 +1285,15 @@ document.addEventListener('click', (event) => {
     }
     if (action === 'accept') {
       return void api(`/api/tasks/${id}/resolve`, 'POST', { response: 'Accepted the proposal.' })
-        .then((res) => res && confirmResolved(id));
+        .then((res) => res && confirmResolved(id, res.outcomeTask ? res.outcomeTask.id : undefined));
+    }
+    if (action === 'reject') {
+      if (!confirm(`Reject ${id}? The decision closes as decided-no and no task will be created from it.`)) return;
+      const textarea = document.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
+      return void api(`/api/tasks/${id}/resolve`, 'POST', {
+        reject: true,
+        response: textarea ? textarea.value.trim() : '',
+      }).then((res) => res && confirmResolved(id, null));
     }
     if (action === 'respond') {
       const textarea = document.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
@@ -1275,7 +1303,7 @@ document.addEventListener('click', (event) => {
         return;
       }
       return void api(`/api/tasks/${id}/resolve`, 'POST', { response: text })
-        .then((res) => res && confirmResolved(id));
+        .then((res) => res && confirmResolved(id, res.outcomeTask ? res.outcomeTask.id : undefined));
     }
   }
 

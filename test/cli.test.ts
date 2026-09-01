@@ -639,6 +639,46 @@ describe('init inside an existing store', () => {
   });
 });
 
+describe('resolution outcome tasks', () => {
+  beforeEach(async () => {
+    await run('init');
+    await run('add', 'gated work');
+    await run('add', 'Choose db', '--type', 'decision', '--desc', 'Use files?', '--blocks', 't1');
+    out = [];
+  });
+
+  it('resolve names the outcome task it created, and the child link holds', async () => {
+    expect(await run('resolve', 't2', '--response', 'yes, files')).toBe(0);
+    expect(allOut()).toContain('resolved t2 → outcome task t3');
+    out = [];
+    await run('show', 't3', '--json');
+    const { task } = JSON.parse(allOut());
+    expect(task.parent).toBe('t2');
+    expect(task.body).toContain('records the outcome of decision t2');
+    expect(task.body).toContain('t1'); // what the answer unblocked
+  });
+
+  it('--reject closes the decision and creates nothing', async () => {
+    expect(await run('resolve', 't2', '--reject', '--response', 'not needed')).toBe(0);
+    expect(allOut()).toMatch(/rejected — no outcome task/);
+    out = [];
+    await run('list', '--count');
+    expect(out).toEqual(['2']); // still just the two seeded tasks
+    out = [];
+    await run('show', 't2');
+    expect(allOut()).toContain('Rejected — closed without action. Reason: not needed');
+  });
+
+  it('--reject needs no response text', async () => {
+    expect(await run('resolve', 't2', '--reject')).toBe(0);
+  });
+
+  it('--accept with --reject is refused', async () => {
+    expect(await run('resolve', 't2', '--accept', '--reject')).toBe(1);
+    expect(err.join('\n')).toMatch(/not both/);
+  });
+});
+
 describe('catchup output shape', () => {
   // The delta is consumed once; if a reader truncates it anyway, the
   // resolutions — the part that changes what an agent does next — must

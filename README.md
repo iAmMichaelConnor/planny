@@ -79,7 +79,10 @@ to you / Proposal with honest pros and cons / Alternative options / Needed
 from you / When — the format lives in
 [skills/planny/references/decision-format.md](skills/planny/references/decision-format.md)).
 `planny resolve` appends the answer under `## Outcome`, so resolved
-decisions double as a browsable decision log.
+decisions double as a browsable decision log — and it creates an
+*outcome task* as the decision's child, carrying the answer as work an
+agent picks up, so a resolution cannot be lost. `--reject` closes a
+decision as decided-no and creates nothing.
 
 **Attribution.** `planny --session <id> <command>` — or
 `export PLANNY_SESSION=<id>` once per shell — records who acted. Creates
@@ -188,7 +191,7 @@ planny url                             # where that UI is being served
 | `export [--out plan.md]` | the plan as one markdown document |
 | `decisions [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
 | `catchup [--as id] [--peek]` | everything changed since this consumer last asked, then advance its stored cursor |
-| `resolve <id> --response …\|--accept\|--response-file f` | record the operator's answer, mark done |
+| `resolve <id> --response …\|--accept\|--response-file f\|--reject` | record the answer, mark done, create the outcome task (`--reject`: close as decided-no, create nothing) |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
 | `serve [--port] [--detach] [--stop]` | localhost control site (127.0.0.1 only); `--detach` outlives the launching (agent) session, `--stop` ends the detached server |

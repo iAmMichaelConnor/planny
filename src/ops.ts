@@ -290,9 +290,8 @@ export function addTask(store: Store, input: AddInput, actor?: string): OpResult
   return withLock(store.root, () => doAddTask(store, input, actor));
 }
 
-function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
-  assertAddInput(input);
-  const m = new Mutation(store);
+/** Build and place a new task inside an open mutation. add and resolve share it. */
+function createTask(m: Mutation, store: Store, input: AddInput, actor?: string): Task {
   const now = new Date().toISOString();
   const task: Task = {
     id: store.nextId(),
@@ -321,6 +320,13 @@ function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
     if (addBlocker(m, blockedId, task.id)) logEdgeChanges(m, blockedId, actor, [task.id], []);
   }
   m.bump(task.id, input.priority ?? 'bottom');
+  return task;
+}
+
+function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
+  assertAddInput(input);
+  const m = new Mutation(store);
+  const task = createTask(m, store, input, actor);
   m.commit();
   return m.result(task);
 }
@@ -555,29 +561,92 @@ function doCancelTask(store: Store, id: string, replacedBy: string[], actor?: st
   return m.result(task);
 }
 
+export interface ResolveOptions {
+  /** Close the decision as decided-no: record the rejection, create nothing. */
+  reject?: boolean;
+}
+
+export type ResolveResult = OpResult & { outcomeTask?: Task };
+
 export function resolveDecision(
   store: Store,
   id: string,
   response: string,
   actor?: string,
-): OpResult {
-  return withLock(store.root, () => doResolveDecision(store, id, response, actor));
+  options: ResolveOptions = {},
+): ResolveResult {
+  if (options.reject !== undefined && typeof options.reject !== 'boolean') {
+    throw new Error('reject must be true or false');
+  }
+  return withLock(store.root, () => doResolveDecision(store, id, response, actor, options));
 }
 
-function doResolveDecision(store: Store, id: string, response: string, actor?: string): OpResult {
+function doResolveDecision(
+  store: Store,
+  id: string,
+  response: string,
+  actor?: string,
+  options: ResolveOptions = {},
+): ResolveResult {
   const m = new Mutation(store);
   const task = m.get(id);
   if (task.type !== 'decision') {
     throw new Error(`${id} is not a decision task — use \`planny done\` for plain tasks`);
   }
-  const outcome = `## Outcome\n\n${response.trim()}`;
+  const answer = response.trim();
+  const background = task.body; // the decision text before any outcome
+  const unblocks = m.graph().blocking(id).map((t) => t.id);
+  const outcomeText =
+    options.reject === true
+      ? `Rejected — closed without action.${answer === '' ? '' : ` Reason: ${answer}`}`
+      : answer;
+  const outcome = `## Outcome\n\n${outcomeText}`;
   task.body = task.body === '' ? outcome : `${task.body}\n\n${outcome}`;
   logStatus(task, 'done', actor);
   task.status = 'done';
   task.resolvedAt = new Date().toISOString();
   m.touch(id);
+  let outcomeTask: Task | undefined;
+  if (options.reject !== true) {
+    // The answer becomes work the queue cannot lose: an outcome task,
+    // child of the decision, carrying everything a fresh agent needs.
+    outcomeTask = createTask(
+      m,
+      store,
+      {
+        name: `Act on the outcome of ${id}: ${task.name}`,
+        parent: id,
+        body: outcomeTaskBody(id, task.name, background, outcomeText, unblocks),
+      },
+      actor,
+    );
+    // ops writes the citation, so it cannot be forgotten.
+    task.body += `\n\nOutcome task: ${outcomeTask.id}`;
+  }
   m.commit();
-  return m.result(task);
+  return { ...m.result(task), outcomeTask };
+}
+
+function outcomeTaskBody(
+  id: string,
+  name: string,
+  background: string,
+  outcomeText: string,
+  unblocks: string[],
+): string {
+  const reconcile =
+    unblocks.length > 0
+      ? `The resolution already unblocks ${unblocks.join(', ')} — check those before creating new tasks, so the same work is not created twice.`
+      : 'No tasks were waiting on the decision.';
+  return `This task records the outcome of decision ${id} ("${name}"). The operator has decided; the decision and the answer follow. If the outcome calls for work, create tasks from this one, then mark this task done. ${reconcile}
+
+## The decision (${id})
+
+${background === '' ? '(the decision had no body)' : background}
+
+## The outcome
+
+${outcomeText}`;
 }
 
 export function bumpTask(store: Store, id: string, target: BumpTarget, actor?: string): OpResult {

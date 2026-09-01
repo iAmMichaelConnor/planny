@@ -293,11 +293,23 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
     }
     if (req.method === 'POST' && action === 'resolve') {
       const body = await readJson(req);
+      const reject = body.reject === true;
       const response = body.response;
-      if (typeof response !== 'string' || response.trim() === '') {
+      if (!reject && (typeof response !== 'string' || response.trim() === '')) {
         throw new HttpError(400, 'resolve needs a non-empty "response" string');
       }
-      sendResult(res, resolveDecision(store, id!, response, actorOf(body)));
+      const result = resolveDecision(
+        store,
+        id!,
+        typeof response === 'string' ? response : '',
+        actorOf(body),
+        { reject },
+      );
+      sendJson(res, 200, {
+        task: result.task,
+        warnings: result.warnings,
+        outcomeTask: result.outcomeTask ?? null,
+      });
       return;
     }
   }

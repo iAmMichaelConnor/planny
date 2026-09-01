@@ -208,13 +208,17 @@ decision instead of silently attempting contested work.
   above it automatically).
 - Present one decision to the user at a time: name, then the body verbatim.
 - The user answers → `planny resolve <id> --response "<their words>"`
-  (or `--accept` when they take your proposal, `--response-file` for long
-  answers). **Interpret the response immediately**: apply it, and update or
-  cancel the tasks it affects before moving to the next decision.
-- Keep the paper trail in both directions: a task you create from an
-  answer names the decision in its body ("Decided in t150"), and the
-  record you append to the decision names the task ids it spawned. Ids
-  are stable, so both citations stay greppable for the life of the store.
+  (`--accept` takes your proposal; `--response-file` reads long answers;
+  `--reject` closes a decision as decided-no and creates nothing).
+- A resolution creates an **outcome task**: a child of the decision
+  carrying the answer, the decision text, and the tasks the answer
+  unblocked — the answer cannot be lost while that task is open. **Work
+  it like any task**: create the follow-on tasks the outcome calls for
+  (first check what the resolution already unblocked, so the same work
+  is not created twice), keep the citations both ways ("Decided in
+  t150" in new tasks; their ids appended to the outcome task), then
+  mark it done. A no-work outcome is still an answer: say so and mark
+  the outcome task done.
 - The user skips → move on; the decision stays open.
 - After the decided work ships, append the record the operator will look
   back on: `planny update <id> --append-desc "Built: … Files: … Tests: …

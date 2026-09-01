@@ -36,6 +36,9 @@ structure, so a re-parent never moves a file.
   legal rank.
 - Cancelling a task with `--replaced-by` rewires dependants' `blocked_by` onto
   the replacement tasks.
+- Resolving a decision creates an outcome task as the decision's child and
+  appends `Outcome task: <id>` to the decision body — both in the same locked
+  mutation. `--reject` records the rejection and creates nothing.
 - Ids are never reused.
 - The ops-only rule covers *task files*. Three store-level files are owned
   elsewhere by design: `.planny/cursors.json` (written by catchup, under the

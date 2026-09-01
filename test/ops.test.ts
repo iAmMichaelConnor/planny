@@ -260,6 +260,48 @@ describe('resolveDecision', () => {
     expect(() => resolveDecision(store, 't1', 'yes')).toThrow(/decision/i);
   });
 
+  it('resolving creates an outcome task as the decision\'s child', () => {
+    addTask(store, { name: 'gated work' });
+    addTask(store, {
+      name: 'Choose db',
+      type: 'decision',
+      body: '## Proposal\n\nUse files.',
+      blocks: ['t1'],
+    });
+    const result = resolveDecision(store, 't2', 'Use markdown files.');
+    const outcome = result.outcomeTask;
+    expect(outcome).toBeDefined();
+    expect(outcome!.parent).toBe('t2'); // the canonical link: child of the decision
+    expect(outcome!.kind).toBe('ai');
+    expect(outcome!.status).toBe('todo');
+    expect(outcome!.name).toBe('Act on the outcome of t2: Choose db');
+    expect(outcome!.body).toContain('records the outcome of decision t2');
+    expect(outcome!.body).toContain('create tasks from this one'); // the ai invitation
+    expect(outcome!.body).toContain('t1'); // names what the resolution unblocked
+    expect(outcome!.body).toContain('Use files.'); // decision text as background
+    expect(outcome!.body).toContain('Use markdown files.'); // and the answer
+    // The decision cites its outcome task programmatically — never by memory.
+    expect(store.load('t2').body).toContain(`Outcome task: ${outcome!.id}`);
+  });
+
+  it('reject closes the decision without creating any task', () => {
+    addTask(store, { name: 'Choose db', type: 'decision' });
+    const before = store.loadAll().length;
+    const result = resolveDecision(store, 't1', '', undefined, { reject: true });
+    expect(result.outcomeTask).toBeUndefined();
+    expect(store.loadAll()).toHaveLength(before); // nothing new
+    const decision = store.load('t1');
+    expect(decision.status).toBe('done');
+    expect(decision.resolvedAt).toBeDefined();
+    expect(decision.body).toMatch(/Rejected — closed without action/);
+  });
+
+  it('a typed reject reason lands in the outcome text', () => {
+    addTask(store, { name: 'Choose db', type: 'decision' });
+    resolveDecision(store, 't1', 'not worth the new surface', undefined, { reject: true });
+    expect(store.load('t1').body).toContain('not worth the new surface');
+  });
+
   it('a body write with a stale ifUnchangedSince is refused', async () => {
     addTask(store, { name: 'contested', body: 'original' });
     const before = store.load('t1').updated;
