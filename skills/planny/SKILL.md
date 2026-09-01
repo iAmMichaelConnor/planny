@@ -265,8 +265,11 @@ you are deep in something else only displaces working context.
   the cursor even when you discard its output, so never pipe it through
   `head` or `grep` — extract from the JSON with a real tool, or ask for
   `--compact` (ids, names, statuses and stamps only, sized to be read
-  whole), and use `--peek` when you only want to look. Only an explicit `--since` window
-  can recover what a truncated read threw away.
+  whole), and use `--peek` when you only want to look. Only an explicit
+  `--since` window can recover what a truncated read threw away.
+  A resolved decision's follow-on work is its outcome task: the resolved
+  entry names it, `planny next` surfaces it, and the decision body cites
+  its id.
 - Explicit windows, when a cursor is not what you mean:
   `planny decisions --resolved --since <time> --json` (answers, each with
   the tasks it was gating) and `planny list --changed-since <time> --json`.
