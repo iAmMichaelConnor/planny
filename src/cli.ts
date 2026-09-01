@@ -24,7 +24,15 @@ import {
   taskLabel,
 } from './render.js';
 import { findRoot, initRepo, openStore, type Store } from './store.js';
-import { holderOf, isStatus, isTaskType, STATUSES, type Status, type TaskType } from './types.js';
+import {
+  holderOf,
+  isStatus,
+  isTaskType,
+  STATUSES,
+  type Status,
+  type Task,
+  type TaskType,
+} from './types.js';
 
 export interface CliIo {
   cwd: string;
@@ -166,6 +174,22 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
   const report = (store: Store, result: OpResult, line: string): void => {
     io.out(`${line} [store: ${join(store.root, '.planny')}]`);
     for (const warning of result.warnings) io.err(`warning: ${warning}`);
+  };
+  /** A resolved decision as a text block: labeled lines, never tokens
+   * jammed against the free-text name. */
+  const resolvedBlock = (
+    task: Task,
+    dependants: Task[],
+    outcomeTask: string | null,
+    when?: string,
+  ): string => {
+    const head = when === undefined
+      ? `resolved: ${task.id} ${task.name}`
+      : `${task.id} ${when} — ${task.name}`;
+    const carrier = outcomeTask === null ? '' : `\n    outcome task: ${outcomeTask}`;
+    const tail =
+      dependants.length > 0 ? `\n    was gating: ${dependants.map((t) => t.id).join(', ')}` : '';
+    return `${head}${carrier}${tail}`;
   };
   /** One wording for a resolution everywhere it is reported. */
   const resolvedLine = (id: string, result: ResolveResult): string =>
@@ -621,10 +645,7 @@ Examples:
           : `changes since ${result.since}`;
       io.out(header);
       for (const { task, dependants, outcomeTask } of result.resolved) {
-        const carrier = outcomeTask === null ? '' : ` → outcome task ${outcomeTask}`;
-        const tail =
-          dependants.length > 0 ? ` (was gating ${dependants.map((t) => t.id).join(', ')})` : '';
-        io.out(`resolved: ${task.id} ${task.name}${carrier}${tail}`);
+        io.out(resolvedBlock(task, dependants, outcomeTask));
       }
       if (result.changed.length === 0) {
         io.out('Nothing changed.');
@@ -662,15 +683,9 @@ Examples:
         }
         io.out(
           resolved
-            .map(({ task, dependants, outcomeTask }) => {
-              const when = task.resolvedAt ?? task.updated;
-              const carrier = outcomeTask === null ? '' : `\n    outcome task: ${outcomeTask}`;
-              const tail =
-                dependants.length > 0
-                  ? `\n    was gating: ${dependants.map((t) => t.id).join(', ')}`
-                  : '';
-              return `${task.id} ${when} — ${task.name}${carrier}${tail}`;
-            })
+            .map(({ task, dependants, outcomeTask }) =>
+              resolvedBlock(task, dependants, outcomeTask, task.resolvedAt ?? task.updated),
+            )
             .join('\n'),
         );
         return;

@@ -748,8 +748,10 @@ describe('resolution outcome tasks', () => {
     await run('resolve', 't2', '--response', 'yes, files');
     out = [];
     await run('catchup', '--as', 'later-agent');
-    expect(allOut()).toContain('resolved: t2');
-    expect(allOut()).toContain('outcome task t3');
+    expect(allOut()).toContain('resolved: t2 Choose db');
+    // Labeled continuation lines: the free-text name never abuts tokens.
+    expect(allOut()).toContain('\n    outcome task: t3');
+    expect(allOut()).toContain('\n    was gating: t1');
     out = [];
     await run('decisions', '--resolved', '--json');
     const rows = JSON.parse(allOut());
