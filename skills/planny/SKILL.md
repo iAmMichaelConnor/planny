@@ -180,7 +180,12 @@ operator's original words in the body; they are the request of record.
 ## Decision tasks
 
 A decision is a task with `--type decision`: a question for the operator with
-enough context to answer from the item alone. When you (the AI) hit a choice
+enough context to answer from the item alone. A decision task is how a
+question waits without being lost. The operator answers on their own
+schedule — later today, next week — through `planny decisions` or the
+board; they may not be ready to think about it yet, and the open task
+is what they come back to. Meanwhile you keep working everything the
+answer does not block. When you (the AI) hit a choice
 that touches money, production, product trade-offs, an operational surface,
 or a pure operator preference — or you are simply blocked on an answer —
 create one:
