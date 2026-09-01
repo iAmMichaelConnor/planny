@@ -39,6 +39,22 @@ function byCode(findings: Finding[], code: string): Finding[] {
 }
 
 describe('diagnose', () => {
+  it('flags files in tasks/ that the CLI does not write', () => {
+    // Invisible today: listIds() skips them, so no command ever sees them.
+    writeFileSync(join(store.tasksDir, 'notes.md'), 'scratch notes\n');
+    writeFileSync(join(store.tasksDir, 't1.md.bak'), 'an old backup\n');
+    save(makeTask('t1'));
+    const foreign = byCode(diagnose(store), 'foreign-file');
+    expect(foreign).toHaveLength(2);
+    expect(foreign.map((f) => f.file).sort()).toEqual([
+      join(store.tasksDir, 'notes.md'),
+      join(store.tasksDir, 't1.md.bak'),
+    ]);
+    expect(foreign[0]!.severity).toBe('warning'); // nothing breaks, but it may be lost work
+    expect(foreign[0]!.fixable).toBe(false); // deleting or importing has no single right answer
+    expect(foreign[0]!.message).toMatch(/planny add/); // says how to import it properly
+  });
+
   it('finds nothing wrong with a healthy store', () => {
     save(
       makeTask('t1'),

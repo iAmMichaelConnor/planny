@@ -5,7 +5,8 @@ import type { Task } from './types.js';
 
 const PLANNY_DIR = '.planny';
 const TASKS_DIR = 'tasks';
-const TASK_FILE_RE = /^(t\d+)\.md$/;
+/** The only file shape the CLI writes into tasks/. Doctor flags the rest. */
+export const TASK_FILE_RE = /^(t\d+)\.md$/;
 
 export interface ScanFailure {
   file: string;

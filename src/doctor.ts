@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildGraph } from './graph.js';
 import { withLock } from './lock.js';
 import { viableReplacements } from './ops.js';
 import { repairDependencyOrder, resequenceRanks } from './priority.js';
-import type { Store } from './store.js';
+import { TASK_FILE_RE, type Store } from './store.js';
 import { holderOf, isActive, type Task } from './types.js';
 
 /**
@@ -33,6 +33,7 @@ export type FindingCode =
   | 'status-history-mismatch'
   | 'unclaimed-in-progress'
   | 'stray-replaced-by'
+  | 'foreign-file'
   | 'cursors-unreadable'
   | 'cursor-in-future'
   | 'stale-lock';
@@ -70,6 +71,21 @@ export function diagnose(store: Store): Finding[] {
       failure.file,
       failure.error,
     );
+  }
+
+  // Files the CLI never writes are invisible to every command — a task
+  // dropped in by hand would sit there unseen. Surface them; importing
+  // or deleting has no single right answer, so there is no auto-fix.
+  for (const name of readdirSync(store.tasksDir)) {
+    if (!TASK_FILE_RE.test(name)) {
+      add(
+        'foreign-file',
+        'warning',
+        false,
+        join(store.tasksDir, name),
+        `"${name}" is not a file the CLI writes — planny ignores it; if it holds a task, recreate it with planny add and delete the file`,
+      );
+    }
   }
 
   for (const task of tasks) {
