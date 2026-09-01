@@ -93,6 +93,41 @@ describe('parseTaskFile', () => {
     expect(() => parseTaskFile('just some markdown')).toThrow(/frontmatter/i);
   });
 
+  it('rejects an id that is not t<number>', () => {
+    for (const bad of ['../evil', 'x1', 't1.5', 'T1']) {
+      const text = serializeTaskFile(fullTask).replace('id: t12', `id: ${JSON.stringify(bad)}`);
+      expect(() => parseTaskFile(text)).toThrow(/task id/);
+    }
+  });
+
+  it('rejects parent, blocker and replacement ids that are not t<number>', () => {
+    const badParent = serializeTaskFile(fullTask).replace('parent: t4', 'parent: ../../escape');
+    expect(() => parseTaskFile(badParent)).toThrow(/task id/);
+    const badBlocker = serializeTaskFile(fullTask).replace('- t7', '- seven');
+    expect(() => parseTaskFile(badBlocker)).toThrow(/task id/);
+  });
+
+  it('rejects duplicate frontmatter keys instead of silently picking one', () => {
+    const text = serializeTaskFile(fullTask).replace(
+      'status: in-progress',
+      'status: in-progress\nstatus: done',
+    );
+    expect(() => parseTaskFile(text)).toThrow();
+  });
+
+  it('ignores frontmatter-looking text after the closing delimiter', () => {
+    const text = `${serializeTaskFile(fullTask).trimEnd()}\n\nstatus: done\npriority: 1\n`;
+    const parsed = parseTaskFile(text);
+    expect(parsed.status).toBe('in-progress');
+    expect(parsed.priority).toBe(30);
+    expect(parsed.body).toContain('status: done');
+  });
+
+  it('an unclosed frontmatter block fails parse instead of absorbing the body', () => {
+    const text = '---\nid: t1\nname: x\nstatus: todo\ntype: task\nkind: ai\npriority: 1\ncreated: c\nupdated: u\nSome prose that was meant to be the body.\n\n---\n\nMore body.\n';
+    expect(() => parseTaskFile(text)).toThrow();
+  });
+
   it('rejects frontmatter missing required fields', () => {
     expect(() => parseTaskFile('---\nid: t1\n---\n')).toThrow(/missing required field/i);
   });

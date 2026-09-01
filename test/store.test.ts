@@ -160,6 +160,22 @@ describe('scan', () => {
   });
 });
 
+describe('load refuses impostor files', () => {
+  it('a file whose frontmatter id disagrees with its filename is an error, not a write-through', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.save(makeTask('t1'));
+    store.save(makeTask('t7'));
+    // A hand-copied file: t2.md claiming to be t7. A mutation loaded from
+    // it must not save through to t7.md.
+    writeFileSync(
+      join(dir, '.planny', 'tasks', 't2.md'),
+      readFileSync(join(dir, '.planny', 'tasks', 't7.md'), 'utf8'),
+    );
+    expect(() => openStore(dir).load('t2')).toThrow(/doctor/);
+  });
+});
+
 describe('worktree-aware discovery', () => {
   let errSpy: ReturnType<typeof vi.spyOn>;
 

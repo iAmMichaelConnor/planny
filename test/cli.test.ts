@@ -54,6 +54,18 @@ describe('init and add', () => {
     expect(allOut()).toMatch(/initialized/i);
   });
 
+  it('init writes .planny/.gitignore for the transient files, and keeps a hand-edited one', async () => {
+    expect(await run('init')).toBe(0);
+    const ignorePath = join(dir, '.planny', '.gitignore');
+    const content = readFileSync(ignorePath, 'utf8');
+    for (const name of ['serve.json', 'serve.log', 'lock', 'last-seen.json']) {
+      expect(content).toContain(name);
+    }
+    writeFileSync(ignorePath, 'custom\n');
+    expect(await run('init')).toBe(0);
+    expect(readFileSync(ignorePath, 'utf8')).toBe('custom\n');
+  });
+
   it('commands fail cleanly without init', async () => {
     expect(await run('list')).toBe(1);
     expect(err.join('\n')).toMatch(/planny init/);

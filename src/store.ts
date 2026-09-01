@@ -37,6 +37,12 @@ export interface Store {
 
 export function initRepo(dir: string): void {
   mkdirSync(join(dir, PLANNY_DIR, TASKS_DIR), { recursive: true });
+  // The transient files beside tasks/ must not be committed. A
+  // hand-edited ignore file is the operator's; leave it alone.
+  const ignore = join(dir, PLANNY_DIR, '.gitignore');
+  if (!existsSync(ignore)) {
+    writeFileSync(ignore, 'serve.json\nserve.log\nlock\nlast-seen.json\n');
+  }
 }
 
 /** Existing in a worktree's `.planny`, this marks the fork as deliberate. */
@@ -211,11 +217,20 @@ export function openStore(startDir: string): Store {
     load(id: string): Task {
       const file = path(id);
       if (!existsSync(file)) throw new Error(`no task ${id} (looked for ${file})`);
+      let task: Task;
       try {
-        return parseTaskFile(readFileSync(file, 'utf8'));
+        task = parseTaskFile(readFileSync(file, 'utf8'));
       } catch (error) {
         throw new Error(`${file}: ${(error as Error).message}`);
       }
+      // Saving goes to path(task.id): an impostor id would write through
+      // to another task's file. Refuse before any mutation can.
+      if (task.id !== id) {
+        throw new Error(
+          `${file}: frontmatter says id "${task.id}" but the filename says "${id}" — run \`planny doctor\``,
+        );
+      }
+      return task;
     },
     scan,
     loadAll(): Task[] {

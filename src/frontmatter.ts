@@ -43,6 +43,20 @@ export function serializeTaskFile(task: Task): string {
   return `---\n${yaml}\n---\n\n${body}`;
 }
 
+/**
+ * Ids become file paths (`store.path(id)`), so their shape is a safety
+ * boundary: a hand-edited id like "../evil" must never reach a write.
+ */
+const ID_RE = /^t\d+$/;
+
+function requireId(meta: Record<string, unknown>, key: string): string {
+  const value = requireString(meta, key);
+  if (!ID_RE.test(value)) {
+    throw new Error(`field "${key}" must be a task id like t12, not "${value}"`);
+  }
+  return value;
+}
+
 function requireString(meta: Record<string, unknown>, key: string): string {
   const value = meta[key];
   if (typeof value !== 'string' || value === '') {
@@ -59,11 +73,19 @@ function optionalString(meta: Record<string, unknown>, key: string): string | un
   return value === '' ? undefined : value;
 }
 
+function optionalId(meta: Record<string, unknown>, key: string): string | undefined {
+  const value = optionalString(meta, key);
+  if (value !== undefined && !ID_RE.test(value)) {
+    throw new Error(`field "${key}" must be a task id like t12, not "${value}"`);
+  }
+  return value;
+}
+
 function idList(meta: Record<string, unknown>, key: string): string[] {
   const value = meta[key];
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
-    throw new Error(`field "${key}" must be a list of task ids`);
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || !ID_RE.test(v))) {
+    throw new Error(`field "${key}" must be a list of task ids like t12`);
   }
   return value as string[];
 }
@@ -149,14 +171,14 @@ export function parseTaskFile(text: string): Task {
 
   return {
     ...(Object.keys(extras).length > 0 && { extras }),
-    id: requireString(meta, 'id'),
+    id: requireId(meta, 'id'),
     name: requireString(meta, 'name'),
     status,
     type,
     kind: requireString(meta, 'kind'),
     model: optionalString(meta, 'model'),
     priority,
-    parent: optionalString(meta, 'parent'),
+    parent: optionalId(meta, 'parent'),
     blockedBy: idList(meta, 'blocked_by'),
     replacedBy: idList(meta, 'replaced_by'),
     created: requireString(meta, 'created'),
