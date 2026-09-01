@@ -193,10 +193,14 @@ decision instead of silently attempting contested work.
   (or `--accept` when they take your proposal, `--response-file` for long
   answers). **Interpret the response immediately**: apply it, and update or
   cancel the tasks it affects before moving to the next decision.
+- Keep the paper trail in both directions: a task you create from an
+  answer names the decision in its body ("Decided in t150"), and the
+  record you append to the decision names the task ids it spawned. Ids
+  are stable, so both citations stay greppable for the life of the store.
 - The user skips → move on; the decision stays open.
 - After the decided work ships, append the record the operator will look
   back on: `planny update <id> --append-desc "Built: … Files: … Tests: …
-  How to test: … Runs at: …"`.
+  Tasks: … How to test: … Runs at: …"`.
 - `planny decide` is the operator's own interactive loop; don't run it
   yourself — you are the interpreter when you're in the loop.
 ### Staying current
