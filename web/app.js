@@ -296,7 +296,9 @@ function cardHtml(task, position) {
   if (task.status === 'todo') quick.push(`<button data-action="start" data-id="${task.id}">start</button>`);
   if (task.status === 'in-progress') quick.push(`<button data-action="finish" data-id="${task.id}">done</button>`);
   if (task.status === 'todo' || task.status === 'in-progress') {
-    quick.push(`<button data-action="top" data-id="${task.id}" title="bump to top">▲ top</button>`);
+    quick.push(
+      `<button data-action="top" data-id="${task.id}"${task.position === 1 ? ' disabled title="already at the top"' : ' title="bump to top"'}>▲ top</button>`,
+    );
   }
   const classes = [
     'card',
@@ -663,12 +665,13 @@ function renderDecisions() {
     const expanded = state.expandedDecisions.has(task.id);
     // Priority moves reuse the shared bump funnel (same delegated actions
     // and API the cards and drawer use).
+    const activeTotal = activeTasks().length;
     const priority = `<div class="decision-priority row">
-        <span class="muted">priority${task.position > 0 ? ` #${task.position}` : ''} of ${activeTasks().length} open tasks</span>
+        <span class="muted">priority${task.position > 0 ? ` #${task.position}` : ''} of ${activeTotal} open tasks</span>
         <input type="number" min="1" data-role="pos-input" data-id="${task.id}" data-initial="${task.position > 0 ? task.position : ''}" value="${task.position > 0 ? task.position : ''}">
         <button class="mini" data-action="set-pos" data-id="${task.id}" title="move to the typed position" disabled>set</button>
-        <button class="mini" data-action="top" data-id="${task.id}" title="move to the top of the priority order">▲ top</button>
-        <button class="mini" data-action="bottom" data-id="${task.id}" title="move to the bottom of the priority order">▼ bottom</button>
+        <button class="mini" data-action="top" data-id="${task.id}"${task.position === 1 ? ' disabled title="already at the top"' : ' title="move to the top of the priority order"'}>▲ top</button>
+        <button class="mini" data-action="bottom" data-id="${task.id}"${task.position > 0 && task.position === activeTotal ? ' disabled title="already at the bottom"' : ' title="move to the bottom of the priority order"'}>▼ bottom</button>
       </div>`;
     return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}" data-action="toggle-decision" data-id="${task.id}">
       <h3><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
@@ -817,8 +820,8 @@ function renderDrawer() {
   const statusButtons = isNew ? '' : `
     <label>status</label>
     <div class="status-buttons">
-      ${['todo', 'in-progress', 'done'].map((s) => `<button data-status="${s}" class="${task.status === s ? 'current' : ''}">${s}</button>`).join('')}
-      <button data-status="cancelled" class="${task.status === 'cancelled' ? 'current' : ''}">cancel…</button>
+      ${['todo', 'in-progress', 'done'].map((s) => `<button data-status="${s}" class="${task.status === s ? 'current' : ''}"${task.status === s ? ' disabled title="the current status"' : ''}>${s}</button>`).join('')}
+      <button data-status="cancelled" class="${task.status === 'cancelled' ? 'current' : ''}"${task.status === 'cancelled' ? ' disabled title="the current status"' : ''}>cancel…</button>
     </div>
     <div id="cancel-extra" class="hidden">
       <label>replaced by (comma-separated ids, optional)</label>
@@ -851,9 +854,9 @@ function renderDrawer() {
     : `<label>priority position (of ${active.length} open tasks)</label>
        <div class="row">
          <input id="f-position" type="number" min="1" value="${positionValue > 0 ? positionValue : ''}" ${positionValue > 0 ? '' : 'disabled'}>
-         ${positionValue > 0 ? '<button id="set-position" title="move to the typed position">set</button>' : ''}
-         <button data-bump="top" title="move to the top of the priority order">▲ top</button>
-         <button data-bump="bottom" title="move to the bottom of the priority order">▼ bottom</button>
+         ${positionValue > 0 ? '<button id="set-position" title="move to the typed position" disabled>set</button>' : ''}
+         <button data-bump="top"${positionValue === 1 ? ' disabled title="already at the top"' : ' title="move to the top of the priority order"'}>▲ top</button>
+         <button data-bump="bottom"${positionValue > 0 && positionValue === active.length ? ' disabled title="already at the bottom"' : ' title="move to the bottom of the priority order"'}>▼ bottom</button>
        </div>`;
 
   $('#drawer-body').innerHTML = `
@@ -1058,8 +1061,14 @@ function wireDrawer(task, isNew) {
     }
     const setPosition = $('#set-position');
     if (setPosition) {
+      // set means something only once the typed position differs.
+      const posInput = $('#f-position');
+      const initialPosition = posInput.value;
+      posInput.addEventListener('input', () => {
+        setPosition.disabled = posInput.value === initialPosition || posInput.value === '';
+      });
       setPosition.onclick = () => {
-        const position = Number($('#f-position').value);
+        const position = Number(posInput.value);
         if (!guard(`Move ${task.id} to position ${position}?`)) return;
         api(`/api/tasks/${task.id}/bump`, 'POST', { target: position });
       };

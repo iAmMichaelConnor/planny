@@ -380,6 +380,9 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 .row > * { flex: 1; }
 .status-buttons { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .status-buttons button.current { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* The current status is disabled (clicking it is meaningless) but it is
+   an indicator, not a dead control: keep it filled, just not clickable. */
+.status-buttons button.current:disabled { opacity: 1; cursor: default; }
 .drawer-section { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 10px; }
 .file-path { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); word-break: break-all; }
 .rel-list { margin: 4px 0 0; padding-left: 18px; }

@@ -858,16 +858,17 @@ describe('ui smoke', () => {
   });
 
   it('drawer top/bottom bumps ask for confirmation first', () => {
-    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    // t3 sits at position 3: its top bump is live (t1's would be disabled).
+    (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
     const declined = vi.fn(() => false);
     vi.stubGlobal('confirm', declined);
     (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
     expect(declined).toHaveBeenCalledOnce();
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/bump')).toBe(false);
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(false);
 
     vi.stubGlobal('confirm', vi.fn(() => true));
     (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/bump')).toBe(true);
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(true);
   });
 
   it('the drawer docks left, bottom and back right, and remembers the choice', () => {
@@ -965,6 +966,75 @@ const chainTasks = [
   task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
+
+describe('meaningless buttons are disabled', () => {
+  it('the quick top button is dead on the top card, live below', () => {
+    const topBtn = (id: string) =>
+      document.querySelector(`button[data-action="top"][data-id="${id}"]`) as HTMLButtonElement;
+    expect(topBtn('t1').disabled).toBe(true); // position 1 already
+    expect(topBtn('t1').title).toMatch(/already/i);
+    expect(topBtn('t3').disabled).toBe(false); // position 3 can rise
+  });
+
+  it('drawer: current status is dead; top bump is dead at position 1', () => {
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click(); // in-progress
+    const current = document.querySelector(
+      '#drawer-body button[data-status="in-progress"]',
+    ) as HTMLButtonElement;
+    expect(current.disabled).toBe(true);
+    expect(
+      (document.querySelector('#drawer-body button[data-status="done"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click(); // position 1
+    expect((document.querySelector('button[data-bump="top"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (document.querySelector('button[data-bump="bottom"]') as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it('drawer: set arms only when the typed position differs', () => {
+    (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
+    const setBtn = () => document.querySelector('#set-position') as HTMLButtonElement;
+    const input = document.querySelector('#f-position') as HTMLInputElement;
+    expect(setBtn().disabled).toBe(true); // untouched
+    input.value = '1';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(setBtn().disabled).toBe(false);
+    input.value = '3'; // back to the original
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(setBtn().disabled).toBe(true);
+  });
+
+  it('tile priority rows kill top at position 1 and bottom at the end', async () => {
+    await serveTasks([
+      task('t1', { name: 'First question', type: 'decision', position: 1 }),
+      task('t2', { name: 'Last question', type: 'decision', position: 2 }),
+    ]);
+    servedState = { ...servedState, decisions: [{ id: 't1', blocked: false }, { id: 't2', blocked: false }] };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    clickTab('decisions');
+    expandDecision('t1');
+    expandDecision('t2');
+    const btn = (id: string, action: string) =>
+      document.querySelector(
+        `.decision-priority button[data-action="${action}"][data-id="${id}"]`,
+      ) as HTMLButtonElement;
+    expect(btn('t1', 'top').disabled).toBe(true);
+    expect(btn('t1', 'bottom').disabled).toBe(false);
+    expect(btn('t2', 'top').disabled).toBe(false);
+    expect(btn('t2', 'bottom').disabled).toBe(true);
+  });
+
+  it('the current status button keeps its filled look while disabled', () => {
+    const css = readFileSync(join(webDir, 'style.css'), 'utf8');
+    expect(css).toMatch(/\.status-buttons button\.current:disabled\s*{[^}]*opacity: 1/);
+  });
+});
 
 describe('task ids link in rendered bodies', () => {
   const bodies = [
