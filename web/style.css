@@ -144,7 +144,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 /* Board */
 #store-label { font-size: 12.5px; }
 #store-label .store-path { font-size: 11px; opacity: 0.65; font-family: ui-monospace, monospace; margin-left: 4px; }
-#board-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+#board-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start; position: relative; }
 #board-filters { margin-bottom: 12px; }
 .column { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
 .column h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 2px 6px 10px; }
@@ -203,14 +203,14 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .filters { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; color: var(--muted); }
 .filter-group { display: flex; gap: 10px; }
 #tree-list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; position: relative; }
-#tree-hover-svg {
+#dep-hover-svg {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
   overflow: visible;
 }
-#tree-hover-svg path { stroke: var(--bad); stroke-width: 1.6; fill: none; }
+#dep-hover-svg path { stroke: var(--bad); stroke-width: 1.6; fill: none; }
 .tree-node { margin-left: 0; }
 .tree-children { margin-left: 22px; border-left: 1px dotted var(--line); padding-left: 10px; }
 .tree-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }

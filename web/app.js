@@ -293,6 +293,7 @@ function cardHtml(task, position) {
 }
 
 function renderBoard() {
+  clearHoverLines(); // the rebuild wipes the overlay; drop the stale element cache too
   const f = state.boardFilters;
   $('#board-filters').innerHTML =
     `<span class="chip-group">${kindChips('board', f.kinds)}</span>` +
@@ -411,60 +412,45 @@ function renderTree() {
   applySelection(); // this rebuild is sometimes called outside render()
 }
 
-// ---------- tree hover dependency lines ----------
+// ---------- hover dependency lines (tree and board) ----------
 
-let hoverDepRow = null; // the tree row the current overlay was drawn for
+let hoverDepEl = null; // the element the current overlay was drawn for
 
 function clearHoverLines() {
-  hoverDepRow = null;
-  const svg = document.getElementById('tree-hover-svg');
+  hoverDepEl = null;
+  const svg = document.getElementById('dep-hover-svg');
   if (svg) svg.remove();
 }
 
+function activeBlockersOf(id) {
+  const task = state.byId.get(id);
+  return (task ? task.blockedBy : []).filter((b) => {
+    const blocker = state.byId.get(b);
+    return blocker && (blocker.status === 'todo' || blocker.status === 'in-progress');
+  });
+}
+
 /**
- * Red curves from a hovered tree row out rightward to each task it waits
- * on, then dimmer curves from those blockers to their own blockers, level
- * by level, until the chain ends.
+ * Red curves from a hovered element out to each task it waits on, then
+ * dimmer curves from those blockers to their own blockers, level by
+ * level, until the chain ends. The views share this walk and differ only
+ * in how they find a task's element (elFor) and shape one curve (edge).
  */
-function drawHoverLines(row) {
+function drawHoverLines(container, sourceEl, elFor, edge) {
   clearHoverLines();
-  hoverDepRow = row;
-  const list = $('#tree-list');
-  const listBox = list.getBoundingClientRect();
-  // A line starts and ends where a row's content finishes: the right edge
-  // of its last inline element, at the row's vertical middle.
-  const endOf = (rowEl) => {
-    const last = rowEl.lastElementChild || rowEl;
-    const rowBox = rowEl.getBoundingClientRect();
-    return {
-      x: last.getBoundingClientRect().right - listBox.left,
-      y: rowBox.top + rowBox.height / 2 - listBox.top,
-    };
-  };
-  const activeBlockersOf = (id) => {
-    const task = state.byId.get(id);
-    return (task ? task.blockedBy : []).filter((b) => {
-      const blocker = state.byId.get(b);
-      return blocker && (blocker.status === 'todo' || blocker.status === 'in-progress');
-    });
-  };
+  hoverDepEl = sourceEl;
   const paths = [];
-  const visited = new Set([row.dataset.id]);
-  let frontier = [{ id: row.dataset.id, el: row }];
+  const visited = new Set([sourceEl.dataset.id]);
+  let frontier = [{ id: sourceEl.dataset.id, el: sourceEl }];
   for (let level = 1; frontier.length > 0; level += 1) {
     const next = [];
     const opacity = Math.max(0.9 - (level - 1) * 0.3, 0.2).toFixed(2);
     for (const { id, el } of frontier) {
-      const from = endOf(el);
       for (const blockerId of activeBlockersOf(id)) {
-        const target = list.querySelector(`.tree-row[data-id="${blockerId}"]`);
-        if (!target) continue; // filtered out or inside a collapsed subtree
-        const to = endOf(target);
-        // The curve bows out to the right of both endpoints; each extra
-        // line bows a little further so parallel lines stay apart.
-        const bow = Math.max(from.x, to.x) + 30 + level * 14 + paths.length * 6;
+        const target = elFor(blockerId);
+        if (!target) continue; // filtered out or hidden in this view
         paths.push(
-          `<path data-level="${level}" data-from="${esc(id)}" data-to="${esc(blockerId)}" stroke-opacity="${opacity}" d="M${from.x},${from.y} C${bow},${from.y} ${bow},${to.y} ${to.x},${to.y}"/>`,
+          `<path data-level="${level}" data-from="${esc(id)}" data-to="${esc(blockerId)}" stroke-opacity="${opacity}" d="${edge(el, target, level, paths.length)}"/>`,
         );
         if (!visited.has(blockerId)) {
           visited.add(blockerId);
@@ -475,10 +461,59 @@ function drawHoverLines(row) {
     frontier = next;
   }
   if (paths.length === 0) return;
-  list.insertAdjacentHTML(
+  container.insertAdjacentHTML(
     'beforeend',
-    `<svg id="tree-hover-svg" width="${list.clientWidth}" height="${list.scrollHeight}">${paths.join('')}</svg>`,
+    `<svg id="dep-hover-svg" width="${container.clientWidth}" height="${container.scrollHeight}">${paths.join('')}</svg>`,
   );
+}
+
+/**
+ * Tree curves start and end where a row's content finishes — the right
+ * edge of its last inline element — and bow out to the right; each extra
+ * line bows a little further so parallel lines stay apart.
+ */
+function treeEdge(container) {
+  const box = container.getBoundingClientRect();
+  const endOf = (rowEl) => {
+    const last = rowEl.lastElementChild || rowEl;
+    const rowBox = rowEl.getBoundingClientRect();
+    return {
+      x: last.getBoundingClientRect().right - box.left,
+      y: rowBox.top + rowBox.height / 2 - box.top,
+    };
+  };
+  return (from, to, level, index) => {
+    const a = endOf(from);
+    const b = endOf(to);
+    const bow = Math.max(a.x, b.x) + 30 + level * 14 + index * 6;
+    return `M${a.x},${a.y} C${bow},${a.y} ${bow},${b.y} ${b.x},${b.y}`;
+  };
+}
+
+/**
+ * Board curves take the shortest route: between columns they leave the
+ * edge that faces the other card and land on the edge facing back;
+ * within one column they bow out of the right edge into the gap.
+ */
+function boardEdge(container) {
+  const box = container.getBoundingClientRect();
+  const rect = (el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left - box.left, right: r.right - box.left, y: r.top + r.height / 2 - box.top };
+  };
+  return (from, to, level, index) => {
+    const a = rect(from);
+    const b = rect(to);
+    const spread = level * 10 + index * 4;
+    if (from.closest('.column') === to.closest('.column')) {
+      const bow = Math.max(a.right, b.right) + 20 + spread;
+      return `M${a.right},${a.y} C${bow},${a.y} ${bow},${b.y} ${b.right},${b.y}`;
+    }
+    const dx = 30 + spread;
+    return b.left >= a.right
+      ? `M${a.right},${a.y} C${a.right + dx},${a.y} ${b.left - dx},${b.y} ${b.left},${b.y}`
+      : `M${a.left},${a.y} C${a.left - dx},${a.y} ${b.right + dx},${b.y} ${b.right},${b.y}`;
+  };
 }
 
 function renderDeps() {
@@ -1004,15 +1039,25 @@ function wireDrawer(task, isNew) {
 
 // ---------- events ----------
 
-$('#tree-list').addEventListener('mouseover', (event) => {
-  const row = event.target.closest('.tree-row[data-id]');
-  if (!row) {
-    clearHoverLines();
-    return;
-  }
-  if (row !== hoverDepRow) drawHoverLines(row);
-});
-$('#tree-list').addEventListener('mouseleave', clearHoverLines);
+function wireHoverLines(container, itemClass, edgeFactory) {
+  container.addEventListener('mouseover', (event) => {
+    const el = event.target.closest(`.${itemClass}[data-id]`);
+    if (!el) {
+      clearHoverLines();
+      return;
+    }
+    if (el === hoverDepEl) return;
+    drawHoverLines(
+      container,
+      el,
+      (id) => container.querySelector(`.${itemClass}[data-id="${id}"]`),
+      edgeFactory(container),
+    );
+  });
+  container.addEventListener('mouseleave', clearHoverLines);
+}
+wireHoverLines($('#tree-list'), 'tree-row', treeEdge);
+wireHoverLines($('#board-columns'), 'card', boardEdge);
 
 // The nest-by select is rebuilt with the tree filters, so delegate.
 document.addEventListener('change', (event) => {

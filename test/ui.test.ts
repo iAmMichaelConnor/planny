@@ -944,7 +944,7 @@ function hover(el: HTMLElement): void {
 }
 
 function hoverPaths(): SVGPathElement[] {
-  return [...document.querySelectorAll('#tree-hover-svg path')] as SVGPathElement[];
+  return [...document.querySelectorAll('#dep-hover-svg path')] as SVGPathElement[];
 }
 
 // t1 blocks t2 blocks t3: a two-hop chain for multi-level hover lines.
@@ -991,6 +991,67 @@ describe('drawer decision outcome', () => {
     expect(section.textContent).toContain('Built: shipped in 0.2.');
     expect(section.textContent).not.toContain('Use A.'); // pre-outcome body stays out
     expect(section.querySelector('strong')!.textContent).toBe('B'); // markdown is rendered
+  });
+});
+
+describe('board hover dependency lines', () => {
+  const card = (id: string) => document.querySelector(`.card[data-id="${id}"]`) as HTMLElement;
+  const boardPaths = () =>
+    [...document.querySelectorAll('#board-columns #dep-hover-svg path')] as SVGPathElement[];
+
+  // t1 (todo) blocks t2 (in progress) blocks t3 (todo): the chain crosses
+  // columns in both directions.
+  const crossColumnChain = [
+    task('t1', { name: 'Root blocker', blocking: ['t2'], position: 1 }),
+    task('t2', {
+      name: 'Middle',
+      status: 'in-progress',
+      blockedBy: ['t1'],
+      blocked: true,
+      blocking: ['t3'],
+      position: 2,
+    }),
+    task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
+  ];
+
+  it('hovering a blocked card draws a red curve to its blocker; leaving clears it', () => {
+    hover(card('t3')); // t3 waits on t1 in the sample state
+    const paths = boardPaths();
+    expect(paths).toHaveLength(1);
+    expect(paths[0]!.getAttribute('data-level')).toBe('1');
+    expect(paths[0]!.getAttribute('data-from')).toBe('t3');
+    expect(paths[0]!.getAttribute('data-to')).toBe('t1');
+    expect(paths[0]!.getAttribute('d')).toMatch(/^M.+C/);
+    (document.querySelector('#board-columns') as HTMLElement).dispatchEvent(
+      new MouseEvent('mouseleave'),
+    );
+    expect(boardPaths()).toHaveLength(0);
+  });
+
+  it('hovering an unblocked card draws nothing', () => {
+    hover(card('t1'));
+    expect(boardPaths()).toHaveLength(0);
+  });
+
+  it('follows the chain across columns with dimmer lines per level', async () => {
+    await serveTasks(crossColumnChain);
+    hover(card('t3'));
+    const paths = boardPaths();
+    expect(paths).toHaveLength(2);
+    const byLevel = new Map(paths.map((p) => [p.getAttribute('data-level'), p]));
+    expect(byLevel.get('1')!.getAttribute('data-to')).toBe('t2');
+    expect(byLevel.get('2')!.getAttribute('data-from')).toBe('t2');
+    expect(byLevel.get('2')!.getAttribute('data-to')).toBe('t1');
+    const opacity = (p: SVGPathElement) => Number(p.getAttribute('stroke-opacity'));
+    expect(opacity(byLevel.get('2')!)).toBeLessThan(opacity(byLevel.get('1')!));
+  });
+
+  it('board and tree share one overlay: switching views never strands lines', async () => {
+    hover(card('t3'));
+    expect(boardPaths()).toHaveLength(1);
+    clickTab('tree');
+    // The board view is hidden; its overlay must not linger anywhere.
+    expect(document.querySelectorAll('#dep-hover-svg')).toHaveLength(0);
   });
 });
 
