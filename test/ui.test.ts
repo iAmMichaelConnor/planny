@@ -162,6 +162,18 @@ describe('ui smoke', () => {
     expect(theme.nextElementSibling!.id).toBe('tabs'); // 🌓 directly left of Board
   });
 
+  it('disabled buttons are visibly dimmed by one global rule', () => {
+    const css = readFileSync(join(webDir, 'style.css'), 'utf8');
+    const rule = /button:disabled\s*{[^}]*}/.exec(css)?.[0];
+    expect(rule).toBeDefined();
+    expect(rule).toContain('opacity');
+    expect(rule).toContain('cursor: not-allowed');
+    // The hover affordance must not light up a button that cannot be clicked.
+    expect(css).toContain('button:hover:not(:disabled)');
+    // One codepath: the old per-view rule is gone.
+    expect(css).not.toContain('.decision-priority button:disabled');
+  });
+
   it('the page declares the emoji favicon', () => {
     const html = readFileSync(join(webDir, 'index.html'), 'utf8');
     expect(html).toContain('rel="icon"');
