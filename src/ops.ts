@@ -640,7 +640,7 @@ function outcomeTaskBody(
 ): string {
   const reconcile =
     unblocks.length > 0
-      ? `The tasks that waited on the decision now wait on this task instead: ${unblocks.join(', ')}. Update or cancel them to match the outcome — marking this task done releases them.`
+      ? `The tasks that waited on the decision now wait on this task instead: ${unblocks.join(', ')}. Update or cancel them to match the outcome. Marking this task done lifts their wait so they become workable — it does not close them.`
       : 'No tasks were waiting on the decision.';
   return `This task records the outcome of decision ${id} ("${name}"). The operator has decided; the decision and the answer follow. If the outcome calls for work, create tasks from this one, then mark this task done. ${reconcile}
 

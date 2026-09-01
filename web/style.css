@@ -375,6 +375,17 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 }
 #drawer-resize:hover { background: var(--accent); opacity: 0.5; }
 .desc-area { min-height: 240px; }
+.desc-view {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 8px 12px;
+}
+.desc-view h2 { font-size: 15px; margin: 14px 0 4px; }
+.desc-view h3 { font-size: 14px; margin: 12px 0 4px; }
+.desc-view p { margin: 6px 0; }
+.desc-view ul { margin: 4px 0; padding-left: 22px; }
+.desc-view code { background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 .desc-area.expanded { overflow-y: hidden; resize: none; }
 button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 #drawer-body { padding: 14px 16px 40px; overflow-y: auto; }

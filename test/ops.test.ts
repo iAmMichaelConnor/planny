@@ -295,6 +295,10 @@ describe('resolveDecision', () => {
     expect(store.load('t1').blockedBy).toContain('t3'); // the satisfied edge stays, like any done blocker's
     expect(store.load('t2').blockedBy).not.toContain(outcomeTask!.id); // done tasks are left alone
     expect(outcomeTask!.body).toContain('now wait on this task');
+    // "releases them" once read like closure; the wording must say the
+    // dependants merely stop waiting.
+    expect(outcomeTask!.body).toContain('lifts their wait');
+    expect(outcomeTask!.body).toContain('does not close them');
   });
 
   it('reject closes the decision without creating any task', () => {

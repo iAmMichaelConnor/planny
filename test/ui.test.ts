@@ -1358,6 +1358,48 @@ describe('decision buttons gate on their own input', () => {
   });
 });
 
+describe('drawer description view mode', () => {
+  const bodies = [
+    task('t1', { name: 'The referenced one' }),
+    task('t2', {
+      name: 'Outcome-ish task',
+      body: 'The tasks now wait on this task instead: t1. Run `planny show t1` first.',
+    }),
+  ];
+
+  it('view renders the body with clickable ids; code spans stay plain', async () => {
+    await serveTasks(bodies);
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    const mode = document.querySelector('#desc-mode') as HTMLElement;
+    expect(mode.textContent).toBe('view'); // editing stays the default
+    mode.click();
+    const view = document.querySelector('#f-desc-view') as HTMLElement;
+    expect(view.hidden).toBe(false);
+    expect((document.querySelector('#f-desc') as HTMLElement).hidden).toBe(true);
+    const links = view.querySelectorAll('[data-goto-task="t1"]');
+    expect(links).toHaveLength(1); // the prose mention; the code span untouched
+    (links[0] as HTMLElement).click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t1');
+  });
+
+  it('switching back to edit keeps an unsaved edit', async () => {
+    await serveTasks(bodies);
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'half-typed thought mentioning t1';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    const mode = () => document.querySelector('#desc-mode') as HTMLElement;
+    mode().click(); // view renders the *current* text, unsaved edits included
+    expect((document.querySelector('#f-desc-view') as HTMLElement).textContent).toContain(
+      'half-typed thought',
+    );
+    mode().click(); // and edit hands the same text back
+    const after = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    expect(after.hidden).toBe(false);
+    expect(after.value).toBe('half-typed thought mentioning t1');
+  });
+});
+
 describe('save conflict guard', () => {
   it('save sends the updated stamp the form was built from', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();

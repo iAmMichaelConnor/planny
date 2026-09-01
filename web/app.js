@@ -898,9 +898,11 @@ function renderDrawer() {
   $('#drawer-body').innerHTML = `
     <label>name</label><input id="f-name" value="${esc(task.name)}">
     <label>description (markdown)
+      <button id="desc-mode" type="button" class="mini" tabindex="-1">view</button>
       <button id="desc-toggle" type="button" class="mini" tabindex="-1">${state.descExpanded ? 'collapse' : 'expand'}</button>
     </label>
     <textarea id="f-desc" class="desc-area${state.descExpanded ? ' expanded' : ''}">${esc(task.body)}</textarea>
+    <div id="f-desc-view" class="desc-view" hidden></div>
     ${resolveSection}${outcomeSection}
     <div class="row">
       <div><label>type</label><select id="f-type">
@@ -975,6 +977,19 @@ function wireDrawer(task, isNew) {
     if (state.descExpanded) autosizeDesc();
   });
   if (state.descExpanded) autosizeDesc();
+
+  // View renders the current text — unsaved edits included — with known
+  // ids clickable; edit hands the same text back untouched.
+  $('#desc-mode').onclick = () => {
+    const textarea = $('#f-desc');
+    const view = $('#f-desc-view');
+    const toView = view.hidden;
+    if (toView) view.innerHTML = renderMarkdown(textarea.value);
+    view.hidden = !toView;
+    textarea.hidden = toView;
+    $('#desc-mode').textContent = toView ? 'edit' : 'view';
+    $('#desc-toggle').hidden = toView; // collapse applies to the editor only
+  };
 
   // "custom…" turns the kind select into a free-form input: ai and
   // operator are the conventional kinds, but the store accepts new ones.
