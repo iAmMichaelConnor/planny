@@ -145,8 +145,11 @@ export function nextDecisions(store: Store): DecisionItem[] {
 
 export interface ResolvedDecision {
   task: Task;
-  /** Tasks that were waiting on this decision. */
-  unblocks: Task[];
+  /**
+   * Tasks the decision was gating. After a resolution they wait on the
+   * decision's outcome task; only its completion frees them.
+   */
+  dependants: Task[];
 }
 
 /** Answered decisions, newest first — for an AI catching up after `planny decide`. */
@@ -162,7 +165,7 @@ export function resolvedDecisions(store: Store, since?: string): ResolvedDecisio
           (t.resolvedAt !== undefined && Date.parse(t.resolvedAt) >= Date.parse(since))),
     )
     .sort((a, b) => Date.parse(b.resolvedAt ?? b.updated) - Date.parse(a.resolvedAt ?? a.updated))
-    .map((task) => ({ task, unblocks: graph.blocking(task.id) }));
+    .map((task) => ({ task, dependants: graph.blocking(task.id) }));
 }
 
 function raise(message: string): never {

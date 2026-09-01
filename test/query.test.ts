@@ -148,10 +148,10 @@ describe('resolvedDecisions', () => {
     resolveDecision(store, 't3', 'No.');
   });
 
-  it('lists resolved decisions newest first with what each unblocks', () => {
+  it('lists resolved decisions newest first with what each was gating', () => {
     const resolved = resolvedDecisions(store);
     expect(resolved.map((r) => r.task.id)).toEqual(['t3', 't2']);
-    expect(resolved[1]!.unblocks.map((t) => t.id)).toEqual(['t1']);
+    expect(resolved[1]!.dependants.map((t) => t.id)).toEqual(['t1']);
   });
 
   it('filters by resolved-at time', () => {

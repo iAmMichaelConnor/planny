@@ -35,9 +35,8 @@ Rules that keep the store consistent:
   `.planny/` dir; when in doubt, check `pwd` before calling the CLI).
   _Reading_ the raw files (grep, cat, etc) is fine and encouraged.
 - Write task names and bodies in Simplified Technical English (STE) in
-  spirit:
-  short sentences, active voice, one meaning per word, no project shorthand
-  without a definition.
+  spirit: short sentences, active voice, one meaning per word, no project
+  shorthand without a definition.
 - A task that needs several owners (plan, build, review) becomes child tasks,
   each with one owner.
 - **planny is the plan of record.** Manage every task, decision, and the
@@ -50,7 +49,8 @@ Rules that keep the store consistent:
   including a mid-conversation aside — and the moment you think of one
   yourself. Then work it: `start` when you begin, `done` when it ships. A
   request or idea tracked only in chat, a TODO comment, or your own head
-  is one that gets lost.
+  is one that gets lost. An idea you doubt becomes a decision task, not a
+  plain task — see "Uncertainty gates work".
 - **A checklist in a document is a task list.** If you are
   tracking your own list of work and marking completion against it —
   checkboxes, tick marks, `Status:` fields, an open/closed split — you
@@ -110,7 +110,7 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "how far along are we?" | `planny progress [--parent <X>]` |
 | "write the plan to a file" | `planny export --out plan.md [--status todo,in-progress]` |
 | "let's go through the decisions" | see "Working the decision queue" |
-| "open the board" | `planny serve` (localhost UI; leave it to the operator) |
+| "open the board" | `planny serve --detach` (see "Serve the board at session start") |
 | "is the store broken?", a command errors on a task file | `planny doctor` (add `--fix` to apply the safe repairs) |
 
 You have a question only the operator can answer → **add a decision task**
@@ -191,7 +191,8 @@ planny add "Choose the database" --type decision --kind operator \
 Write the body using the section layout in
 [references/decision-format.md](references/decision-format.md) — read it
 before writing your first decision. Blocked work gets `--blocked-by` pointing
-at the decision, so the queue reflects what each answer unlocks.
+at the decision, so the queue shows what each answer gates. After a
+resolution, the gate moves to the outcome task.
 
 **Uncertainty gates work.** When you are unsure an approach is right, when
 you have flagged complexity, risk or downsides, or when the operator has
@@ -237,7 +238,9 @@ thing without asking.
   back on: `planny update <id> --append-desc "Consequences: … Files: … Tests: …
   Tasks: … How to test: … Runs at: …"`.
 - `planny decide` is the operator's own interactive loop; don't run it
-  yourself — you are the interpreter when you're in the loop.
+  yourself. When you are in the loop, you resolve for the operator and
+  then work the outcome task, as above.
+
 ### Staying current
 
 Catch up at boundaries — when you start work, between tasks, and before
@@ -251,12 +254,13 @@ you are deep in something else only displaces working context.
   Delivery is at-least-once: treat the delta as idempotent facts.
   The delta is also delivered once per cursor: a plain `catchup` advances
   the cursor even when you discard its output, so never pipe it through
-  `head` or `grep` — extract from the JSON with a real tool, and use
-  `--peek` when you only want to look. Only an explicit `--since` window
+  `head` or `grep` — extract from the JSON with a real tool, or ask for
+  `--compact` (ids, names, statuses and stamps only, sized to be read
+  whole), and use `--peek` when you only want to look. Only an explicit `--since` window
   can recover what a truncated read threw away.
 - Explicit windows, when a cursor is not what you mean:
   `planny decisions --resolved --since <time> --json` (answers, each with
-  the tasks it unblocked) and `planny list --changed-since <time> --json`.
+  the tasks it was gating) and `planny list --changed-since <time> --json`.
 - One task's own timeline needs no store-wide diff: its typed `history`
   logs every status change, priority move, re-parent, dependency edit and
   rename with `{at, …, by}` — `planny show <id>` prints it, `--json`

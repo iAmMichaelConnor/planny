@@ -344,7 +344,7 @@ describe('attribution and catch-up', () => {
     out = [];
     await run('decisions', '--resolved');
     expect(allOut()).toContain('the q');
-    expect(allOut()).toContain('t1'); // what it unblocked
+    expect(allOut()).toContain('t1'); // what it was gating
     out = [];
     await run('decisions', '--resolved', '--since', '2100-01-01T00:00:00.000Z', '--json');
     expect(JSON.parse(allOut())).toEqual([]);
@@ -784,7 +784,7 @@ describe('catchup output shape', () => {
       id: 't4',
       name: 'Pick a colour',
       resolvedAt: expect.any(String),
-      unblocks: [],
+      dependants: [],
     });
     const first = data.changed.find((t: { id: string }) => t.id === 't1');
     expect(first).toEqual({

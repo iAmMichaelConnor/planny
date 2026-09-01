@@ -597,9 +597,9 @@ Examples:
                   consumer: result.consumer,
                   since: result.since ?? null, // always present: JSON drops undefined keys
                   now: result.now,
-                  resolved: result.resolved.map(({ task, unblocks }) => ({
+                  resolved: result.resolved.map(({ task, dependants }) => ({
                     task,
-                    unblocks: unblocks.map((t) => t.id),
+                    dependants: dependants.map((t) => t.id),
                   })),
                   changed: result.changed,
                 },
@@ -614,8 +614,9 @@ Examples:
           ? `first catch-up for ${consumer}: full state follows`
           : `changes since ${result.since}`;
       io.out(header);
-      for (const { task, unblocks } of result.resolved) {
-        const tail = unblocks.length > 0 ? ` (unblocked ${unblocks.map((t) => t.id).join(', ')})` : '';
+      for (const { task, dependants } of result.resolved) {
+        const tail =
+          dependants.length > 0 ? ` (was gating ${dependants.map((t) => t.id).join(', ')})` : '';
         io.out(`resolved: ${task.id} ${task.name}${tail}`);
       }
       if (result.changed.length === 0) {
@@ -641,7 +642,7 @@ Examples:
         if (options.json) {
           io.out(
             JSON.stringify(
-              resolved.map(({ task, unblocks }) => ({ task, unblocks: unblocks.map((t) => t.id) })),
+              resolved.map(({ task, dependants }) => ({ task, dependants: dependants.map((t) => t.id) })),
               null,
               2,
             ),
@@ -654,9 +655,12 @@ Examples:
         }
         io.out(
           resolved
-            .map(({ task, unblocks }) => {
+            .map(({ task, dependants }) => {
               const when = task.resolvedAt ?? task.updated;
-              const tail = unblocks.length > 0 ? `\n    unblocked: ${unblocks.map((t) => t.id).join(', ')}` : '';
+              const tail =
+                dependants.length > 0
+                  ? `\n    was gating: ${dependants.map((t) => t.id).join(', ')}`
+                  : '';
               return `${task.id} ${when} — ${task.name}${tail}`;
             })
             .join('\n'),
