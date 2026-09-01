@@ -1358,6 +1358,60 @@ describe('decision buttons gate on their own input', () => {
   });
 });
 
+describe('ids link everywhere text renders', () => {
+  const fixture = [
+    task('t1', { name: 'The referenced one', blocking: ['t3'], position: 1 }),
+    task('t2', { name: 'Follow up t1 properly', parent: 't1', position: 2 }),
+    task('t3', {
+      name: 'Blocked question',
+      type: 'decision',
+      blockedBy: ['t1'],
+      blocked: true,
+      position: 3,
+    }),
+  ];
+  const serveFixture = async () => {
+    await serveTasks(fixture);
+    servedState = { ...servedState, decisions: [{ id: 't3', blocked: true }] };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+  };
+
+  it('card names link mentioned ids, and the chip wins over the card', async () => {
+    await serveFixture();
+    const chip = document.querySelector(
+      '.card[data-id="t2"] .name [data-goto-task="t1"]',
+    ) as HTMLElement;
+    expect(chip).not.toBeNull();
+    chip.click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t1'); // not t2
+  });
+
+  it('tree row names link mentioned ids', async () => {
+    await serveFixture();
+    clickTab('tree');
+    expect(
+      document.querySelector('#tree-list .tree-row[data-id="t2"] .name [data-goto-task="t1"]'),
+    ).not.toBeNull();
+  });
+
+  it('a blocked decision tile links the blockers it waits on', async () => {
+    await serveFixture();
+    clickTab('decisions');
+    expandDecision('t3');
+    const tile = document.querySelector('.decision-card[data-id="t3"]') as HTMLElement;
+    expect(tile.querySelector('[data-goto-task="t1"]')).not.toBeNull();
+  });
+
+  it('the drawer path links the ancestors', async () => {
+    await serveFixture();
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    const body = document.querySelector('#drawer-body') as HTMLElement;
+    // The path line "t1 The referenced one" carries a chip for t1.
+    expect(body.querySelector('.drawer-section [data-goto-task="t1"]')).not.toBeNull();
+  });
+});
+
 describe('drawer description view mode', () => {
   const bodies = [
     task('t1', { name: 'The referenced one' }),

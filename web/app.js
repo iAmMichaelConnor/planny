@@ -249,15 +249,22 @@ function toggleInSet(set, value) {
   else set.add(value);
 }
 
+/**
+ * Every known task id in already-escaped text becomes the shared goto
+ * chip; unknown ids stay plain. One pattern, applied wherever the UI
+ * renders text that can mention a task.
+ */
+function linkifyIds(s) {
+  return s.replace(/\b(t\d+)\b/g, (match, id) =>
+    state.byId.has(id) ? `<span class="chip-link" data-goto-task="${id}">${id}</span>` : match,
+  );
+}
+
 // Tiny markdown renderer for task and decision bodies: headings, bold,
 // italic, inline code, bullet lists, paragraphs. Bare ids of tasks that
 // exist become click targets (the shared goto funnel); ids inside code
 // spans and ids the store does not know stay plain text.
 function renderMarkdown(text) {
-  const linkifyIds = (s) =>
-    s.replace(/\b(t\d+)\b/g, (match, id) =>
-      state.byId.has(id) ? `<span class="chip-link" data-goto-task="${id}">${id}</span>` : match,
-    );
   const inline = (s) =>
     esc(s)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -337,7 +344,7 @@ function cardHtml(task, position) {
     ? `<span class="pos" title="priority position among active tasks">#${position}</span>`
     : '';
   return `<div class="${classes.join(' ')}" data-id="${task.id}">
-    <span class="id">${task.id}</span><span class="name">${esc(task.name)}</span>
+    <span class="id">${task.id}</span><span class="name">${linkifyIds(esc(task.name))}</span>
     <div class="badges">${badges(task)}</div>
     <div class="quick">${quick.join('')}</div>${pos}
   </div>`;
@@ -427,7 +434,7 @@ function renderTree() {
     const row = `<div class="tree-row" data-id="${task.id}">
       ${twist}<span class="status-dot ${task.status}"></span>
       <span class="id">${task.id}</span>
-      <span class="name${task.status === 'done' ? ' done-name' : ''}">${esc(task.name)}</span>
+      <span class="name${task.status === 'done' ? ' done-name' : ''}">${linkifyIds(esc(task.name))}</span>
       ${progressHtml}${state.treeFilters.showDeps ? badges(task) : badges({ ...task, blocked: false })}
     </div>`;
     const nextTrail = new Set(trail).add(task.id);
@@ -679,7 +686,7 @@ function renderDecisions() {
 
   const openHtml = items.map(({ task, blocked }) => {
     const actions = blocked
-      ? `<p class="muted">Waiting on ${esc(task.blockedBy.join(', '))} — answer those first.</p>`
+      ? `<p class="muted">Waiting on ${linkifyIds(esc(task.blockedBy.join(', ')))} — answer those first.</p>`
       : `<div class="decision-actions">
           <textarea placeholder="Your decision (free-form)…" data-role="response" data-id="${task.id}"></textarea>
           <div style="display:flex;flex-direction:column;gap:6px">
@@ -702,7 +709,7 @@ function renderDecisions() {
         <button class="mini" data-action="bottom" data-id="${task.id}"${task.position > 0 && task.position === activeTotal ? ' disabled title="already at the bottom"' : ' title="move to the bottom of the priority order"'}>▼ bottom</button>
       </div>`;
     return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}" data-action="toggle-decision" data-id="${task.id}">
-      <h3><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${esc(task.name)}</h3>
+      <h3><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${linkifyIds(esc(task.name))}</h3>
       <div class="badges">${badges(task)}</div>
       ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
       ${actions}${priority}` : ''}
@@ -711,7 +718,7 @@ function renderDecisions() {
 
   const pastHtml = past.length > 0
     ? `<details><summary class="muted">${past.length} resolved decision${past.length === 1 ? '' : 's'}</summary>
-        ${past.map((t) => `<div class="decision-card"><h3><span class="id muted">${t.id}</span> ${esc(t.name)}</h3><div class="decision-body">${renderMarkdown(t.body)}</div></div>`).join('')}
+        ${past.map((t) => `<div class="decision-card"><h3><span class="id muted">${t.id}</span> ${linkifyIds(esc(t.name))}</h3><div class="decision-body">${renderMarkdown(t.body)}</div></div>`).join('')}
        </details>`
     : '';
 
@@ -721,7 +728,7 @@ function renderDecisions() {
         ${skipped
           .map(
             ({ task }) => `<div class="skipped-row">
-              <span class="id muted">${task.id}</span> ${esc(task.name)}
+              <span class="id muted">${task.id}</span> ${linkifyIds(esc(task.name))}
               <button class="mini" data-action="unskip" data-id="${task.id}">bring back</button>
             </div>`,
           )
@@ -848,7 +855,7 @@ function renderDrawer() {
   const relSection = isNew ? '' : `
     <div class="drawer-section">
       ${activity.length > 0 ? `<label>activity</label><div>${activity.join(' · ')}</div>` : ''}
-      ${ancestorsOf(task.id).length > 0 ? `<label>path</label><div>${ancestorsOf(task.id).reverse().map((a) => `${a.id} ${esc(a.name)}`).join(' › ')}</div>` : ''}
+      ${ancestorsOf(task.id).length > 0 ? `<label>path</label><div>${ancestorsOf(task.id).reverse().map((a) => linkifyIds(esc(`${a.id} ${a.name}`))).join(' › ')}</div>` : ''}
       ${childrenOf(task.id).length > 0 ? `<label>children</label><ul class="rel-list">${childrenOf(task.id).map((c) => `<li data-goto="${c.id}">${c.id} ${esc(c.name)} — ${c.status}</li>`).join('')}</ul>` : ''}
       ${task.blocking.length > 0 ? `<label>blocks</label><ul class="rel-list">${task.blocking.map((id) => { const b = state.byId.get(id); return `<li data-goto="${id}">${id} ${esc(b ? b.name : '')}</li>`; }).join('')}</ul>` : ''}
       <div style="margin:8px 0"><button id="add-child-btn">+ add child task</button></div>
