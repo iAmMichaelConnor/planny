@@ -25,16 +25,15 @@ first: `npm install -g planny` (Node 20+).
 
 Rules that keep the store consistent:
 
-- **Mutate through the CLI, never by writing task files by hand.** Adding
-  is a mutation too: never create or edit files under `.planny/` yourself —
-  a hand-written file skips id assignment, relationship bookkeeping and
-  history. The CLI keeps relationships one-sided (children and "blocks"
-  are derived), rejects cycles, and keeps priority consistent with
-  dependencies. It acts on the store owning your current directory, so run
-  every command from inside the project whose plan you mean to change (a
-  subdirectory is fine — the CLI walks up; when in doubt, check `pwd`
-  before mutating). Reading the raw files (grep, cat) is fine and
-  encouraged.
+- **You must always mutate through the CLI; never by writing or editing
+  task files under `.planny/` directly**, because direct edits would
+  catastrophically skip the CLI's id assignment, relationship bookkeeping
+  (parent/child, blockers), history, and data validation checks. The CLI
+  acts on the `.planny/` store that relates to your current directory, so
+  run every command from inside the project dir whose plan you mean to
+  change (a subdirectory is fine — the CLI walks up until it reaches a
+  `.planny/` dir; when in doubt, check `pwd` before calling the CLI).
+  _Reading_ the raw files (grep, cat, etc) is fine and encouraged.
 - Write task names and bodies in Simplified Technical English (STE) in
   spirit:
   short sentences, active voice, one meaning per word, no project shorthand
