@@ -179,9 +179,10 @@ operator's original words in the body; they are the request of record.
 
 ## Decision tasks
 
-A decision is a task with `--type decision`: a question for the operator with
-enough context to answer from the item alone. A decision task is how a
-question waits without being lost. The operator answers on their own
+You will constantly hit questions only the operator can answer; a
+decision task is how such a question waits without being lost. A
+decision is a task with `--type decision`: a question for the operator with
+enough context to answer from the item alone. The operator answers on their own
 schedule — later today, next week — through `planny decisions` or the
 board; they may not be ready to think about it yet, and the open task
 is what they come back to. Meanwhile you keep working everything the

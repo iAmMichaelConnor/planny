@@ -8,24 +8,28 @@ a whole document.
 
 ## Why
 
-The `plan.md` pattern fell apart for me once local multi-agent
-sessions got real. Agents lost track of what was done and what was
-left; they appended to the plan until it conflicted with itself;
-finished work sat unmarked. A flat document also carries no priority
-order, no "this blocks that", no subtasks. My `DECISIONS.md` went the
-same way — the questions that actually needed my answer were buried in
-prose. Altogether it gobbled tokens and still wasn't reliable, so to
-save those tokens I spent a load of tokens building a deterministic
-CLI instead. (AI has given the world a thousand vibe-coded todo lists;
-here is yet another.)
+I found that the PLAN.md pattern was becoming very unwieldy when
+running local, multi-agent sessions. AI started getting confused about
+what tasks were done and what were left to do. AI would append lots of
+information to the plan and sometimes it would conflict and confuse.
+Sometimes it would forget to mark tasks as done. It also didn't really
+give a priority hierarchy or help me understand which tasks block
+others, or which tasks are subtasks of others.
 
-Having used it for local development for a while: agents do keep their
-statuses straight and hand work between each other through one store,
-and I can see which decisions wait on me — and answer them async, in
-my own time, to unblock work. It doesn't replace tracking larger
-project items between humans; it serves the new, zoomed-in fractal
-below that, where I orchestrate project management between agents (and
-me) on my own machine.
+I also find it very useful to have AI track any outstanding decisions
+that it wants me to make. I had a DECISIONS.md, but that too became
+unwieldy and messy. Outstanding decisions were hard to identify and
+understand.
+
+Altogether, it gobbled up loads of tokens and wasn't very reliable.
+
+I've been using it for local development for a bit, and AI does
+seem to be better at tracking its tasks and working across agents with
+this. And it helps me understand what outstanding decisions I need to
+work through async, in order to unblock tasks. It doesn't replace
+tracking of larger project items between humans, but it does help with
+the new, zoomed-in fractal of me orchestrating project management
+between agents (and me) on my own local machine.
 
 ## Install
 
@@ -99,6 +103,13 @@ written so they can answer from the item alone (Background / Why this comes
 to you / Proposal with honest pros and cons / Alternative options / Needed
 from you / When — the format lives in
 [skills/planny/references/decision-format.md](skills/planny/references/decision-format.md)).
+Agents constantly hit questions only their human can answer; a decision
+task is how such a question waits without being lost. You answer on
+your own schedule — later today, next week — through `planny decide`
+or the board, and until then agents keep working everything the answer
+does not block. A question that lives only in chat scrolls away; an
+open decision task is what you come back to when you are ready to
+think about it.
 `planny resolve` appends the answer under `## Outcome`, so resolved
 decisions double as a browsable decision log — and it creates an
 *outcome task* as the decision's child, carrying the answer as work an
