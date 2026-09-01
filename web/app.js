@@ -222,14 +222,23 @@ function toggleInSet(set, value) {
   else set.add(value);
 }
 
-// Tiny markdown renderer for decision bodies: headings, bold, italic,
-// inline code, bullet lists, paragraphs.
+// Tiny markdown renderer for task and decision bodies: headings, bold,
+// italic, inline code, bullet lists, paragraphs. Bare ids of tasks that
+// exist become click targets (the shared goto funnel); ids inside code
+// spans and ids the store does not know stay plain text.
 function renderMarkdown(text) {
+  const linkifyIds = (s) =>
+    s.replace(/\b(t\d+)\b/g, (match, id) =>
+      state.byId.has(id) ? `<span class="chip-link" data-goto-task="${id}">${id}</span>` : match,
+    );
   const inline = (s) =>
     esc(s)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .split(/(<code>[^<]*<\/code>)/)
+      .map((part) => (part.startsWith('<code>') ? part : linkifyIds(part)))
+      .join('');
   const blocks = text.split(/\n{2,}/);
   return blocks
     .map((block) => {

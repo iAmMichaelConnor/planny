@@ -954,6 +954,48 @@ const chainTasks = [
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
 
+describe('task ids link in rendered bodies', () => {
+  const bodies = [
+    task('t1', { name: 'The referenced one' }),
+    task('t2', {
+      name: 'Cites tasks',
+      type: 'decision',
+      body: 'See t1 for the build. Run `planny show t1` first. t99 is unknown.',
+    }),
+    task('t3', {
+      name: 'Settled citation',
+      type: 'decision',
+      status: 'done',
+      body: '## Outcome\n\nSpawned t1.',
+      resolvedAt: '2026-09-01T10:00:00.000Z',
+    }),
+  ];
+
+  it('a known id in a decision tile links; code spans and unknown ids stay plain', async () => {
+    await serveTasks(bodies);
+    clickTab('decisions');
+    // serveTasks empties the decisions list; rebuild it for this fixture.
+    servedState = { ...servedState, decisions: [{ id: 't2', blocked: false }] };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expandDecision('t2');
+    const body = document.querySelector('#view-decisions .decision-body') as HTMLElement;
+    const links = body.querySelectorAll('[data-goto-task="t1"]');
+    expect(links).toHaveLength(1); // the prose mention only
+    expect(body.querySelector('code')!.textContent).toBe('planny show t1'); // untouched
+    expect(body.querySelector('[data-goto-task="t99"]')).toBeNull(); // unknown id
+    (links[0] as HTMLElement).click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t1');
+  });
+
+  it('the drawer outcome section links ids too', async () => {
+    await serveTasks(bodies);
+    (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
+    const outcome = document.querySelector('#drawer-body .decision-outcome') as HTMLElement;
+    expect(outcome.querySelector('[data-goto-task="t1"]')).not.toBeNull();
+  });
+});
+
 describe('resolving must not arm Save (t160 data loss)', () => {
   it('typing in the resolve box leaves Save disabled and the form clean', () => {
     (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
