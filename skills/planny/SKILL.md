@@ -152,6 +152,15 @@ agent could pick it up with no other context:
   task is yours to work right now, `planny add "…" --start` creates,
   starts and claims it in one command, with no id to juggle.
 
+Before you add, place and check. A store with a hierarchy expects new
+work to join it: find the parent (`planny tree` shows the shape) and
+pass `--parent` — a root-level task is a deliberate choice, not a
+default. Then check the work is new: `planny list --status
+todo,in-progress` prints one line per task; grep it for the key nouns
+and their synonyms. Never use `--json` for this check — it ships whole
+bodies (`--json --compact` is the lean form). A duplicate forks an
+existing task's history.
+
 Then sanity-check the plan you just built: `planny tree` (shape),
 `planny deps` (order), `planny next` (is the first actionable task the
 right one?).
@@ -295,7 +304,8 @@ marketplace instead.
 Reading the plan — the exact query for each question:
 
 - What is left to do? `planny list --status todo,in-progress --json`
-  (add `--kind`, `--type`, `--model`, `--changed-since` to slice).
+  (add `--kind`, `--type`, `--model`, `--changed-since` to slice;
+  `--compact` drops the bodies).
 - What should be worked on now? `planny next [n] --json` — each item
   carries the task, its ancestor path, and the tasks it unlocks.
 - How does task X relate to everything? `planny show X --json` — fields

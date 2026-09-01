@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import { Command, CommanderError } from 'commander';
-import { catchup, compactCatchup } from './catchup.js';
+import { catchup, compactCatchup, compactTask } from './catchup.js';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -423,6 +423,7 @@ Examples:
     .option('--changed-since <time>', 'only tasks updated at or after this ISO time', parseTime)
     .option('--count', 'print only the number of matching tasks')
     .option('--json', 'machine-readable output')
+    .option('--compact', 'with --json: id, name, status, type, kind, updated only — no bodies')
     .action((options) => {
       const store = open();
       if (!options.json && !options.count) nameStore(store);
@@ -441,6 +442,10 @@ Examples:
         return;
       }
       if (options.json) {
+        if (options.compact) {
+          io.out(JSON.stringify(tasks.map(compactTask), null, 2));
+          return;
+        }
         const graph = buildGraph(store.loadAll());
         io.out(
           JSON.stringify(tasks.map((task) => ({ ...task, blocked: graph.isBlocked(task.id) })), null, 2),

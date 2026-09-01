@@ -145,6 +145,23 @@ describe('show and list', () => {
     expect(out).toEqual(['3']);
   });
 
+  it('list --json --compact returns lean rows with no bodies', async () => {
+    await seedTrio();
+    await run('update', 't1', '--desc', 'a long body that must not ship');
+    out = [];
+    await run('list', '--json', '--compact');
+    const rows = JSON.parse(allOut());
+    expect(rows[0]).toEqual({
+      id: 't1',
+      name: 'first task',
+      status: 'todo',
+      type: 'task',
+      kind: 'ai',
+      updated: expect.any(String),
+    });
+    expect(JSON.stringify(rows)).not.toContain('long body');
+  });
+
   it('list --json returns an array', async () => {
     await seedTrio();
     out = [];

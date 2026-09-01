@@ -40,6 +40,18 @@ export interface CompactCatchup {
   }>;
 }
 
+/** The lean row every --compact output shares: no body, no history. */
+export function compactTask(task: Task): CompactCatchup['changed'][number] {
+  return {
+    id: task.id,
+    name: task.name,
+    status: task.status,
+    type: task.type,
+    kind: task.kind,
+    updated: task.updated,
+  };
+}
+
 export function compactCatchup(result: CatchupResult): CompactCatchup {
   return {
     consumer: result.consumer,
@@ -51,14 +63,7 @@ export function compactCatchup(result: CatchupResult): CompactCatchup {
       resolvedAt: task.resolvedAt ?? null,
       dependants: dependants.map((t) => t.id),
     })),
-    changed: result.changed.map((task) => ({
-      id: task.id,
-      name: task.name,
-      status: task.status,
-      type: task.type,
-      kind: task.kind,
-      updated: task.updated,
-    })),
+    changed: result.changed.map(compactTask),
   };
 }
 
