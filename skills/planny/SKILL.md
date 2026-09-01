@@ -51,11 +51,13 @@ Rules that keep the store consistent:
   yourself. Then work it: `start` when you begin, `done` when it ships. A
   request or idea tracked only in chat, a TODO comment, or your own head
   is one that gets lost.
-- **A status-bearing list in a document is a task list.** Checkboxes,
-  tick marks, `Status:` fields, an open/closed split: when you are about
-  to write these into a markdown file, stop — whatever the section is
-  called (queue, register, backlog, follow-ups, review debt, next steps).
-  Run `planny add` for each item. The document keeps the analysis and
+- **A status-bearing list in a document is a task list.** If you are
+  tracking your own list of work and marking completion against it —
+  checkboxes, tick marks, `Status:` fields, an open/closed split — you
+  should be using planny instead: stop and run `planny add` for each
+  item, whatever the section is called (queue, register, backlog,
+  follow-ups, review debt, next steps). Convert any such list you find
+  into planny tasks the same way. The document keeps the analysis and
   cites the task ids.
 - **Serve the board at session start.** When you begin working in a project
   that has a `.planny` store, check whether the UI is already up
