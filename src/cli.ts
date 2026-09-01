@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { catchup } from './catchup.js';
 import { buildGraph } from './graph.js';
@@ -138,8 +139,10 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
     }
     return value;
   };
-  const report = (result: OpResult, line: string): void => {
-    io.out(line);
+  // Every mutation names the store it acted on: the CLI follows the cwd,
+  // so a command run in the wrong project must be visible in its output.
+  const report = (store: Store, result: OpResult, line: string): void => {
+    io.out(`${line} [store: ${join(store.root, '.planny')}]`);
     for (const warning of result.warnings) io.err(`warning: ${warning}`);
   };
 
@@ -211,7 +214,7 @@ Examples:
         io.out(JSON.stringify({ task, warnings: result.warnings }, null, 2));
         return;
       }
-      report(result, line);
+      report(store, result, line);
     });
 
   program
@@ -245,7 +248,8 @@ Examples:
   planny update t3 --desc-file body.md          replace the whole description`,
     )
     .action((id, options) => {
-      const result = updateTask(open(), id, {
+      const store = open();
+      const result = updateTask(store, id, {
         name: options.name,
         body: readBody(options),
         appendBody: options.appendDesc,
@@ -261,7 +265,7 @@ Examples:
         removeBlocks: options.removeBlocks,
         priority: options.priority,
       }, actor());
-      report(result, `updated ${id}`);
+      report(store, result, `updated ${id}`);
     });
 
   program
@@ -270,8 +274,9 @@ Examples:
     .argument('<id>', 'task id', normalizeId)
     .option('--take', 'take over a task another session started')
     .action((id, options) => {
-      const result = setStatus(open(), id, 'in-progress', actor(), { take: options.take });
-      report(result, `${id} → in-progress`);
+      const store = open();
+      const result = setStatus(store, id, 'in-progress', actor(), { take: options.take });
+      report(store, result, `${id} → in-progress`);
     });
 
   for (const [command, status, description] of [
@@ -283,8 +288,9 @@ Examples:
       .description(description)
       .argument('<id>', 'task id', normalizeId)
       .action((id) => {
-        const result = setStatus(open(), id, status, actor());
-        report(result, `${id} → ${status}`);
+        const store = open();
+        const result = setStatus(store, id, status, actor());
+        report(store, result, `${id} → ${status}`);
       });
   }
 
@@ -294,12 +300,13 @@ Examples:
     .argument('<id>', 'task id', normalizeId)
     .option('--replaced-by <ids>', 'tasks that replace it (comma-separated, repeatable)', collectIds)
     .action((id, options) => {
-      const result = cancelTask(open(), id, options.replacedBy ?? [], actor());
+      const store = open();
+      const result = cancelTask(store, id, options.replacedBy ?? [], actor());
       const suffix =
         result.task.replacedBy.length > 0
           ? ` (replaced by ${result.task.replacedBy.join(', ')})`
           : '';
-      report(result, `cancelled ${id}${suffix}`);
+      report(store, result, `cancelled ${id}${suffix}`);
     });
 
   program
@@ -323,7 +330,7 @@ Examples:
       const result = bumpTask(store, id, target, actor());
       const { position, total } = activePosition(store.loadAll(), id);
       const where = position > 0 ? `position ${position} of ${total} active` : 'the inactive set';
-      report(result, `moved ${id} to ${where}`);
+      report(store, result, `moved ${id} to ${where}`);
     });
 
   program
@@ -657,8 +664,9 @@ Examples:
       if (response === undefined || response.trim() === '') {
         throw new Error('give the decision with --response, --response-file or --accept');
       }
-      const result = resolveDecision(open(), id, response, actor());
-      report(result, `resolved ${id}`);
+      const store = open();
+      const result = resolveDecision(store, id, response, actor());
+      report(store, result, `resolved ${id}`);
     });
 
   program
@@ -689,6 +697,7 @@ Examples:
           if (choice === 'q') break;
           if (choice === 'a') {
             report(
+              store,
               resolveDecision(store, item.task.id, 'Accepted the proposal.', actor() ?? 'operator'),
               `resolved ${item.task.id}`,
             );
@@ -696,6 +705,7 @@ Examples:
             const answer = (await ask('Your decision: ')).trim();
             if (answer !== '') {
               report(
+                store,
                 resolveDecision(store, item.task.id, answer, actor() ?? 'operator'),
                 `resolved ${item.task.id}`,
               );

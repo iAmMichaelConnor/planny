@@ -608,3 +608,39 @@ describe('url', () => {
     expect(err.join('\n')).toMatch(/planny serve/);
   });
 });
+
+describe('mutations name the store they acted on', () => {
+  // A command run in the wrong directory writes to the wrong plan; the
+  // confirmation line must make that visible at zero interaction cost.
+  it('every mutation confirmation carries the store path', async () => {
+    await seedTrio();
+    const stamped = (): void => {
+      expect(allOut()).toContain(`[store: ${join(dir, '.planny')}]`);
+      out = [];
+    };
+    await run('add', 'a new one');
+    stamped();
+    await run('update', 't1', '--desc', 'x');
+    stamped();
+    await run('start', 't1');
+    stamped();
+    await run('done', 't1');
+    stamped();
+    await run('todo', 't1');
+    stamped();
+    await run('bump', 't2', 'top');
+    stamped();
+    await run('cancel', 't3');
+    stamped();
+    await run('add', 'a question', '--type', 'decision');
+    stamped();
+    await run('resolve', 't5', '--response', 'yes');
+    stamped();
+  });
+
+  it('json output stays pure json', async () => {
+    await seedTrio();
+    await run('add', 'json one', '--json');
+    expect(() => JSON.parse(allOut())).not.toThrow();
+  });
+});
