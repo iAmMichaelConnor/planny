@@ -80,6 +80,11 @@ Rules that keep the store consistent:
   command: `PLANNY_SESSION=<id> planny …`. Type it in full each time; do
   not build command fragments in shell variables — expansion rules differ
   between shells, and the flag can arrive as one broken token.
+  Also export `PLANNY_PROJECT=<the store root's directory name>` (or the
+  full root path) once per project: with it set, the CLI refuses any
+  command aimed at a different store, so a wrong `cd` cannot touch the
+  wrong plan. In fresh-shell harnesses, write it in the same per-command
+  prefix: `PLANNY_SESSION=<id> PLANNY_PROJECT=<name> planny …`.
   Creates then stamp `created_by`, and the task's history logs
   every status change, priority move, re-parent, dependency edit and rename
   with `{at, …, by}`, so the operator can see which agent did what.

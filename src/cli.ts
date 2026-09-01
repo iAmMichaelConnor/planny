@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { catchup, compactCatchup } from './catchup.js';
 import { buildGraph } from './graph.js';
@@ -108,6 +108,10 @@ function buildProgram(io: CliIo): Command {
       '--session <id>',
       'attribute creates and status changes to this agent session (falls back to $PLANNY_SESSION)',
     )
+    .option(
+      '--project <value>',
+      'refuse every command when the store is not this project — a directory name or a full root path (falls back to $PLANNY_PROJECT)',
+    )
     .configureOutput({
       writeOut: (text) => io.out(text.replace(/\n$/, '')),
       writeErr: (text) => io.err(text.replace(/\n$/, '')),
@@ -130,7 +134,24 @@ The plan lives in .planny/ next to your code; every command acts on the
 nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
     );
 
-  const open = (): Store => openStore(io.cwd);
+  const open = (): Store => {
+    const store = openStore(io.cwd);
+    // The optional wrong-store guard (decided in t169): with an asserted
+    // project, a command aimed at any other store refuses instead of
+    // silently acting on the wrong plan. One funnel guards every command.
+    const expected: unknown = program.opts().project ?? process.env.PLANNY_PROJECT;
+    if (typeof expected === 'string' && expected !== '') {
+      const matches = expected.includes(sep)
+        ? resolve(expected) === store.root
+        : expected === basename(store.root);
+      if (!matches) {
+        throw new Error(
+          `this store is ${store.root} but the asserted project is "${expected}" (--project / $PLANNY_PROJECT) — cd to the right project or update the assertion`,
+        );
+      }
+    }
+    return store;
+  };
   /** First line of human-readable views: which project's plan answered. */
   const nameStore = (store: Store): void => io.out(`store: ${store.root}`);
   const actor = (): string | undefined => program.opts().session ?? process.env.PLANNY_SESSION;

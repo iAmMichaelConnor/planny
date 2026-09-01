@@ -639,6 +639,46 @@ describe('init inside an existing store', () => {
   });
 });
 
+describe('the project guard', () => {
+  afterEach(() => {
+    delete process.env.PLANNY_PROJECT;
+  });
+  const base = () => dir.slice(dir.lastIndexOf('/') + 1);
+
+  it('a matching bare name passes; a wrong one refuses with both sides named', async () => {
+    await run('init');
+    process.env.PLANNY_PROJECT = base();
+    expect(await run('add', 'guarded add')).toBe(0);
+    process.env.PLANNY_PROJECT = 'some-other-project';
+    expect(await run('add', 'stray add')).toBe(1);
+    const message = err.join('\n');
+    expect(message).toContain(dir); // the store it actually found
+    expect(message).toContain('some-other-project'); // the assertion that failed
+    out = [];
+    await run('list', '--count');
+    expect(out).toEqual([]); // the read is guarded too
+  });
+
+  it('a path form compares the resolved root', async () => {
+    await run('init');
+    process.env.PLANNY_PROJECT = dir;
+    expect(await run('add', 'by path')).toBe(0);
+    process.env.PLANNY_PROJECT = `${dir}-elsewhere`;
+    expect(await run('add', 'stray')).toBe(1);
+  });
+
+  it('--project asserts without the environment', async () => {
+    await run('init');
+    expect(await run('--project', base(), 'add', 'flagged add')).toBe(0);
+    expect(await run('--project', 'wrong-name', 'add', 'stray')).toBe(1);
+  });
+
+  it('init stays exempt — it creates stores', async () => {
+    process.env.PLANNY_PROJECT = 'anything-at-all';
+    expect(await run('init')).toBe(0);
+  });
+});
+
 describe('resolution outcome tasks', () => {
   beforeEach(async () => {
     await run('init');
