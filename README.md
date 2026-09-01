@@ -6,6 +6,27 @@ live as one markdown file each, the plan stays current because updating it
 is one cheap command, and an agent loads only the tasks it needs instead of
 a whole document.
 
+## Why
+
+The `plan.md` pattern fell apart for me once local multi-agent
+sessions got real. Agents lost track of what was done and what was
+left; they appended to the plan until it conflicted with itself;
+finished work sat unmarked. A flat document also carries no priority
+order, no "this blocks that", no subtasks. My `DECISIONS.md` went the
+same way — the questions that actually needed my answer were buried in
+prose. Altogether it gobbled tokens and still wasn't reliable, so to
+save those tokens I spent a load of tokens building a deterministic
+CLI instead. (AI has given the world a thousand vibe-coded todo lists;
+here is yet another.)
+
+Having used it for local development for a while: agents do keep their
+statuses straight and hand work between each other through one store,
+and I can see which decisions wait on me — and answer them async, in
+my own time, to unblock work. It doesn't replace tracking larger
+project items between humans; it serves the new, zoomed-in fractal
+below that, where I orchestrate project management between agents (and
+me) on my own machine.
+
 ## Install
 
 ```bash
