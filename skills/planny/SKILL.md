@@ -25,7 +25,7 @@ first: `npm install -g planny` (Node 20+).
 
 Rules that keep the store consistent:
 
-- **You must always mutate through the CLI; never by writing or editing
+- **You must always mutate through the CLI (or a human can use the UI); never by writing or editing
   task files under `.planny/` directly**, because direct edits would
   catastrophically skip the CLI's id assignment, relationship bookkeeping
   (parent/child, blockers), history, and data validation checks. The CLI
@@ -33,6 +33,9 @@ Rules that keep the store consistent:
   run every command from inside the project dir whose plan you mean to
   change (a subdirectory is fine — the CLI walks up until it reaches a
   `.planny/` dir; when in doubt, check `pwd` before calling the CLI).
+  In a linked git worktree, planny uses the main worktree's plan — the
+  worktree's own `.planny` checkout is ignored unless a `.planny/fork`
+  marker makes the split deliberate.
   _Reading_ the raw files (grep, cat, etc) is fine and encouraged.
 - Write task names and bodies in Simplified Technical English (STE) in
   spirit: short sentences, active voice, one meaning per word, no project
@@ -50,7 +53,8 @@ Rules that keep the store consistent:
   yourself. Then work it: `start` when you begin, `done` when it ships. A
   request or idea tracked only in chat, a TODO comment, or your own head
   is one that gets lost. An idea you doubt becomes a decision task, not a
-  plain task — see "Uncertainty gates work".
+  plain task — see "New ideas, which carry doubts, become a decision
+  task first".
 - **A checklist in a document is a task list.** If you are
   tracking your own list of work and marking completion against it —
   checkboxes, tick marks, `Status:` fields, an open/closed split — you
@@ -59,37 +63,24 @@ Rules that keep the store consistent:
   follow-ups, review debt, next steps). Convert any such list you find
   into planny tasks the same way. The document keeps the analysis and
   cites the task ids.
-- **Serve the board at session start.** When you begin working in a project
-  that has a `.planny` store, check whether the UI is already up
-  (`planny url` prints the address, and exits 1 when it is not); if not,
-  run `planny serve --detach` and tell the operator the URL it prints.
-  The detached server runs in its own OS session, so it outlives you.
-  Do not use your harness's background-task feature instead: harnesses
-  stop those at session end, on /clear, and on context compaction, and
-  the operator's board dies with them. `planny serve --stop` ends the
-  detached server when asked.
-  The server binds 127.0.0.1 only, so when the operator works on
-  this machine remotely, also give them the forward to run from their own
-  machine, ports matching the served port:
-  `ssh -L 5891:127.0.0.1:5891 <host>`, then open http://localhost:5891.
-- **Identify yourself.** Run `export PLANNY_SESSION=<your session id>` once
-  at the start of a session (or pass `--session <id>` before any
-  subcommand). If your harness runs each command in a fresh shell, the
-  export does not survive between commands. The form that works in every
-  shell and every harness is the environment prefix, written out on each
-  command: `PLANNY_SESSION=<id> planny …`. Type it in full each time; do
-  not build command fragments in shell variables — expansion rules differ
-  between shells, and the flag can arrive as one broken token.
-  Also export `PLANNY_PROJECT=<the store root's directory name>` (or the
-  full root path) once per project: with it set, the CLI refuses any
-  command aimed at a different store, so a wrong `cd` cannot touch the
-  wrong plan. In fresh-shell harnesses, write it in the same per-command
-  prefix: `PLANNY_SESSION=<id> PLANNY_PROJECT=<name> planny …`.
-  Creates then stamp `created_by`, and the task's history logs
-  every status change, priority move, re-parent, dependency edit and rename
-  with `{at, …, by}`, so the operator can see which agent did what.
-  Starting a task claims it: `planny start` on a task another session
-  started refuses until you pass `--take`, which records the takeover.
+- **Serve the board at session start.** Run `planny serve --detach` and
+  tell the operator the URL it prints. `planny url` re-prints the address at any time. The
+  detached server outlives your session; a harness background task dies
+  at session end, /clear, or compaction, and the operator's board with it —
+  never use one for the board. `planny serve --stop` ends it. The server
+  binds 127.0.0.1 only: a remote operator needs the matching forward
+  from their own machine — `ssh -L 5891:127.0.0.1:5891 <host>`, then
+  open http://localhost:5891.
+- **Identify yourself.** Prefix every planny command:
+  `PLANNY_SESSION=<your session id> PLANNY_PROJECT=<store dir name> planny …` — the
+  one form that survives every shell and harness (an `export` dies in a
+  fresh-shell harness; shell variables can mangle the flag). The session
+  id (PLANNY_SESSION) attributes your task creation and every history entry (`{at, …, by}`), so
+  the operator can see which agent did what. PLANNY_PROJECT makes the
+  CLI refuse commands aimed at a different store, so a wrong `cd` cannot
+  touch the wrong plan. Starting a task claims it: `planny start` on
+  another session's task refuses unless you pass `--take`, which records
+  the takeover, but you should _rarely_ need `--take`.
 
 ## The action map
 
@@ -111,7 +102,7 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "write the plan to a file" | `planny export --out plan.md [--status todo,in-progress]` |
 | "let's go through the decisions" | see "Working the decision queue" |
 | "open the board" | `planny serve --detach` (see "Serve the board at session start") |
-| "is the store broken?", a command errors on a task file | `planny doctor` (add `--fix` to apply the safe repairs) |
+| "is the store broken?", a command errors on a task file, a git merge or checkout touched `.planny` | `planny doctor` (add `--fix` to apply the safe repairs) |
 
 You have a question only the operator can answer → **add a decision task**
 (see "Decision tasks"). Asking in the terminal as well is fine — but the
@@ -143,7 +134,8 @@ agent could pick it up with no other context:
   `--priority` when it should not join at the bottom.
 - **Structure**: work needing several owners or stages becomes child
   tasks, one owner each. Encode order as dependencies, never as prose
-  ("do this after t7" in a description is invisible to `next`).
+  (`next` reads dependencies, not descriptions — "do this after t7" in
+  prose does not hold).
 - **Decisions** use the section layout in
   [references/decision-format.md](references/decision-format.md).
 - **Take ids from command output — never predict them.** Another writer
@@ -152,14 +144,15 @@ agent could pick it up with no other context:
   task is yours to work right now, `planny add "…" --start` creates,
   starts and claims it in one command, with no id to juggle.
 
-Before you add, place and check. A store with a hierarchy expects new
+Before you add a task, find its place and check it is new. A store with
+a hierarchy expects new
 work to join it: find the parent (`planny tree` shows the shape) and
 pass `--parent` — a root-level task is a deliberate choice, not a
 default. Then check the work is new: `planny list --status
 todo,in-progress` prints one line per task; grep it for the key nouns
-and their synonyms. Never use `--json` for this check — it ships whole
-bodies (`--json --compact` is the lean form). A duplicate forks an
-existing task's history.
+and their synonyms. Never use `--json` for this check — it prints whole
+bodies (`--json --compact` is the lean form). A duplicate splits one
+piece of work across two task histories.
 
 Then sanity-check the plan you just built: `planny tree` (shape),
 `planny deps` (order), `planny next` (is the first actionable task the
@@ -168,7 +161,7 @@ right one?).
 An operator's quick-add often arrives rough — a two-word name, a pasted
 thought. When you pick one up, bring it to this standard: rename it to a
 short imperative name, and append what done looks like in STE. Keep the
-operator's original words in the body; they are the ask of record.
+operator's original words in the body; they are the request of record.
 
 ## Working tasks
 
@@ -200,25 +193,23 @@ planny add "Choose the database" --type decision --kind operator \
 Write the body using the section layout in
 [references/decision-format.md](references/decision-format.md) — read it
 before writing your first decision. Blocked work gets `--blocked-by` pointing
-at the decision, so the queue shows what each answer gates. After a
-resolution, the gate moves to the outcome task.
+at the decision, so the queue shows what each answer unlocks. After a
+resolution, dependants wait on the outcome task instead.
 
-**Uncertainty gates work.** When you are unsure an approach is right, when
-you have flagged complexity, risk or downsides, or when the operator has
-expressed concern or uncertainty about a piece of work — the go/no-go
-becomes a decision task before any agent builds it. If a plain task
-already covers the work, either convert it
-(`planny update <id> --type decision --kind operator`, rewriting the body
-into the decision layout with the analysis folded in) or add a decision
-alongside that blocks it (`planny add "Decide …" --type decision
---kind operator --blocks <id>`). Convert when the whole task *is* the
-question; add alongside when the task has agreed work plus one contested
-aspect. Either way, an agent walking the queue then meets an operator
-decision instead of silently attempting contested work. Your own ideas
-are not exempt: an idea you record while doubting it must be a decision
-task, never a plain `ai` task — doubts written as prose inside a todo
-are invisible to the queue, and a future agent builds the contested
-thing without asking.
+**New ideas, which carry doubts, become a decision task first.** When you are unsure an
+approach is right, when you have flagged risk or downsides, or when
+the operator has expressed concern, turn the work into a decision task
+before any agent builds it. Your own ideas are not exempt: if you
+doubt an idea as you record it, record it as a decision, not a plain
+`ai` task. A doubt written as a sentence inside a plain task protects
+nothing — `planny next` still serves that task, and an agent will
+build it; only a decision task holds the work until the operator
+answers. If a plain task for the work already exists, there are two
+ways in: convert it to a decision when the whole task is really a
+question (`planny update <id> --type decision --kind operator`), or
+add a separate decision that blocks it when the task is agreed work
+with one open question inside it. The commands and layout live in
+[references/decision-format.md](references/decision-format.md).
 
 ### Working the decision queue
 
@@ -232,8 +223,8 @@ thing without asking.
 - A resolution creates an **outcome task**: a child of the decision
   carrying the answer and the decision text — the answer cannot be lost
   while that task is open. Tasks that waited on the decision are rewired
-  to wait on the outcome task, so gated work stays gated until the
-  answer is interpreted. **Work it like any task**: update or cancel the
+  to wait on the outcome task, so work that waited on the decision
+  keeps waiting until the answer is interpreted. **Work it like any task**: update or cancel the
   rewired tasks to match the outcome, and create the follow-on tasks it
   calls for, each citing the decision in its body ("Decided in t150").
   Before you mark the outcome task done, append a record that starts
@@ -241,7 +232,7 @@ thing without asking.
   tasks you spawned and what each covers, or why no work was needed.
   The operator reads that line to see the answer landed; the later
   `Consequences:` record on the decision says how it shipped. Marking the
-  outcome task done releases the gated work.
+  outcome task done releases the waiting work.
 - The user skips → move on; the decision stays open.
 - After the decided work ships, append the record the operator will look
   back on: `planny update <id> --append-desc "Consequences: … Files: … Tests: …
@@ -253,32 +244,37 @@ thing without asking.
 ### Staying current
 
 Catch up at boundaries — when you start work, between tasks, and before
-choosing what to do next. Never mid-task: information that arrives while
-you are deep in something else only displaces working context.
+choosing what to do next. Never mid-task: the delta's job is to steer
+your next choice of work, and mid-task that choice is already made.
+Read it while deep in a task and it only crowds the task's details out
+of your working memory. Finish or park the task, then catch up.
 
 - `planny catchup --json` is the default (it uses your `PLANNY_SESSION` as
   the consumer id; `--as <id>` overrides). It returns every task changed
   and every decision resolved since you last asked, then advances your
   stored cursor — you carry no state. `--peek` looks without advancing.
-  Delivery is at-least-once: treat the delta as idempotent facts.
-  The delta is also delivered once per cursor: a plain `catchup` advances
-  the cursor even when you discard its output, so never pipe it through
-  `head` or `grep` — extract from the JSON with a real tool, or ask for
-  `--compact` (ids, names, statuses and stamps only, sized to be read
-  whole), and use `--peek` when you only want to look. Only an explicit
+  You can meet the same change in two deltas: never missed, sometimes
+  repeated. Each entry states a current fact ("t12 is done"), so a
+  repeat is harmless. But each delta is handed out only once — a plain
+  `catchup` advances the cursor even when you discard its output — so
+  never pipe it through `head` or `grep`. Extract from the JSON with a
+  JSON-aware tool (jq, a script), or ask for `--compact` (ids, names,
+  statuses and stamps only, sized to be read whole), and use `--peek`
+  when you only want to look. Only an explicit
   `--since` window can recover what a truncated read threw away.
   A resolved decision's follow-on work is its outcome task: the resolved
   entry names it, `planny next` surfaces it, and the decision body cites
   its id.
 - Explicit windows, when a cursor is not what you mean:
   `planny decisions --resolved --since <time> --json` (answers, each with
-  the tasks it was gating) and `planny list --changed-since <time> --json`.
+  the tasks it unblocked) and `planny list --changed-since <time> --json`.
 - One task's own timeline needs no store-wide diff: its typed `history`
   logs every status change, priority move, re-parent, dependency edit and
   rename with `{at, …, by}` — `planny show <id>` prints it, `--json`
   returns it.
 - Skip your own footprints: entries whose `by` (in `history`/`created_by`)
-  shares your session root are changes you already know about.
+  starts with your own `PLANNY_SESSION` id are changes you already know
+  about.
 - There is no agent-facing watch mode, deliberately. File watching exists
   only as harness plumbing (the serve UI's live refresh); an agent that
   polls or subscribes mid-task is doing it wrong.
@@ -288,18 +284,18 @@ you are deep in something else only displaces working context.
 
 ## Priorities
 
-Priority is one ordered list (position 1 = top). `bump` clamps to the nearest
-legal position: a task never ranks above an active task that blocks it, and
-the tool repairs the order automatically when edges change. Trust the order;
-don't fight it by renumbering.
+Priority is one ordered list (position 1 = top). `bump` moves the task to
+the nearest allowed position: a task never ranks above an active task that
+blocks it, and the tool repairs the order when dependencies change. Trust
+the order; don't fight it by renumbering.
 
 ## Reference
 
 Statuses: `todo`, `in-progress`, `done`, `cancelled` (cancelled tasks keep
 their file; `--replaced-by` rewires dependants onto the successors).
 Kinds: `ai`, `operator` by convention (free-form for new kinds); `--model`
-records a preferred model, advisory only — reassign at load time if that
-model is unavailable.
+records a preferred model, advisory only — when you hand out the task,
+pick another model if that one is unavailable.
 Updating: `npm update -g planny` refreshes the CLI and this skill together
 — the skill ships inside the npm package, so a skills directory that
 symlinks it follows automatically; a plugin install updates through its
@@ -313,8 +309,8 @@ Reading the plan — the exact query for each question:
   carries the task, its ancestor path, and the tasks it unlocks.
 - How does task X relate to everything? `planny show X --json` — fields
   `ancestors` (parent chain, nearest first), `children`, `blockedBy`,
-  `blocking`, and a `blocked` flag. The text form prints the same as
-  path / children / waits on / blocks lines.
+  `blocking`, and a `blocked` flag. The text form prints the same facts
+  as labeled lines: path, children, waits on, blocks.
 - Children of X? `planny list --parent X`; the whole subtree:
   add `--recursive`.
 - What is blocked right now? `planny list --blocked` (and `--unblocked`

@@ -2,7 +2,7 @@
 
 A decision task asks the operator a question. The operator must be able to
 decide from the item alone, without opening another doc. Keep pointers to
-fuller write-ups in a parenthetical before the ask.
+fuller write-ups in a parenthetical before the question.
 
 Write in Simplified Technical English (ASD-STE100) in spirit, not checked
 against the STE dictionary: short sentences, active voice, one meaning per
@@ -12,8 +12,8 @@ used.
 
 ## The sections
 
-Use these subheadings, in this order. Omit a heading with nothing true,
-meaningful or valuable under it — never pad one. A ratification item (asking
+Use these subheadings, in this order. Omit a heading you have nothing
+real to put under — never pad one. A ratification item (asking
 the operator to confirm something already built) also states what changes if
 the answer is no.
 
@@ -36,12 +36,13 @@ the answer is no.
   recommendation attached, saying what stops you from forming one (a pure
   preference of the operator's, or a fact still missing). Most decisions
   should arrive with a Proposal; this heading is the exception, and its
-  presence is a flag.
+  presence is a warning sign.
 - **Alternative options** — alternatives considered aside from the
   recommended proposal, each with its reason and pros & cons, so the
-  operator can re-open one deliberately instead of re-deriving it blind.
-- **Needed from you** — the exact question or go, answerable in a word or
-  two where possible.
+  operator can re-open one deliberately instead of working it out again
+  from scratch.
+- **Needed from you** — the exact question, or the go-ahead you need,
+  answerable in a word or two where possible.
 - **When** — the moment the answer is needed, and what waiting costs.
 
 ## After the decision
@@ -91,3 +92,15 @@ get hand-edited later, and unlinted edits drift in style.
 
 Before Friday's docs release; waiting blocks t18 and t19.
 ```
+
+## Converting existing work into a decision
+
+When a plain task already covers doubted work, either convert it —
+`planny update <id> --type decision --kind operator`, rewriting the
+body into the layout above with the analysis folded in — or add a
+decision alongside that blocks it:
+`planny add "Decide …" --type decision --kind operator --blocks <id>`.
+Convert when the whole task is really a question; add alongside when
+the task is agreed work with one open question inside it. Either way, an agent
+walking the queue meets an operator decision instead of silently
+building work that is still in question.
