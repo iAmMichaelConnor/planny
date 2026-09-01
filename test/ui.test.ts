@@ -1358,6 +1358,33 @@ describe('decision buttons gate on their own input', () => {
   });
 });
 
+describe('cancel confirmation', () => {
+  const openCancel = (id: string) => {
+    (document.querySelector(`.card[data-id="${id}"]`) as HTMLElement).click();
+    (document.querySelector('#drawer-body button[data-status="cancelled"]') as HTMLElement).click();
+    return document.querySelector('#cancel-extra') as HTMLElement;
+  };
+
+  it('names the tasks waiting on the one being cancelled, as links', () => {
+    const extra = openCancel('t1'); // t1 blocks t3 in the sample state
+    expect(extra.classList.contains('hidden')).toBe(false);
+    expect(extra.textContent).toMatch(/wait/i);
+    expect(extra.querySelector('[data-goto-task="t3"]')).not.toBeNull();
+    expect(extra.textContent).toMatch(/rewire/i); // says what replacements do
+  });
+
+  it('says so when nothing waits', () => {
+    const extra = openCancel('t2');
+    expect(extra.textContent).toMatch(/nothing waits/i);
+  });
+
+  it('the replaced-by box has no fake-id placeholder', () => {
+    const extra = openCancel('t1');
+    const input = extra.querySelector('#f-replaced-by') as HTMLInputElement;
+    expect(input.placeholder).toBe('');
+  });
+});
+
 describe('ids link everywhere text renders', () => {
   const fixture = [
     task('t1', { name: 'The referenced one', blocking: ['t3'], position: 1 }),

@@ -869,8 +869,18 @@ function renderDrawer() {
       <button data-status="cancelled" class="${task.status === 'cancelled' ? 'current' : ''}"${task.status === 'cancelled' ? ' disabled title="the current status"' : ''}>cancel…</button>
     </div>
     <div id="cancel-extra" class="hidden">
+      ${(() => {
+        const waiting = task.blocking.filter((wid) => {
+          const w = state.byId.get(wid);
+          return w && (w.status === 'todo' || w.status === 'in-progress');
+        });
+        return waiting.length > 0
+          ? `<p class="cancel-waiting">These tasks wait on ${task.id}: ${linkifyIds(esc(waiting.join(', ')))}.
+             Replacements rewire them; with none they stop waiting.</p>`
+          : '<p class="cancel-waiting muted">Nothing waits on this task.</p>';
+      })()}
       <label>replaced by (comma-separated ids, optional)</label>
-      <input id="f-replaced-by" placeholder="t4, t5">
+      <input id="f-replaced-by">
       <button id="confirm-cancel" style="margin-top:6px">Confirm cancel</button>
     </div>`;
 
