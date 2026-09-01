@@ -259,6 +259,17 @@ describe('resolveDecision', () => {
     addTask(store, { name: 'not a decision' });
     expect(() => resolveDecision(store, 't1', 'yes')).toThrow(/decision/i);
   });
+
+  it('reopening a resolved decision clears the resolvedAt stamp', () => {
+    addTask(store, { name: 'Choose db', type: 'decision' });
+    resolveDecision(store, 't1', 'Use markdown files.');
+    const { task } = setStatus(store, 't1', 'todo');
+    expect(task.resolvedAt).toBeUndefined();
+    expect(store.load('t1').resolvedAt).toBeUndefined(); // gone from the file too
+    // Resolving again works and re-stamps.
+    const again = resolveDecision(store, 't1', 'Confirmed: markdown files.');
+    expect(again.task.resolvedAt).toBeDefined();
+  });
 });
 
 describe('attribution', () => {

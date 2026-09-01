@@ -481,7 +481,12 @@ function doSetStatus(
   }
   logStatus(task, status, actor);
   task.status = status;
-  if (status === 'todo') task.replacedBy = [];
+  if (status === 'todo') {
+    task.replacedBy = [];
+    // A reopened decision is unanswered again: a lingering stamp would
+    // make it claim otherwise until the next resolve.
+    delete task.resolvedAt;
+  }
   m.touch(id);
   m.commit();
   return m.result(task);
