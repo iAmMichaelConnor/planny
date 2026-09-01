@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { closeSync, openSync, watch } from 'node:fs';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { closeSync, existsSync, openSync, watch } from 'node:fs';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -129,13 +129,15 @@ export type DetachOutcome =
   | { kind: 'already'; url: string };
 
 export type StopOutcome =
-  | { kind: 'stopped'; url: string; pid: number }
+  | { kind: 'stopped'; url: string; pid: number; log?: string }
   | { kind: 'stale' }
   | { kind: 'nothing' };
 
-/** Where a detached server's output goes: predictable, per requested port. */
-export function detachLogPath(port: number): string {
-  return join(tmpdir(), `planny-serve-${port}.log`);
+export type CleanLogsOutcome = { deleted: string[]; keptLive: string[] };
+
+/** Where a detached server's output goes: beside serve.json, one log per store. */
+export function serveLogPath(store: Store): string {
+  return join(store.root, '.planny', 'serve.log');
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -151,7 +153,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 export async function detachServer(store: Store, port: number): Promise<DetachOutcome> {
   const existing = await currentServeUrl(store);
   if (existing !== null) return { kind: 'already', url: existing };
-  const log = detachLogPath(port);
+  const log = serveLogPath(store);
   const fd = openSync(log, 'a');
   const child = spawn(
     process.execPath,
@@ -217,13 +219,68 @@ export async function stopServer(store: Store): Promise<StopOutcome> {
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
     if ((await servedStoreRoot(port)) !== store.root) {
-      return { kind: 'stopped', url: `http://127.0.0.1:${port}`, pid };
+      // A foreground serve leaves no log; name it only when it exists.
+      const log = serveLogPath(store);
+      return {
+        kind: 'stopped',
+        url: `http://127.0.0.1:${port}`,
+        pid,
+        ...(existsSync(log) ? { log } : {}),
+      };
     }
     await sleep(100);
   }
   throw new Error(
     `sent SIGTERM to pid ${pid} but 127.0.0.1:${port} is still serving — stop it by hand`,
   );
+}
+
+/**
+ * Delete this store's serve.log once it is older than the given number of
+ * days and no server is writing it — never another project's log. Also
+ * sweeps dead planny-serve-<port>.log leftovers of the pre-0.1.10
+ * port-keyed scheme out of the OS temp dir, by the same age rule; drop
+ * that pass once those files are extinct.
+ */
+export async function cleanLogs(store: Store, olderThanDays: number): Promise<CleanLogsOutcome> {
+  if (!Number.isFinite(olderThanDays) || olderThanDays < 0) {
+    throw new Error('--older-than needs a number of days, 0 or more');
+  }
+  const cutoff = Date.now() - olderThanDays * 86_400_000;
+  const deleted: string[] = [];
+  const keptLive: string[] = [];
+
+  const own = serveLogPath(store);
+  const ownEntry = await stat(own).catch(() => undefined);
+  if (ownEntry?.isFile() === true && ownEntry.mtimeMs <= cutoff) {
+    if ((await currentServeUrl(store)) !== null) {
+      keptLive.push(own);
+    } else {
+      await rm(own, { force: true });
+      deleted.push(own);
+    }
+  }
+
+  for (const name of await readdir(tmpdir())) {
+    const match = /^planny-serve-(\d+)\.log$/.exec(name);
+    if (match === null) continue;
+    const path = join(tmpdir(), name);
+    let entry;
+    try {
+      entry = await stat(path);
+    } catch {
+      continue; // deleted by someone else between readdir and stat
+    }
+    if (!entry.isFile() || entry.mtimeMs > cutoff) continue;
+    const port = Number(match[1]);
+    if (port > 0 && (await servedStoreRoot(port)) !== undefined) {
+      keptLive.push(path);
+      continue;
+    }
+    await rm(path, { force: true });
+    deleted.push(path);
+  }
+  return { deleted, keptLive };
 }
 
 /** The address of a live server for this store, or null when nothing serves it. */

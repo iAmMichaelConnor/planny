@@ -4,3 +4,4 @@ dist/
 *.log
 .planny/serve.json
 .planny/lock
+.planny/last-seen.json

@@ -10,7 +10,9 @@ structure, so a re-parent never moves a file.
 - `src/` — TypeScript source. One module per concern:
   - `types.ts` — the Task shape, statuses, constants.
   - `frontmatter.ts` — markdown + YAML frontmatter parse/serialize.
-  - `store.ts` — repo discovery (walks up for `.planny`), read/write tasks, id allocation.
+  - `store.ts` — repo discovery (walks up for `.planny`; a linked git
+    worktree defers to the main worktree's store unless `.planny/fork`
+    exists), read/write tasks, id allocation.
   - `graph.ts` — derived relationships: children, blocking, ancestors, descendants, cycle checks.
   - `priority.ts` — rank ordering, bump, the dependency-order invariant and its repair.
   - `ops.ts` — every mutation (add, update, status, cancel, resolve, bump). CLI and server both call this; never mutate a task file anywhere else (one exception: doctor repairs).
@@ -41,11 +43,16 @@ structure, so a re-parent never moves a file.
   `Outcome task: <id>` to the decision body — all in the same locked
   mutation. `--reject` records the rejection and creates nothing.
 - Ids are never reused.
-- The ops-only rule covers *task files*. Three store-level files are owned
+- The ops-only rule covers *task files*. Five store-level files are owned
   elsewhere by design: `.planny/cursors.json` (written by catchup, under the
-  same lock), `.planny/lock` (the lock module itself), and
+  same lock), `.planny/lock` (the lock module itself),
   `.planny/serve.json` (written by the server while it listens; `planny url`
-  probes before trusting it, so a crash leaving it behind is harmless).
+  probes before trusting it, so a crash leaving it behind is harmless),
+  `.planny/serve.log` (the detached server's output; `serve --clean-logs`
+  deletes it once the server is gone and the file is old), and
+  `.planny/last-seen.json` (the rewind tripwire, advanced by every
+  `store.save`; opens and scans warn while the store is behind it, and
+  deleting it acknowledges a deliberate rewind).
 - Ops validates input shapes at runtime (enums, id lists, bump targets) —
   the server passes JSON bodies through, so the funnel must not trust its
   compile-time types.

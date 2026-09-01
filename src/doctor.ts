@@ -36,7 +36,9 @@ export type FindingCode =
   | 'foreign-file'
   | 'cursors-unreadable'
   | 'cursor-in-future'
-  | 'stale-lock';
+  | 'stale-lock'
+  | 'merge-conflict'
+  | 'last-seen-unreadable';
 
 export interface Finding {
   code: FindingCode;
@@ -46,6 +48,16 @@ export interface Finding {
   file: string;
   id?: string;
   message: string;
+}
+
+/** A parse failure that is really a half-finished `git merge`. */
+function hasConflictMarkers(file: string): boolean {
+  try {
+    const text = readFileSync(file, 'utf8');
+    return text.includes('<<<<<<< ') && text.includes('\n>>>>>>> ');
+  } catch {
+    return false;
+  }
 }
 
 export function diagnose(store: Store): Finding[] {
@@ -64,6 +76,16 @@ export function diagnose(store: Store): Finding[] {
   };
 
   for (const failure of failures) {
+    if (failure.code === 'parse' && hasConflictMarkers(failure.file)) {
+      add(
+        'merge-conflict',
+        'error',
+        false,
+        failure.file,
+        'unresolved git merge conflict — resolve the merge, then rerun doctor',
+      );
+      continue;
+    }
     add(
       failure.code === 'parse' ? 'unreadable-file' : 'id-mismatch',
       'error',
@@ -283,6 +305,24 @@ export function diagnose(store: Store): Finding[] {
     }
   }
 
+  const lastSeenFile = join(store.root, '.planny', 'last-seen.json');
+  if (existsSync(lastSeenFile)) {
+    try {
+      const seen = JSON.parse(readFileSync(lastSeenFile, 'utf8')) as Record<string, unknown>;
+      if (typeof seen.maxId !== 'number' || typeof seen.updated !== 'string') {
+        throw new Error('wrong shape');
+      }
+    } catch {
+      add(
+        'last-seen-unreadable',
+        'error',
+        true,
+        lastSeenFile,
+        'last-seen.json is not valid — fix deletes it; the next task write rewrites it',
+      );
+    }
+  }
+
   const lockFile = join(store.root, '.planny', 'lock');
   if (existsSync(lockFile)) {
     try {
@@ -448,6 +488,19 @@ function doFixStore(store: Store): FixResult {
       if (dirty) writeFileSync(cursorsFile, `${JSON.stringify(cursors, null, 2)}\n`);
     } catch {
       unlinkSync(cursorsFile);
+    }
+  }
+
+  const lastSeenFile = join(store.root, '.planny', 'last-seen.json');
+  if (existsSync(lastSeenFile)) {
+    try {
+      const seen = JSON.parse(readFileSync(lastSeenFile, 'utf8')) as Record<string, unknown>;
+      if (typeof seen.maxId !== 'number' || typeof seen.updated !== 'string') {
+        throw new Error('wrong shape');
+      }
+    } catch {
+      // Deleting is safe: the next task write rewrites the mark.
+      unlinkSync(lastSeenFile);
     }
   }
 

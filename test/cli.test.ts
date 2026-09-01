@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -49,6 +57,58 @@ describe('init and add', () => {
   it('commands fail cleanly without init', async () => {
     expect(await run('list')).toBe(1);
     expect(err.join('\n')).toMatch(/planny init/);
+  });
+
+  it('init refuses inside a linked worktree whose main worktree has the plan', async () => {
+    await run('init');
+    // Fabricate a linked worktree of dir — no git needed.
+    const meta = join(dir, '.git', 'worktrees', 'wt1');
+    mkdirSync(meta, { recursive: true });
+    writeFileSync(join(meta, 'commondir'), '../..\n');
+    const wt = join(dir, '.claude', 'worktrees', 'wt1');
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, '.git'), `gitdir: ${meta}\n`);
+
+    const errs: string[] = [];
+    const code = await runCli(['init'], { cwd: wt, out: () => {}, err: (l) => errs.push(l) });
+    expect(code).toBe(1);
+    expect(errs.join('\n')).toMatch(/main worktree/);
+    expect(errs.join('\n')).toMatch(/fork/);
+
+    // The fork marker makes the refusal stand down.
+    mkdirSync(join(wt, '.planny'), { recursive: true });
+    writeFileSync(join(wt, '.planny', 'fork'), '');
+    expect(await runCli(['init'], { cwd: wt, out: () => {}, err: () => {} })).toBe(0);
+    expect(existsSync(join(wt, '.planny', 'tasks'))).toBe(true);
+  });
+
+  it('mutations from inside a linked worktree land in the main plan, not the copy', async () => {
+    await run('init');
+    await run('add', 'main task');
+    // A linked worktree carrying a checkout copy of the store.
+    const meta = join(dir, '.git', 'worktrees', 'wt2');
+    mkdirSync(meta, { recursive: true });
+    writeFileSync(join(meta, 'commondir'), '../..\n');
+    const wt = join(dir, '.claude', 'worktrees', 'wt2');
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, '.git'), `gitdir: ${meta}\n`);
+    cpSync(join(dir, '.planny'), join(wt, '.planny'), { recursive: true });
+    const copyBefore = readFileSync(join(wt, '.planny', 'tasks', 't1.md'), 'utf8');
+
+    const wtRun = (...args: string[]): Promise<number> =>
+      runCli(args, { cwd: wt, out: (l) => out.push(l), err: () => {} });
+    expect(await wtRun('add', 'added from the worktree')).toBe(0);
+    expect(await wtRun('start', 't1')).toBe(0);
+    expect(await wtRun('update', 't1', '--name', 'renamed from the worktree')).toBe(0);
+
+    // Every mutation reached the main plan…
+    const mainT1 = readFileSync(join(dir, '.planny', 'tasks', 't1.md'), 'utf8');
+    expect(existsSync(join(dir, '.planny', 'tasks', 't2.md'))).toBe(true);
+    expect(mainT1).toMatch(/in-progress/);
+    expect(mainT1).toMatch(/renamed from the worktree/);
+    // …and the worktree's checkout copy is byte-for-byte untouched.
+    expect(existsSync(join(wt, '.planny', 'tasks', 't2.md'))).toBe(false);
+    expect(readFileSync(join(wt, '.planny', 'tasks', 't1.md'), 'utf8')).toBe(copyBefore);
   });
 
   it('add prints the new id', async () => {

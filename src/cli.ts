@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { catchup, compactCatchup, compactTask } from './catchup.js';
@@ -23,7 +23,7 @@ import {
   renderTaskList,
   taskLabel,
 } from './render.js';
-import { findRoot, initRepo, openStore, type Store } from './store.js';
+import { findRoot, initRepo, linkedWorktreeMainPlan, openStore, type Store } from './store.js';
 import {
   holderOf,
   isStatus,
@@ -202,6 +202,14 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
     .description('create a .planny store in the current directory')
     .option('--nested', 'create a store even though an ancestor store exists')
     .action((options) => {
+      // In a linked git worktree the plan already lives in the main
+      // worktree; a store here would fork it (see findRoot's redirect).
+      const mainPlan = linkedWorktreeMainPlan(io.cwd);
+      if (mainPlan !== null && !existsSync(join(io.cwd, '.planny', 'fork'))) {
+        throw new Error(
+          `this is a linked git worktree — planny commands here already use the main worktree's plan at ${mainPlan}/.planny. A store here would fork the plan; for a deliberate fork run \`mkdir -p .planny && touch .planny/fork\`, then init again`,
+        );
+      }
       const existing = findRoot(io.cwd);
       // A store inside another store shadows it for the whole subtree:
       // every command run there would silently split the plan.
@@ -864,34 +872,65 @@ Examples:
     .option('--port <port>', 'port to listen on', (v: string) => Number(v), 5891)
     .option('--detach', 'launch the server as its own detached process and return')
     .option('--stop', 'stop the detached server for this store')
+    .option('--clean-logs', "delete this store's serve log once it is old and its server is gone")
+    .option(
+      '--older-than <days>',
+      'with --clean-logs: only delete logs older than this many days (default 7)',
+      (v: string) => Number(v),
+    )
     .addHelpText(
       'after',
       `
 --detach starts the server in its own OS session, so it survives the shell
 or agent session that launched it (harnesses reap session-scoped background
-tasks). Its output goes to a log in the OS temp dir; the command prints the
-URL, pid and log path once the board answers. Already serving is a success.
---stop reads the record the server keeps in .planny/serve.json, so it takes
-no --port; a record left by a crash is cleared, and nothing running is a
-success.
+tasks). Its output goes to .planny/serve.log in this store; the command
+prints the URL, pid and log path once the board answers. Already serving is
+a success. --stop reads the record the server keeps in .planny/serve.json,
+so it takes no --port; a record left by a crash is cleared, and nothing
+running is a success. Stopping keeps the log for post-mortems; --clean-logs
+deletes this store's log once its server is gone and it is older than
+--older-than days (default 7) — other projects' logs are never touched. It
+also sweeps dead planny-serve-<port>.log files that planny 0.1.9 and older
+left in the OS temp dir.
 
 Examples:
   planny serve --detach            board that outlives this session
-  planny serve --stop              stop it`,
+  planny serve --stop              stop it (the log stays)
+  planny serve --clean-logs        delete dead serve logs older than 7 days`,
     )
     .action(async (options) => {
       const store = open();
-      const { startServer, servedStoreRoot, detachServer, stopServer } = await import(
+      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs } = await import(
         './server.js'
       );
       if (options.detach === true && options.stop === true) {
         throw new Error('pass --detach or --stop, not both');
       }
+      if (options.cleanLogs === true && (options.detach === true || options.stop === true)) {
+        throw new Error('pass --clean-logs on its own, not with --detach or --stop');
+      }
+      if (options.olderThan !== undefined && options.cleanLogs !== true) {
+        throw new Error('--older-than only works with --clean-logs');
+      }
+      if (options.cleanLogs === true) {
+        const days = options.olderThan === undefined ? 7 : (options.olderThan as number);
+        const outcome = await cleanLogs(store, days);
+        for (const path of outcome.keptLive) {
+          io.out(`kept ${path} — a live server still writes it`);
+        }
+        for (const path of outcome.deleted) io.out(`deleted ${path}`);
+        io.out(
+          outcome.deleted.length === 0
+            ? `no serve logs older than ${days} days`
+            : `deleted ${outcome.deleted.length} serve log${outcome.deleted.length === 1 ? '' : 's'} older than ${days} days`,
+        );
+        return;
+      }
       if (options.stop === true) {
         const outcome = await stopServer(store);
         io.out(
           outcome.kind === 'stopped'
-            ? `stopped ${outcome.url} (pid ${outcome.pid})`
+            ? `stopped ${outcome.url} (pid ${outcome.pid})${outcome.log === undefined ? '' : ` — log kept at ${outcome.log}`}`
             : outcome.kind === 'stale'
               ? 'nothing to stop — cleared the stale record a crashed server left behind'
               : 'nothing to stop — the UI is not being served for this store',

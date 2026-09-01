@@ -142,11 +142,11 @@ static files (`web/`), no framework, no build step.
 
 From inside an agent session, start the server with `planny serve
 --detach`: it launches the server in its own OS session and prints the
-URL, pid and log path once the board answers. Agent harnesses tie
-background tool tasks to the session and reap them at session end or
-context compaction, taking a plain backgrounded `planny serve` with
-them; the detached form survives. `planny serve --stop` ends it. From
-your own terminal, plain `planny serve` is fine.
+URL once the board answers. Agent harnesses tie background tool tasks
+to the session and reap them at session end or context compaction,
+taking a plain backgrounded `planny serve` with them; the detached form
+survives. `planny serve --stop` ends it. From your own terminal, plain
+`planny serve` is fine.
 
 ## Quickstart
 
@@ -218,8 +218,22 @@ nearest `.planny` directory above the current working directory, exactly as
 git resolves a repo, and human-readable views print `store: <root>` as their
 first line so there is never doubt which project answered.
 
+One exception, because a project has one plan: inside a linked git
+worktree, planny defers to the main worktree's store. A checkout of a
+tracked `.planny` is a copy of the plan, not a plan of its own — using it
+would fork ids and statuses that a branch merge cannot cleanly reunite,
+so discovery redirects (and says so on stderr), agents in worktrees write
+the same plan through the same lock, and `serve`/`url` name one board.
+Create a `.planny/fork` file in the worktree to keep a deliberate,
+separate plan; `planny init` there refuses without it.
+
 `.planny/tasks/<id>.md`, one file per task — commit the directory; the plan
-travels with the repo. Two design choices worth knowing:
+travels with the repo. Treat those commits as snapshots of one lineage:
+merging branches whose stores diverged is not supported (both sides mint
+the same next id for different tasks, among subtler damage — `planny
+doctor` names an unresolved merge when it sees one), and planny warns on
+stderr when a checkout or restore hands it a store older than what this
+machine last wrote. Two design choices worth knowing:
 
 - **Flat directory, not a tree.** Hierarchy is a field, not a directory
   structure, so re-parenting never moves a file and ids and paths stay
@@ -229,6 +243,15 @@ travels with the repo. Two design choices worth knowing:
   files is encouraged; writing goes through the CLI, which keeps
   relationships one-sided, refuses cycles, and holds the priority
   invariant. `planny doctor` catches hand-edit damage after the fact.
+
+Beside `tasks/`, the store holds a few transient files git should
+ignore: `serve.json` and `serve.log` (the detached server's record and
+output — `serve --stop` names the kept log, and `serve --clean-logs`
+deletes it once the server is gone and the file is older than seven
+days, `--older-than <days>` to taste; other projects' logs are never
+touched), `lock`, and `last-seen.json` (the rewind tripwire: the
+newest state this machine has written — delete it to acknowledge a
+deliberate rewind).
 
 ## Contributing
 

@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoot, initRepo, openStore, type Store } from '../src/store.js';
 import type { Task } from '../src/types.js';
 
@@ -156,5 +157,194 @@ describe('scan', () => {
     expect(failures[0]!.code).toBe('id-mismatch');
     expect(failures[0]!.file).toBe(store.path('t2'));
     expect(() => store.loadAll()).toThrow(/t2\.md/);
+  });
+});
+
+describe('worktree-aware discovery', () => {
+  let errSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errSpy.mockRestore();
+  });
+
+  /** Fabricate a linked git worktree of main — no git needed. */
+  function makeWorktree(main: string, name: string, gitdirLine?: string): string {
+    const meta = join(main, '.git', 'worktrees', name);
+    mkdirSync(meta, { recursive: true });
+    writeFileSync(join(meta, 'commondir'), '../..\n');
+    const wt = join(main, '.claude', 'worktrees', name);
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, '.git'), `${gitdirLine ?? `gitdir: ${meta}`}\n`);
+    return wt;
+  }
+
+  it('a worktree copy of the store defers to the main worktree plan', () => {
+    initRepo(dir);
+    const wt = makeWorktree(dir, 'wt1');
+    initRepo(wt); // stands in for the checkout copy of a tracked store
+    expect(findRoot(wt)).toBe(dir);
+    expect(openStore(wt).root).toBe(dir);
+  });
+
+  it('a start dir nested inside the worktree defers too', () => {
+    initRepo(dir);
+    const wt = makeWorktree(dir, 'wt2');
+    initRepo(wt);
+    const nested = join(wt, 'a', 'b');
+    mkdirSync(nested, { recursive: true });
+    expect(findRoot(nested)).toBe(dir);
+  });
+
+  it('the fork marker keeps the worktree store', () => {
+    initRepo(dir);
+    const wt = makeWorktree(dir, 'wt3');
+    initRepo(wt);
+    writeFileSync(join(wt, '.planny', 'fork'), '');
+    expect(findRoot(wt)).toBe(wt);
+  });
+
+  it('no plan in the main worktree means no redirect', () => {
+    const wt = makeWorktree(dir, 'wt4'); // main has .git but no .planny
+    initRepo(wt);
+    expect(findRoot(wt)).toBe(wt);
+  });
+
+  it('a relative gitdir line resolves against the worktree root', () => {
+    initRepo(dir);
+    const wt = makeWorktree(dir, 'wt5', 'gitdir: ../../../.git/worktrees/wt5');
+    initRepo(wt);
+    expect(findRoot(wt)).toBe(dir);
+  });
+
+  it('a main worktree, where .git is a directory, never redirects', () => {
+    initRepo(dir);
+    mkdirSync(join(dir, '.git'), { recursive: true });
+    expect(findRoot(dir)).toBe(dir);
+  });
+
+  it('says on stderr that the main plan is being used', () => {
+    initRepo(dir);
+    const wt = makeWorktree(dir, 'wt6');
+    initRepo(wt);
+    findRoot(wt);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('main worktree'));
+  });
+
+  const hasGit = (() => {
+    try {
+      execFileSync('git', ['--version'], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  it.skipIf(!hasGit)('a real git worktree checks out the tracked store and still defers', () => {
+    const git = (...args: string[]): void => {
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+        cwd: dir,
+        stdio: 'ignore',
+      });
+    };
+    git('init', '-b', 'main');
+    initRepo(dir);
+    openStore(dir).save(makeTask('t1'));
+    git('add', '-A');
+    git('commit', '-m', 'store');
+    const wt = join(dir, 'wt');
+    git('worktree', 'add', wt);
+    // The checkout really did materialize a copy of the store…
+    expect(existsSync(join(wt, '.planny', 'tasks', 't1.md'))).toBe(true);
+    // …and discovery still lands on the main worktree's plan.
+    expect(findRoot(wt)).toBe(dir);
+    expect(openStore(wt).root).toBe(dir);
+    // The fork marker flips it back to the local copy.
+    writeFileSync(join(wt, '.planny', 'fork'), '');
+    expect(findRoot(wt)).toBe(wt);
+  });
+});
+
+describe('the rewind tripwire', () => {
+  let errSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errSpy.mockRestore();
+  });
+
+  function lastSeenFile(): string {
+    return join(dir, '.planny', 'last-seen.json');
+  }
+
+  it('saving a task advances the mark; opening and scanning never create it', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.scan();
+    expect(existsSync(lastSeenFile())).toBe(false);
+    store.save(makeTask('t3'));
+    const mark = JSON.parse(readFileSync(lastSeenFile(), 'utf8')) as Record<string, unknown>;
+    expect(mark.maxId).toBe(3);
+    expect(mark.updated).toBe(makeTask('t3').updated);
+  });
+
+  it('the mark never goes backwards', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.save({ ...makeTask('t5'), updated: '2026-09-01T00:00:00.000Z' });
+    store.save({ ...makeTask('t2'), updated: '2026-01-01T00:00:00.000Z' });
+    const mark = JSON.parse(readFileSync(lastSeenFile(), 'utf8')) as Record<string, unknown>;
+    expect(mark.maxId).toBe(5);
+    expect(mark.updated).toBe('2026-09-01T00:00:00.000Z');
+  });
+
+  it('a store missing an id the mark has seen warns of a rewind at open', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.save(makeTask('t1'));
+    store.save(makeTask('t2'));
+    rmSync(join(dir, '.planny', 'tasks', 't2.md'));
+    openStore(dir);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('rewound'));
+  });
+
+  it('a store whose newest update is older than the mark warns on scan', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.save({ ...makeTask('t1'), updated: '2026-09-01T00:00:00.000Z' });
+    // A checkout reverting the file to an older snapshot, by hand.
+    const p = join(dir, '.planny', 'tasks', 't1.md');
+    writeFileSync(
+      p,
+      readFileSync(p, 'utf8').replace('2026-09-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+    );
+    openStore(dir).scan();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('rewound'));
+  });
+
+  it('deleting the mark acknowledges the rewind', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.save(makeTask('t1'));
+    store.save(makeTask('t2'));
+    rmSync(join(dir, '.planny', 'tasks', 't2.md'));
+    rmSync(lastSeenFile());
+    openStore(dir).scan();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('a garbage mark is ignored rather than fatal', () => {
+    initRepo(dir);
+    const store = openStore(dir);
+    store.save(makeTask('t1'));
+    writeFileSync(lastSeenFile(), 'not json');
+    expect(() => openStore(dir).scan()).not.toThrow();
+    expect(errSpy).not.toHaveBeenCalled();
   });
 });

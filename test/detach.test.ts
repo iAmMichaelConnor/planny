@@ -1,5 +1,13 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,7 +51,12 @@ afterEach(() => {
 
 async function cli(...args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await execFileAsync(process.execPath, [bin, ...args], { cwd: dir });
+    // TMPDIR points the CLI (and the detached server it spawns) at the
+    // per-test dir, so serve logs never leak into the machine's temp dir.
+    const { stdout, stderr } = await execFileAsync(process.execPath, [bin, ...args], {
+      cwd: dir,
+      env: { ...process.env, TMPDIR: dir },
+    });
     return { code: 0, stdout, stderr };
   } catch (error) {
     const failed = error as { code?: number; stdout?: string; stderr?: string };
@@ -84,7 +97,7 @@ describe('serve --detach and --stop', () => {
     const url = /http:\/\/127\.0\.0\.1:\d+/.exec(started.stdout)?.[0];
     expect(url).toBeDefined();
     expect(started.stdout).toMatch(/pid \d+/);
-    expect(started.stdout).toMatch(/planny-serve-.*\.log/); // says where output goes
+    expect(started.stdout).toMatch(/\.planny\/serve\.log/); // says where output goes
     expect(started.stdout).toMatch(/--stop/); // teaches how to end it
 
     // The launching CLI has exited, yet the board answers: it is detached.
@@ -172,5 +185,155 @@ describe('serve --detach and --stop', () => {
     const result = await cli('serve', '--detach', '--stop');
     expect(result.code).toBe(1);
     expect(result.stderr).toMatch(/not both/i);
+  }, 15_000);
+
+  it('the detach log lives in this store\'s .planny, nowhere else', async () => {
+    await cli('init');
+    const started = await cli('serve', '--detach', '--port', '0');
+    trackPid(started.stdout);
+    expect(started.code).toBe(0);
+    const log = /log: (\S+)/.exec(started.stdout)?.[1];
+    expect(log).toBe(join(dir, '.planny', 'serve.log'));
+    expect(existsSync(log!)).toBe(true);
+    expect((await cli('serve', '--stop')).code).toBe(0);
+  }, 30_000);
+});
+
+describe('serve --clean-logs', () => {
+  function backdate(path: string, ageDays: number): void {
+    const then = new Date(Date.now() - ageDays * 86_400_000);
+    utimesSync(path, then, then);
+  }
+
+  /** This store's own log, seeded dead at the given age. */
+  function seedStoreLog(root: string, ageDays: number): string {
+    const path = join(root, '.planny', 'serve.log');
+    writeFileSync(path, 'old serve output\n');
+    backdate(path, ageDays);
+    return path;
+  }
+
+  /** A leftover of the pre-0.1.10 port-keyed scheme, in the temp dir (= dir here). */
+  function seedLegacyLog(name: string, ageDays: number): string {
+    const path = join(dir, name);
+    writeFileSync(path, 'old serve output\n');
+    backdate(path, ageDays);
+    return path;
+  }
+
+  it('deletes this store\'s dead log once it is older than the default seven days', async () => {
+    await cli('init');
+    const old = seedStoreLog(dir, 8);
+    const result = await cli('serve', '--clean-logs');
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(old);
+    expect(existsSync(old)).toBe(false);
+  }, 15_000);
+
+  it('keeps a log younger than the age', async () => {
+    await cli('init');
+    const young = seedStoreLog(dir, 6);
+    const result = await cli('serve', '--clean-logs');
+    expect(result.code).toBe(0);
+    expect(existsSync(young)).toBe(true);
+  }, 15_000);
+
+  it('--older-than sets the age in days', async () => {
+    await cli('init');
+    const twoDaysOld = seedStoreLog(dir, 2);
+    const result = await cli('serve', '--clean-logs', '--older-than', '1');
+    expect(result.code).toBe(0);
+    expect(existsSync(twoDaysOld)).toBe(false);
+  }, 15_000);
+
+  it('never touches another project\'s log', async () => {
+    await cli('init');
+    const foreign = mkdtempSync(join(tmpdir(), 'planny-foreign-'));
+    try {
+      mkdirSync(join(foreign, '.planny'), { recursive: true });
+      const foreignLog = join(foreign, '.planny', 'serve.log');
+      writeFileSync(foreignLog, "someone else's board\n");
+      backdate(foreignLog, 30);
+      const result = await cli('serve', '--clean-logs');
+      expect(result.code).toBe(0);
+      expect(existsSync(foreignLog)).toBe(true);
+    } finally {
+      rmSync(foreign, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it('sweeps dead legacy temp-dir logs by the same age rule, and only them', async () => {
+    await cli('init');
+    const oldLegacy = seedLegacyLog('planny-serve-40001.log', 8);
+    const youngLegacy = seedLegacyLog('planny-serve-40002.log', 6);
+    const nearMiss = seedLegacyLog('planny-serve-extra-9.log', 30);
+    // A directory wearing a log's name must be left alone, not crash the sweep.
+    const dirTrap = join(dir, 'planny-serve-777.log');
+    mkdirSync(dirTrap);
+    backdate(dirTrap, 30);
+    const result = await cli('serve', '--clean-logs');
+    expect(result.code).toBe(0);
+    expect(existsSync(oldLegacy)).toBe(false);
+    expect(existsSync(youngLegacy)).toBe(true);
+    expect(existsSync(nearMiss)).toBe(true);
+    expect(existsSync(dirTrap)).toBe(true);
+  }, 15_000);
+
+  it('keeps a live server\'s log; stop names the kept log; then it is fair game', async () => {
+    await cli('init');
+    const started = await cli('serve', '--detach', '--port', '0');
+    trackPid(started.stdout);
+    expect(started.code).toBe(0);
+    const log = join(dir, '.planny', 'serve.log');
+    expect(existsSync(log)).toBe(true);
+    backdate(log, 30);
+    // A legacy log named with the live server's port is protected too.
+    const port = Number(/127\.0\.0\.1:(\d+)/.exec(started.stdout)![1]);
+    const legacyForLivePort = seedLegacyLog(`planny-serve-${port}.log`, 30);
+
+    const kept = await cli('serve', '--clean-logs');
+    expect(kept.code).toBe(0);
+    expect(kept.stdout).toMatch(/kept/);
+    expect(existsSync(log)).toBe(true);
+    expect(existsSync(legacyForLivePort)).toBe(true);
+
+    const stopped = await cli('serve', '--stop');
+    expect(stopped.code).toBe(0);
+    expect(stopped.stdout).toContain(`log kept at ${log}`);
+
+    // The server may write as it shuts down; backdate again so only
+    // liveness, not age, decides this pass.
+    backdate(log, 30);
+    backdate(legacyForLivePort, 30);
+    const second = await cli('serve', '--clean-logs');
+    expect(second.code).toBe(0);
+    expect(existsSync(log)).toBe(false);
+    expect(existsSync(legacyForLivePort)).toBe(false);
+  }, 30_000);
+
+  it('nothing to delete is a success that says so', async () => {
+    await cli('init');
+    const result = await cli('serve', '--clean-logs');
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/no serve logs older than 7 days/);
+  }, 15_000);
+
+  it('refuses --clean-logs beside --detach or --stop, and --older-than alone', async () => {
+    await cli('init');
+    expect((await cli('serve', '--clean-logs', '--detach')).code).toBe(1);
+    expect((await cli('serve', '--clean-logs', '--stop')).code).toBe(1);
+    const alone = await cli('serve', '--older-than', '3');
+    expect(alone.code).toBe(1);
+    expect(alone.stderr).toMatch(/--clean-logs/);
+  }, 15_000);
+
+  it('rejects a negative or non-numeric age', async () => {
+    await cli('init');
+    const negative = await cli('serve', '--clean-logs', '--older-than', '-1');
+    expect(negative.code).toBe(1);
+    expect(negative.stderr).toMatch(/number of days/);
+    const wordy = await cli('serve', '--clean-logs', '--older-than', 'soon');
+    expect(wordy.code).toBe(1);
+    expect(wordy.stderr).toMatch(/number of days/);
   }, 15_000);
 });

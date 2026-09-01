@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -71,6 +71,30 @@ describe('diagnose', () => {
     expect(codes(findings)).toEqual(['id-mismatch', 'unreadable-file']);
     expect(findings.every((f) => f.severity === 'error' && !f.fixable)).toBe(true);
     expect(byCode(findings, 'unreadable-file')[0]!.file).toBe(store.path('t2'));
+  });
+
+  it('flags an unresolved git merge conflict by name, not as a generic unreadable file', () => {
+    save(makeTask('t1'));
+    const good = readFileSync(store.path('t1'), 'utf8');
+    writeFileSync(store.path('t1'), `<<<<<<< HEAD\n${good}=======\n${good}>>>>>>> feature\n`);
+    const findings = diagnose(store);
+    const conflict = byCode(findings, 'merge-conflict');
+    expect(conflict).toHaveLength(1);
+    expect(conflict[0]!.message).toMatch(/resolve the merge/);
+    expect(conflict[0]!.fixable).toBe(false);
+    expect(byCode(findings, 'unreadable-file')).toHaveLength(0);
+  });
+
+  it('flags an unreadable last-seen file as fixable, and fix deletes it', () => {
+    save(makeTask('t1'));
+    const lastSeenFile = join(dir, '.planny', 'last-seen.json');
+    writeFileSync(lastSeenFile, 'not json');
+    const findings = byCode(diagnose(store), 'last-seen-unreadable');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.fixable).toBe(true);
+    fixStore(store);
+    expect(existsSync(lastSeenFile)).toBe(false);
+    expect(byCode(diagnose(store), 'last-seen-unreadable')).toHaveLength(0);
   });
 
   it('reports dangling parent, blocker and replacement references as fixable errors', () => {
