@@ -693,7 +693,7 @@ marked done, and an outcome task is created as the decision's child —
 the answer as work an agent picks up. --reject closes the decision as
 decided-no and creates nothing (--response adds the reason). Afterwards,
 enrich the record with what was built:
-planny update <id> --append-desc "Built: … Files: … How to test: …"
+planny update <id> --append-desc "Consequences: … Files: … How to test: …"
 
 Examples:
   planny resolve t5 --accept

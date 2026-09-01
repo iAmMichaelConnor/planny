@@ -230,11 +230,11 @@ thing without asking.
   `Subsequent actions:` and says what you did with the answer — the
   tasks you spawned and what each covers, or why no work was needed.
   The operator reads that line to see the answer landed; the later
-  `Built:` record on the decision says how it shipped. Marking the
+  `Consequences:` record on the decision says how it shipped. Marking the
   outcome task done releases the gated work.
 - The user skips → move on; the decision stays open.
 - After the decided work ships, append the record the operator will look
-  back on: `planny update <id> --append-desc "Built: … Files: … Tests: …
+  back on: `planny update <id> --append-desc "Consequences: … Files: … Tests: …
   Tasks: … How to test: … Runs at: …"`.
 - `planny decide` is the operator's own interactive loop; don't run it
   yourself — you are the interpreter when you're in the loop.
