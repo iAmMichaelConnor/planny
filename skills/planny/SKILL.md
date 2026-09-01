@@ -51,7 +51,7 @@ Rules that keep the store consistent:
   yourself. Then work it: `start` when you begin, `done` when it ships. A
   request or idea tracked only in chat, a TODO comment, or your own head
   is one that gets lost.
-- **A status-bearing list in a document is a task list.** If you are
+- **A checklist in a document is a task list.** If you are
   tracking your own list of work and marking completion against it —
   checkboxes, tick marks, `Status:` fields, an open/closed split — you
   should be using planny instead: stop and run `planny add` for each
