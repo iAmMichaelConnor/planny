@@ -9,6 +9,7 @@ const state = {
   selected: null, // task id shown in the drawer, or '__new__'
   collapsed: new Set(),
   skippedDecisions: new Set(),
+  justResolved: new Set(), // decisions the operator resolved in this page session
   expandedDecisions: new Set(), // open-decision tiles start collapsed
 
   depsMode: readPreference('planny-deps-mode', 'blocks'),
@@ -113,6 +114,18 @@ function esc(text) {
   return String(text).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
+}
+
+/**
+ * After a successful resolve: green reassurance that the answer is in the
+ * store and will reach the agent — catchup returns resolved decisions
+ * since the agent's cursor, and the skill orders a catch-up at every
+ * boundary, so "at its next catch-up" is literally when it acts.
+ */
+function confirmResolved(id) {
+  state.justResolved.add(id);
+  toast(`${id} resolved — logged to the store; your agent will act on it at its next catch-up`, 'ok');
+  if (state.view === 'decisions') renderDecisions();
 }
 
 function toast(message, cls = '') {
@@ -676,8 +689,19 @@ function renderDecisions() {
       </div>`
     : '';
 
+  const logged = [...state.justResolved]
+    .map((id) => state.byId.get(id))
+    .filter((t) => t && t.status === 'done');
+  const loggedHtml = logged
+    .map(
+      (t) => `<div class="decision-logged">✓ <span class="id">${t.id}</span> ${esc(t.name)} —
+        decision logged. Your agent reads resolved decisions at its next catch-up and will
+        create or update tasks where relevant.</div>`,
+    )
+    .join('');
+
   view.innerHTML =
-    (openHtml.join('') || '<p class="muted">No open decisions.</p>') + skippedHtml + pastHtml;
+    loggedHtml + (openHtml.join('') || '<p class="muted">No open decisions.</p>') + skippedHtml + pastHtml;
 
   for (const [id, value] of drafts) {
     const textarea = view.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
@@ -1023,10 +1047,12 @@ function wireDrawer(task, isNew) {
           toast('write the decision first, or use Accept proposal', 'warn');
           return;
         }
-        api(`/api/tasks/${task.id}/resolve`, 'POST', { response: text });
+        api(`/api/tasks/${task.id}/resolve`, 'POST', { response: text })
+          .then((res) => res && confirmResolved(task.id));
       };
       $('#accept-btn').onclick = () =>
-        api(`/api/tasks/${task.id}/resolve`, 'POST', { response: 'Accepted the proposal.' });
+        api(`/api/tasks/${task.id}/resolve`, 'POST', { response: 'Accepted the proposal.' })
+          .then((res) => res && confirmResolved(task.id));
     }
     for (const li of body.querySelectorAll('[data-goto]')) {
       li.onclick = () => {
@@ -1159,7 +1185,10 @@ document.addEventListener('click', (event) => {
       renderDecisions();
       return;
     }
-    if (action === 'accept') return void api(`/api/tasks/${id}/resolve`, 'POST', { response: 'Accepted the proposal.' });
+    if (action === 'accept') {
+      return void api(`/api/tasks/${id}/resolve`, 'POST', { response: 'Accepted the proposal.' })
+        .then((res) => res && confirmResolved(id));
+    }
     if (action === 'respond') {
       const textarea = document.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
       const text = textarea ? textarea.value.trim() : '';
@@ -1167,7 +1196,8 @@ document.addEventListener('click', (event) => {
         toast('write the decision first, or use Accept proposal', 'warn');
         return;
       }
-      return void api(`/api/tasks/${id}/resolve`, 'POST', { response: text });
+      return void api(`/api/tasks/${id}/resolve`, 'POST', { response: text })
+        .then((res) => res && confirmResolved(id));
     }
   }
 
@@ -1308,7 +1338,12 @@ $('#add-note-dismiss').onclick = () => {
   writePreference('planny-add-note-dismissed', '1');
   openNewTaskForm();
 };
-$('#drawer-body').addEventListener('input', markDirty);
+$('#drawer-body').addEventListener('input', (event) => {
+  // The resolve box is not part of the edit form: arming Save from it
+  // once let Save clobber a freshly appended Outcome with the stale body.
+  if (event.target.closest && event.target.closest('#f-resolution')) return;
+  markDirty();
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !$('#add-note').classList.contains('hidden')) {
     event.preventDefault();

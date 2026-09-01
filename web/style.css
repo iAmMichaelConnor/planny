@@ -279,6 +279,17 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .decision-actions { display: flex; gap: 8px; margin-top: 12px; align-items: flex-start; }
 .decision-actions textarea { min-height: 60px; flex: 1; }
 
+.decision-logged {
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+  border-left: 3px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 9%, var(--panel));
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+}
+.decision-logged .id { color: var(--ok); font-family: ui-monospace, monospace; }
+
 .skipped-list { opacity: 0.75; margin-bottom: 16px; }
 .skipped-list h4 { margin: 0 0 6px; font-weight: 500; }
 .skipped-row { padding: 4px 0; display: flex; align-items: center; gap: 8px; }
@@ -402,4 +413,5 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
   box-shadow: var(--shadow);
 }
 .toast.warn { background: var(--warn); color: #fff; }
+.toast.ok { background: var(--ok); color: #fff; }
 .toast.error { background: var(--bad); color: #fff; }

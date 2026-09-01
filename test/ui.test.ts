@@ -954,6 +954,78 @@ const chainTasks = [
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
 
+describe('resolving must not arm Save (t160 data loss)', () => {
+  it('typing in the resolve box leaves Save disabled and the form clean', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const resolution = document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    resolution.value = 'go';
+    resolution.dispatchEvent(new Event('input', { bubbles: true }));
+    expect((document.querySelector('#save-btn') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector('#unsaved-note') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('after resolving, the drawer is clean so refreshes rebuild it', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const resolution = document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    resolution.value = 'go';
+    resolution.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#resolve-btn') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    const resolve = fetchCalls.find((c) => c.path === '/api/tasks/t4/resolve');
+    expect(resolve).toBeDefined();
+    // A description edit still protects itself: this is only about the box.
+    expect((document.querySelector('#save-btn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('a real description edit still arms Save', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'edited';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    expect((document.querySelector('#save-btn') as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('logged-decision confirmation', () => {
+  it('resolving from a tile shows a green toast and a logged note naming the catch-up', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const draft = document.querySelector(
+      'textarea[data-role="response"][data-id="t4"]',
+    ) as HTMLTextAreaElement;
+    draft.value = 'use the proposal';
+    // The refresh after the resolve will see the store's new truth: t4 done.
+    servedState = {
+      ...sampleState,
+      tasks: sampleState.tasks.map((t) =>
+        t.id === 't4' ? { ...t, status: 'done', resolvedAt: '2026-09-01T10:00:00.000Z' } : t,
+      ),
+      decisions: [],
+    };
+    (document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    const toast = document.querySelector('#toasts .toast.ok') as HTMLElement;
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toContain('t4');
+    expect(toast.textContent).toMatch(/catch-up/);
+    const note = document.querySelector('#view-decisions .decision-logged') as HTMLElement;
+    expect(note).not.toBeNull();
+    expect(note.textContent).toContain('t4');
+    expect(note.textContent).toMatch(/logged/i);
+    expect(note.textContent).toMatch(/catch-up/);
+  });
+
+  it('resolving from the drawer also confirms in green', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const resolution = document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    resolution.value = 'go';
+    resolution.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#resolve-btn') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(document.querySelector('#toasts .toast.ok')).not.toBeNull();
+  });
+});
+
 describe('drawer decision outcome', () => {
   it('a resolved decision shows its outcome rendered below the description', () => {
     (document.querySelector('.card[data-id="t6"]') as HTMLElement).click();
