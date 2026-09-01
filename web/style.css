@@ -178,6 +178,11 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   width: 110px;
 }
 #search:focus { border-color: var(--accent); outline: none; }
+.search-wrap { position: relative; display: inline-block; }
+.search-wrap .picker-menu { min-width: 340px; max-height: 320px; }
+.search-hit { cursor: pointer; }
+.search-hit .id { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; }
+.search-more { padding: 4px 8px; font-size: 12px; }
 .card .id { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; margin-right: 6px; }
 .card .pos { position: absolute; bottom: 6px; right: 8px; color: var(--muted); opacity: 0.75; font-family: ui-monospace, monospace; font-size: 10px; margin: 0; }
 .column h2 .colsub { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--muted); }

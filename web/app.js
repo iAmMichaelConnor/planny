@@ -1238,6 +1238,8 @@ document.addEventListener('click', (event) => {
   // The waits-on picker closes on any click outside its wrap.
   const blockedMenu = $('#blocked-menu');
   if (blockedMenu && !event.target.closest('.picker-wrap')) blockedMenu.hidden = true;
+  // So does the search panel.
+  if (!event.target.closest('.search-wrap')) hideSearchResults();
 
   const filterChip = event.target.closest('.chip[data-scope]');
   if (filterChip) {
@@ -1458,18 +1460,88 @@ document.addEventListener('input', (event) => {
   if (response) syncDecisionButtons(response.dataset.id);
 });
 
+/**
+ * Word search over ids, names and bodies. Every term must match
+ * (case-insensitive); tasks matched in the name rank above body-only
+ * matches, keeping priority order within each group.
+ */
+function searchTasks(query) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+  const hits = [];
+  for (const task of state.data ? state.data.tasks : []) {
+    const name = task.name.toLowerCase();
+    const body = (task.body || '').toLowerCase();
+    if (!terms.every((w) => task.id === w || name.includes(w) || body.includes(w))) continue;
+    hits.push({ task, nameHit: terms.every((w) => task.id === w || name.includes(w)) });
+  }
+  hits.sort((a, b) => Number(b.nameHit) - Number(a.nameHit));
+  return hits.map((h) => h.task);
+}
+
+const SEARCH_CAP = 20;
+
+function hideSearchResults() {
+  $('#search-results').hidden = true;
+}
+
+function renderSearchResults(query) {
+  const panel = $('#search-results');
+  if (query.trim() === '') {
+    panel.hidden = true;
+    return;
+  }
+  const matches = searchTasks(query);
+  const rows = matches.slice(0, SEARCH_CAP).map(
+    (t) => `<div class="picker-item search-hit" data-search-goto="${t.id}">
+      <span class="status-dot ${t.status}"></span>
+      <span class="id">${t.id}</span> ${esc(t.name)}</div>`,
+  );
+  const more = matches.length > SEARCH_CAP
+    ? `<div class="muted search-more">+ ${matches.length - SEARCH_CAP} more — add words to narrow</div>`
+    : '';
+  panel.innerHTML = rows.join('') + more || '<div class="muted search-more">No tasks match.</div>';
+  panel.hidden = false;
+}
+
+function openSearchHit(id) {
+  hideSearchResults();
+  state.selected = id;
+  renderDrawer();
+  const el = document.querySelector(`#view-${state.view} [data-id="${id}"]`);
+  el?.scrollIntoView?.({ block: 'nearest' });
+}
+
+$('#search').addEventListener('input', (event) => renderSearchResults(event.target.value));
+$('#search-results').addEventListener('click', (event) => {
+  const hit = event.target.closest('[data-search-goto]');
+  if (hit) openSearchHit(hit.dataset.searchGoto);
+});
+
 $('#search').addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    hideSearchResults();
+    return;
+  }
   if (event.key !== 'Enter') return;
   const raw = event.target.value.trim().toLowerCase();
   if (raw === '') return;
   const id = /^\d+$/.test(raw) ? `t${raw}` : raw;
   const task = state.byId.get(id);
   if (!task) {
+    // Not an id — open the best word match instead.
+    const matches = searchTasks(raw);
+    if (matches.length > 0) {
+      openSearchHit(matches[0].id);
+      event.target.select();
+      return;
+    }
     // Before the first state fetch lands, byId is empty — say so instead
     // of wrongly claiming the task does not exist.
     toast(state.byId.size === 0 ? 'still loading — try again' : `no task "${raw}"`, 'warn');
     return;
   }
+  hideSearchResults();
   state.selected = id;
   const openDecision =
     task.type === 'decision' && (task.status === 'todo' || task.status === 'in-progress');

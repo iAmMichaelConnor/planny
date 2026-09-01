@@ -11,8 +11,11 @@
 <header>
   <div class="header-main">
   <h1>planny</h1>
-  <input id="search" type="search" placeholder="t23 ⏎"
-    title="Type a task id (t23, or just 23) and press Enter to open it" />
+  <span class="search-wrap">
+    <input id="search" type="search" placeholder="t23, or words ⏎"
+      title="Type a task id (t23, or just 23) to jump to it, or words to search names and descriptions" />
+    <div id="search-results" class="picker-menu" hidden></div>
+  </span>
   <button id="theme-btn" title="theme: auto">🌓</button>
   <nav id="tabs">
     <button class="tab active" data-view="board">Board</button>

@@ -375,6 +375,49 @@ describe('ui smoke', () => {
     expect(tile.classList.contains('is-selected')).toBe(true);
   });
 
+  it('typing words lists matching tasks; Enter opens the first', () => {
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = 'write tests';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const results = document.querySelector('#search-results') as HTMLElement;
+    expect(results.hidden).toBe(false);
+    const rows = results.querySelectorAll('[data-search-goto]');
+    expect(rows).toHaveLength(1); // only t2 "Write tests" matches both words
+    expect(rows[0]!.getAttribute('data-search-goto')).toBe('t2');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t2');
+    expect((document.querySelector('#search-results') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('body words match too, ranked below name matches', () => {
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = 'host'; // t4's name "Choose hosting" and t4's body both carry it
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const rows = [...document.querySelectorAll('#search-results [data-search-goto]')];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]!.getAttribute('data-search-goto')).toBe('t4'); // name hit ranks first
+  });
+
+  it('clicking a result opens that task and closes the panel', () => {
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = 'deploy';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#search-results [data-search-goto="t3"]') as HTMLElement).click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t3');
+    expect((document.querySelector('#search-results') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('no word matches shows an empty note; Escape closes the panel', () => {
+    const input = document.querySelector('#search') as HTMLInputElement;
+    input.value = 'zebra flotilla';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const results = document.querySelector('#search-results') as HTMLElement;
+    expect(results.hidden).toBe(false);
+    expect(results.textContent).toMatch(/no tasks match/i);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(results.hidden).toBe(true);
+  });
+
   it('an unknown id warns and opens nothing', () => {
     const input = document.querySelector('#search') as HTMLInputElement;
     input.value = 't99';
