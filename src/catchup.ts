@@ -29,7 +29,13 @@ export interface CompactCatchup {
   consumer: string;
   since: string | null;
   now: string;
-  resolved: Array<{ id: string; name: string; resolvedAt: string | null; dependants: string[] }>;
+  resolved: Array<{
+    id: string;
+    name: string;
+    resolvedAt: string | null;
+    dependants: string[];
+    outcomeTask: string | null;
+  }>;
   changed: Array<{
     id: string;
     name: string;
@@ -57,11 +63,12 @@ export function compactCatchup(result: CatchupResult): CompactCatchup {
     consumer: result.consumer,
     since: result.since ?? null,
     now: result.now,
-    resolved: result.resolved.map(({ task, dependants }) => ({
+    resolved: result.resolved.map(({ task, dependants, outcomeTask }) => ({
       id: task.id,
       name: task.name,
       resolvedAt: task.resolvedAt ?? null,
       dependants: dependants.map((t) => t.id),
+      outcomeTask,
     })),
     changed: result.changed.map(compactTask),
   };

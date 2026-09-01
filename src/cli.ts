@@ -602,9 +602,10 @@ Examples:
                   consumer: result.consumer,
                   since: result.since ?? null, // always present: JSON drops undefined keys
                   now: result.now,
-                  resolved: result.resolved.map(({ task, dependants }) => ({
+                  resolved: result.resolved.map(({ task, dependants, outcomeTask }) => ({
                     task,
                     dependants: dependants.map((t) => t.id),
+                    outcomeTask,
                   })),
                   changed: result.changed,
                 },
@@ -619,10 +620,11 @@ Examples:
           ? `first catch-up for ${consumer}: full state follows`
           : `changes since ${result.since}`;
       io.out(header);
-      for (const { task, dependants } of result.resolved) {
+      for (const { task, dependants, outcomeTask } of result.resolved) {
+        const carrier = outcomeTask === null ? '' : ` → outcome task ${outcomeTask}`;
         const tail =
           dependants.length > 0 ? ` (was gating ${dependants.map((t) => t.id).join(', ')})` : '';
-        io.out(`resolved: ${task.id} ${task.name}${tail}`);
+        io.out(`resolved: ${task.id} ${task.name}${carrier}${tail}`);
       }
       if (result.changed.length === 0) {
         io.out('Nothing changed.');
@@ -647,7 +649,7 @@ Examples:
         if (options.json) {
           io.out(
             JSON.stringify(
-              resolved.map(({ task, dependants }) => ({ task, dependants: dependants.map((t) => t.id) })),
+              resolved.map(({ task, dependants, outcomeTask }) => ({ task, dependants: dependants.map((t) => t.id), outcomeTask })),
               null,
               2,
             ),
@@ -660,13 +662,14 @@ Examples:
         }
         io.out(
           resolved
-            .map(({ task, dependants }) => {
+            .map(({ task, dependants, outcomeTask }) => {
               const when = task.resolvedAt ?? task.updated;
+              const carrier = outcomeTask === null ? '' : `\n    outcome task: ${outcomeTask}`;
               const tail =
                 dependants.length > 0
                   ? `\n    was gating: ${dependants.map((t) => t.id).join(', ')}`
                   : '';
-              return `${task.id} ${when} — ${task.name}${tail}`;
+              return `${task.id} ${when} — ${task.name}${carrier}${tail}`;
             })
             .join('\n'),
         );

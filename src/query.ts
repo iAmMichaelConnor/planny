@@ -150,6 +150,17 @@ export interface ResolvedDecision {
    * decision's outcome task; only its completion frees them.
    */
   dependants: Task[];
+  /**
+   * The outcome task carrying the answer, read from the citation ops
+   * appends to the decision body. Null for rejects and for decisions
+   * resolved before outcome tasks existed.
+   */
+  outcomeTask: string | null;
+}
+
+function outcomeTaskOf(task: Task): string | null {
+  const citations = [...task.body.matchAll(/^Outcome task: (t\d+)$/gm)];
+  return citations.length > 0 ? citations[citations.length - 1]![1]! : null;
 }
 
 /** Answered decisions, newest first — for an AI catching up after `planny decide`. */
@@ -165,7 +176,7 @@ export function resolvedDecisions(store: Store, since?: string): ResolvedDecisio
           (t.resolvedAt !== undefined && Date.parse(t.resolvedAt) >= Date.parse(since))),
     )
     .sort((a, b) => Date.parse(b.resolvedAt ?? b.updated) - Date.parse(a.resolvedAt ?? a.updated))
-    .map((task) => ({ task, dependants: graph.blocking(task.id) }));
+    .map((task) => ({ task, dependants: graph.blocking(task.id), outcomeTask: outcomeTaskOf(task) }));
 }
 
 function raise(message: string): never {

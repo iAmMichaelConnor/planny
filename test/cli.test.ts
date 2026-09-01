@@ -744,6 +744,25 @@ describe('resolution outcome tasks', () => {
     expect(await run('resolve', 't2', '--reject')).toBe(0);
   });
 
+  it('a catching-up agent is handed the outcome task id', async () => {
+    await run('resolve', 't2', '--response', 'yes, files');
+    out = [];
+    await run('catchup', '--as', 'later-agent');
+    expect(allOut()).toContain('resolved: t2');
+    expect(allOut()).toContain('outcome task t3');
+    out = [];
+    await run('decisions', '--resolved', '--json');
+    const rows = JSON.parse(allOut());
+    expect(rows[0].outcomeTask).toBe('t3');
+  });
+
+  it('a rejected decision reports no outcome task', async () => {
+    await run('resolve', 't2', '--reject');
+    out = [];
+    await run('decisions', '--resolved', '--json');
+    expect(JSON.parse(allOut())[0].outcomeTask).toBeNull();
+  });
+
   it('--json hands the resolving agent both tasks, structurally', async () => {
     expect(await run('resolve', 't2', '--response', 'yes, files', '--json')).toBe(0);
     const data = JSON.parse(allOut());
@@ -802,6 +821,7 @@ describe('catchup output shape', () => {
       name: 'Pick a colour',
       resolvedAt: expect.any(String),
       dependants: [],
+      outcomeTask: 't5', // the answer's carrier, handed over — never inferred
     });
     const first = data.changed.find((t: { id: string }) => t.id === 't1');
     expect(first).toEqual({
