@@ -994,6 +994,7 @@ describe('logged-decision confirmation', () => {
       'textarea[data-role="response"][data-id="t4"]',
     ) as HTMLTextAreaElement;
     draft.value = 'use the proposal';
+    draft.dispatchEvent(new Event('input', { bubbles: true })); // arms Respond
     // The refresh after the resolve will see the store's new truth: t4 done.
     servedState = {
       ...sampleState,
@@ -1023,6 +1024,64 @@ describe('logged-decision confirmation', () => {
     (document.querySelector('#resolve-btn') as HTMLElement).click();
     await new Promise((r) => setTimeout(r, 5));
     expect(document.querySelector('#toasts .toast.ok')).not.toBeNull();
+  });
+});
+
+describe('decision buttons gate on their own input', () => {
+  it('drawer: Resolve arms only with text; Accept only while the box is empty', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const resolveBtn = () => document.querySelector('#resolve-btn') as HTMLButtonElement;
+    const acceptBtn = () => document.querySelector('#accept-btn') as HTMLButtonElement;
+    const box = document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    expect(resolveBtn().disabled).toBe(true); // nothing typed yet
+    expect(acceptBtn().disabled).toBe(false); // the proposal is acceptable as-is
+    expect(resolveBtn().title).toMatch(/typed/i);
+    expect(acceptBtn().title).toMatch(/proposal/i);
+
+    box.value = 'go';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(resolveBtn().disabled).toBe(false);
+    expect(acceptBtn().disabled).toBe(true); // typed text and Accept disagree
+
+    box.value = '';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(resolveBtn().disabled).toBe(true);
+    expect(acceptBtn().disabled).toBe(false);
+  });
+
+  it('tiles: Respond arms only with text; Accept only while the box is empty', () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const respond = () =>
+      document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLButtonElement;
+    const accept = () =>
+      document.querySelector('button[data-action="accept"][data-id="t4"]') as HTMLButtonElement;
+    const draft = document.querySelector(
+      'textarea[data-role="response"][data-id="t4"]',
+    ) as HTMLTextAreaElement;
+    expect(respond().disabled).toBe(true);
+    expect(accept().disabled).toBe(false);
+
+    draft.value = 'leaning yes';
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(respond().disabled).toBe(false);
+    expect(accept().disabled).toBe(true);
+  });
+
+  it('a background refresh keeps the armed state with the kept draft', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const draft = () =>
+      document.querySelector('textarea[data-role="response"][data-id="t4"]') as HTMLTextAreaElement;
+    draft().value = 'half-typed answer';
+    draft().dispatchEvent(new Event('input', { bubbles: true }));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    const respond = document.querySelector(
+      'button[data-action="respond"][data-id="t4"]',
+    ) as HTMLButtonElement;
+    expect(draft().value).toBe('half-typed answer');
+    expect(respond.disabled).toBe(false); // still armed for the kept draft
   });
 });
 

@@ -645,8 +645,8 @@ function renderDecisions() {
       : `<div class="decision-actions">
           <textarea placeholder="Your decision (free-form)…" data-role="response" data-id="${task.id}"></textarea>
           <div style="display:flex;flex-direction:column;gap:6px">
-            <button class="primary" data-action="respond" data-id="${task.id}">Respond</button>
-            <button data-action="accept" data-id="${task.id}">Accept proposal</button>
+            <button class="primary" data-action="respond" data-id="${task.id}" disabled title="records the typed text as the decision">Respond</button>
+            <button data-action="accept" data-id="${task.id}" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
             <button data-action="skip" data-id="${task.id}" title="Hide this decision in this tab until the page reloads. It stays open for everyone and nothing is deleted or written to the store.">Skip for now</button>
             <button data-action="cancel-decision" data-id="${task.id}" title="Mark the decision cancelled: the question no longer needs an answer. The task keeps its file — nothing is deleted.">Cancel decision</button>
           </div>
@@ -706,6 +706,7 @@ function renderDecisions() {
   for (const [id, value] of drafts) {
     const textarea = view.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
     if (textarea) textarea.value = value;
+    syncDecisionButtons(id); // a kept draft keeps its buttons armed
   }
   if (focusedId !== null) {
     const textarea = view.querySelector(`textarea[data-role="response"][data-id="${focusedId}"]`);
@@ -715,6 +716,21 @@ function renderDecisions() {
     }
   }
   applySelection(); // this rebuild is sometimes called outside render()
+}
+
+/**
+ * Respond records the typed text, so it arms only when text exists;
+ * Accept records the written proposal, so it arms only while the box is
+ * empty — the two can never both be live.
+ */
+function syncDecisionButtons(id) {
+  const textarea = document.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
+  if (!textarea) return;
+  const empty = textarea.value.trim() === '';
+  const respond = document.querySelector(`button[data-action="respond"][data-id="${id}"]`);
+  const accept = document.querySelector(`button[data-action="accept"][data-id="${id}"]`);
+  if (respond) respond.disabled = empty;
+  if (accept) accept.disabled = !empty;
 }
 
 // ---------- drawer ----------
@@ -806,8 +822,8 @@ function renderDrawer() {
         <label>resolve this decision</label>
         <textarea id="f-resolution" placeholder="The decision, free-form…"></textarea>
         <div class="row" style="margin-top:6px">
-          <button class="primary" id="resolve-btn">Resolve</button>
-          <button id="accept-btn">Accept proposal</button>
+          <button class="primary" id="resolve-btn" disabled title="records the typed text above as the decision">Resolve</button>
+          <button id="accept-btn" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
         </div>
       </div>`
     : '';
@@ -1041,6 +1057,16 @@ function wireDrawer(task, isNew) {
     }
     const resolveBtn = $('#resolve-btn');
     if (resolveBtn) {
+      // Resolve records the typed text; Accept records the proposal.
+      // Each arms only when its own input state matches.
+      const resolutionBox = $('#f-resolution');
+      const syncResolveButtons = () => {
+        const empty = resolutionBox.value.trim() === '';
+        resolveBtn.disabled = empty;
+        $('#accept-btn').disabled = !empty;
+      };
+      resolutionBox.addEventListener('input', syncResolveButtons);
+      syncResolveButtons();
       resolveBtn.onclick = () => {
         const text = $('#f-resolution').value.trim();
         if (text === '') {
@@ -1295,9 +1321,13 @@ function openNewTaskForm(parentId) {
 // from the task's current one.
 document.addEventListener('input', (event) => {
   const input = event.target.closest?.('input[data-role="pos-input"]');
-  if (!input) return;
-  const btn = document.querySelector(`button[data-action="set-pos"][data-id="${input.dataset.id}"]`);
-  if (btn) btn.disabled = input.value === input.dataset.initial;
+  if (input) {
+    const btn = document.querySelector(`button[data-action="set-pos"][data-id="${input.dataset.id}"]`);
+    if (btn) btn.disabled = input.value === input.dataset.initial;
+    return;
+  }
+  const response = event.target.closest?.('textarea[data-role="response"]');
+  if (response) syncDecisionButtons(response.dataset.id);
 });
 
 $('#search').addEventListener('keydown', (event) => {
