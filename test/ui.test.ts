@@ -1166,7 +1166,41 @@ describe('logged-decision confirmation', () => {
     expect(document.querySelector('#view-decisions .decision-logged')).toBeNull();
   });
 
-  it('the logged note expires after a minute', async () => {
+  it('both typed-answer buttons say Submit', () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    expect(
+      (document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLElement)
+        .textContent,
+    ).toBe('Submit');
+    (document.querySelector('#search') as HTMLInputElement).value = ''; // no-op, keep focus sane
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    expect((document.querySelector('#resolve-btn') as HTMLElement).textContent).toBe('Submit');
+  });
+
+  it('the green toast outlives ordinary toasts', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const draft = document.querySelector(
+      'textarea[data-role="response"][data-id="t4"]',
+    ) as HTMLTextAreaElement;
+    draft.value = 'go';
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.useFakeTimers();
+    try {
+      (
+        document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLElement
+      ).click();
+      await vi.advanceTimersByTimeAsync(6_000); // an ordinary toast is gone by now
+      expect(document.querySelector('#toasts .toast.ok')).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(document.querySelector('#toasts .toast.ok')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the logged note stays for five minutes', async () => {
     clickTab('decisions');
     expandDecision('t4');
     const draft = document.querySelector(
@@ -1186,9 +1220,9 @@ describe('logged-decision confirmation', () => {
       (
         document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLElement
       ).click();
-      await vi.advanceTimersByTimeAsync(50);
+      await vi.advanceTimersByTimeAsync(61_000); // the old one-minute life was too short
       expect(document.querySelector('#view-decisions .decision-logged')).not.toBeNull();
-      await vi.advanceTimersByTimeAsync(61_000);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
       expect(document.querySelector('#view-decisions .decision-logged')).toBeNull();
     } finally {
       vi.useRealTimers();

@@ -135,7 +135,7 @@ function esc(text) {
  * since the agent's cursor, and the skill orders a catch-up at every
  * boundary, so "at its next catch-up" is literally when it acts.
  */
-const LOGGED_NOTE_MS = 60_000; // long enough to copy the commands, then it clears itself
+const LOGGED_NOTE_MS = 5 * 60_000; // long enough to actually read, then it clears itself
 
 function confirmResolved(id, outcomeId) {
   state.justResolved.set(id, { at: Date.now(), outcomeId });
@@ -158,7 +158,8 @@ function toast(message, cls = '') {
   div.className = `toast ${cls}`;
   div.textContent = message;
   $('#toasts').appendChild(div);
-  setTimeout(() => div.remove(), 4500);
+  // Success toasts carry ids worth reading; give them longer than notices.
+  setTimeout(() => div.remove(), cls === 'ok' ? 10_000 : 4500);
 }
 
 function childrenOf(id) {
@@ -681,7 +682,7 @@ function renderDecisions() {
       : `<div class="decision-actions">
           <textarea placeholder="Your decision (free-form)…" data-role="response" data-id="${task.id}"></textarea>
           <div style="display:flex;flex-direction:column;gap:6px">
-            <button class="primary" data-action="respond" data-id="${task.id}" disabled title="records the typed text as the decision">Respond</button>
+            <button class="primary" data-action="respond" data-id="${task.id}" disabled title="records the typed text as the decision">Submit</button>
             <button data-action="accept" data-id="${task.id}" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
             <button data-action="reject" data-id="${task.id}" title="close as decided-no: the rejection is recorded and no task is created from it">Reject…</button>
             <button data-action="skip" data-id="${task.id}" title="Hide this decision in this tab until the page reloads. It stays open for everyone and nothing is deleted or written to the store.">Skip for now</button>
@@ -868,7 +869,7 @@ function renderDrawer() {
         <label>resolve this decision</label>
         <textarea id="f-resolution" placeholder="The decision, free-form…"></textarea>
         <div class="row" style="margin-top:6px">
-          <button class="primary" id="resolve-btn" disabled title="records the typed text above as the decision">Resolve</button>
+          <button class="primary" id="resolve-btn" disabled title="records the typed text above as the decision">Submit</button>
           <button id="accept-btn" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
           <button id="reject-btn" title="close as decided-no: the rejection is recorded and no task is created from it">Reject…</button>
         </div>
