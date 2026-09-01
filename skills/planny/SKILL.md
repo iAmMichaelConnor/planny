@@ -204,7 +204,11 @@ alongside that blocks it (`planny add "Decide …" --type decision
 --kind operator --blocks <id>`). Convert when the whole task *is* the
 question; add alongside when the task has agreed work plus one contested
 aspect. Either way, an agent walking the queue then meets an operator
-decision instead of silently attempting contested work.
+decision instead of silently attempting contested work. Your own ideas
+are not exempt: an idea you record while doubting it must be a decision
+task, never a plain `ai` task — doubts written as prose inside a todo
+are invisible to the queue, and a future agent builds the contested
+thing without asking.
 
 ### Working the decision queue
 
