@@ -687,6 +687,24 @@ describe('resolution outcome tasks', () => {
     expect(await run('resolve', 't2', '--reject')).toBe(0);
   });
 
+  it('--json hands the resolving agent both tasks, structurally', async () => {
+    expect(await run('resolve', 't2', '--response', 'yes, files', '--json')).toBe(0);
+    const data = JSON.parse(allOut());
+    expect(data.task.id).toBe('t2');
+    expect(data.task.status).toBe('done');
+    expect(data.outcomeTask.id).toBe('t3');
+    expect(data.outcomeTask.parent).toBe('t2');
+    expect(data.outcomeTask.body).toContain('records the outcome of decision t2');
+    expect(Array.isArray(data.warnings)).toBe(true);
+  });
+
+  it('--json on a reject reports a null outcome task', async () => {
+    expect(await run('resolve', 't2', '--reject', '--json')).toBe(0);
+    const data = JSON.parse(allOut());
+    expect(data.task.status).toBe('done');
+    expect(data.outcomeTask).toBeNull();
+  });
+
   it('--accept with --reject is refused', async () => {
     expect(await run('resolve', 't2', '--accept', '--reject')).toBe(1);
     expect(err.join('\n')).toMatch(/not both/);

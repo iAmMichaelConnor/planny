@@ -663,6 +663,7 @@ Examples:
     .option('--response-file <path>', 'read the decision from a file (- for stdin)')
     .option('--accept', 'shorthand for accepting the written proposal')
     .option('--reject', 'close as decided-no: record the rejection, create no outcome task')
+    .option('--json', 'machine-readable output: {task, outcomeTask, warnings}')
     .addHelpText(
       'after',
       `
@@ -697,6 +698,21 @@ Examples:
       const result = resolveDecision(store, id, response ?? '', actor(), {
         reject: options.reject === true,
       });
+      if (options.json) {
+        // The same shape the server's resolve route sends.
+        io.out(
+          JSON.stringify(
+            {
+              task: result.task,
+              outcomeTask: result.outcomeTask ?? null,
+              warnings: result.warnings,
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
       report(store, result, resolvedLine(id, result));
     });
 
