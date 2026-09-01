@@ -757,9 +757,53 @@ Examples:
     .command('serve')
     .description('start the localhost control site')
     .option('--port <port>', 'port to listen on', (v: string) => Number(v), 5891)
+    .option('--detach', 'launch the server as its own detached process and return')
+    .option('--stop', 'stop the detached server for this store')
+    .addHelpText(
+      'after',
+      `
+--detach starts the server in its own OS session, so it survives the shell
+or agent session that launched it (harnesses reap session-scoped background
+tasks). Its output goes to a log in the OS temp dir; the command prints the
+URL, pid and log path once the board answers. Already serving is a success.
+--stop reads the record the server keeps in .planny/serve.json, so it takes
+no --port; a record left by a crash is cleared, and nothing running is a
+success.
+
+Examples:
+  planny serve --detach            board that outlives this session
+  planny serve --stop              stop it`,
+    )
     .action(async (options) => {
       const store = open();
-      const { startServer, servedStoreRoot } = await import('./server.js');
+      const { startServer, servedStoreRoot, detachServer, stopServer } = await import(
+        './server.js'
+      );
+      if (options.detach === true && options.stop === true) {
+        throw new Error('pass --detach or --stop, not both');
+      }
+      if (options.stop === true) {
+        const outcome = await stopServer(store);
+        io.out(
+          outcome.kind === 'stopped'
+            ? `stopped ${outcome.url} (pid ${outcome.pid})`
+            : outcome.kind === 'stale'
+              ? 'nothing to stop — cleared the stale record a crashed server left behind'
+              : 'nothing to stop — the UI is not being served for this store',
+        );
+        return;
+      }
+      if (options.detach === true) {
+        const outcome = await detachServer(store, options.port);
+        if (outcome.kind === 'already') {
+          io.out(`already serving this store at ${outcome.url}`);
+          return;
+        }
+        io.out(`planny ui: ${outcome.url} (detached, pid ${outcome.pid})`);
+        io.out(`log: ${outcome.log}`);
+        io.out('stop it with: planny serve --stop');
+        return;
+      }
       let running;
       try {
         running = await startServer(store, options.port);

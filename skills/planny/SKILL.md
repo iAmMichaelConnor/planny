@@ -49,20 +49,12 @@ Rules that keep the store consistent:
 - **Serve the board at session start.** When you begin working in a project
   that has a `.planny` store, check whether the UI is already up
   (`planny url` prints the address, and exits 1 when it is not); if not,
-  start it and tell the operator the URL. Two ways to start it:
-  1. Detached — the default for an agent session. As a normal foreground
-     shell command, run
-     `setsid nohup planny serve --port 5891 >/tmp/planny-serve-5891.log 2>&1 &`
-     then confirm with `planny url`. `setsid` gives the server its own
-     process session, so it outlives yours; the log file catches its
-     output (the URL line, any later crash), because a detached process
-     has no terminal to write to. macOS ships no `setsid`: drop the word
-     (`nohup planny serve … &`), or ask the operator to run `planny serve`
-     in their own terminal.
-  2. Your harness's background-task feature — only when the board matters
-     just for the current sitting. Harnesses tie background tasks to the
-     session and stop them at session end, on /clear, and on context
-     compaction, and the operator's board dies with them.
+  run `planny serve --detach` and tell the operator the URL it prints.
+  The detached server runs in its own OS session, so it outlives you.
+  Do not use your harness's background-task feature instead: harnesses
+  stop those at session end, on /clear, and on context compaction, and
+  the operator's board dies with them. `planny serve --stop` ends the
+  detached server when asked.
   The server binds 127.0.0.1 only, so when the operator works on
   this machine remotely, also give them the forward to run from their own
   machine, ports matching the served port:

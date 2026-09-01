@@ -137,11 +137,13 @@ CLI edits appear without a reload; refreshes never clobber a half-typed
 form. One status colour code runs through every view. The UI is three
 static files (`web/`), no framework, no build step.
 
-From inside an agent session, start the server detached —
-`setsid nohup planny serve --port 5891 >/tmp/planny-serve-5891.log 2>&1 &`
-— because agent harnesses tie background tool tasks to the session and
-reap them at session end or context compaction, taking your board with
-them. From your own terminal, plain `planny serve` is fine.
+From inside an agent session, start the server with `planny serve
+--detach`: it launches the server in its own OS session and prints the
+URL, pid and log path once the board answers. Agent harnesses tie
+background tool tasks to the session and reap them at session end or
+context compaction, taking a plain backgrounded `planny serve` with
+them; the detached form survives. `planny serve --stop` ends it. From
+your own terminal, plain `planny serve` is fine.
 
 ## Quickstart
 
@@ -189,7 +191,7 @@ planny url                             # where that UI is being served
 | `resolve <id> --response …\|--accept\|--response-file f` | record the operator's answer, mark done |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
-| `serve [--port]` | localhost control site (127.0.0.1 only); from an agent session, start it detached — see "The localhost UI" |
+| `serve [--port] [--detach] [--stop]` | localhost control site (127.0.0.1 only); `--detach` outlives the launching (agent) session, `--stop` ends the detached server |
 | `url` | print the address where the UI serves this store; exits 1 when it is not up |
 
 Every command's `--help` carries examples; mistyped commands get a

@@ -1,8 +1,11 @@
-import { watch } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { closeSync, openSync, watch } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -119,6 +122,108 @@ export async function servedStoreRoot(port: number): Promise<string | undefined>
   } catch {
     return undefined;
   }
+}
+
+export type DetachOutcome =
+  | { kind: 'started'; url: string; pid: number; log: string }
+  | { kind: 'already'; url: string };
+
+export type StopOutcome =
+  | { kind: 'stopped'; url: string; pid: number }
+  | { kind: 'stale' }
+  | { kind: 'nothing' };
+
+/** Where a detached server's output goes: predictable, per requested port. */
+export function detachLogPath(port: number): string {
+  return join(tmpdir(), `planny-serve-${port}.log`);
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Launch `planny serve` as a child in its own OS session, so the board
+ * outlives the caller — agent harnesses reap session-scoped background
+ * tasks, and a plain child dies with its parent's session. The child has
+ * no terminal, so its output (the URL line, any later crash) goes to a
+ * log file. Resolves only once the child answers for this store: a
+ * 'started' outcome means a live board.
+ */
+export async function detachServer(store: Store, port: number): Promise<DetachOutcome> {
+  const existing = await currentServeUrl(store);
+  if (existing !== null) return { kind: 'already', url: existing };
+  const log = detachLogPath(port);
+  const fd = openSync(log, 'a');
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('./bin.js', import.meta.url)), 'serve', '--port', String(port)],
+    { cwd: store.root, detached: true, stdio: ['ignore', fd, fd] },
+  );
+  closeSync(fd);
+  let exited = false;
+  child.once('exit', () => {
+    exited = true;
+  });
+  child.unref();
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && !exited) {
+    const url = await currentServeUrl(store);
+    if (url !== null) return { kind: 'started', url, pid: child.pid ?? 0, log };
+    await sleep(100);
+  }
+  // A racing launcher can win the port for this store between our first
+  // probe and the spawn; the child then reports "already serving" and
+  // exits. That is success, not a failure to surface.
+  const raced = await currentServeUrl(store);
+  if (raced !== null) return { kind: 'already', url: raced };
+  if (!exited) child.kill('SIGTERM');
+  throw new Error(`the detached server did not come up — from ${log}:\n${await logTail(log)}`);
+}
+
+async function logTail(path: string): Promise<string> {
+  try {
+    const text = await readFile(path, 'utf8');
+    return text.split('\n').slice(-10).join('\n').trim() || '(the log is empty)';
+  } catch {
+    return '(no log was written)';
+  }
+}
+
+/**
+ * Stop the server recorded in .planny/serve.json. Probes before killing:
+ * a record left by a crash points at nothing and is only cleared. Waits
+ * until the port stops answering, so a 'stopped' outcome means the board
+ * is really down.
+ */
+export async function stopServer(store: Store): Promise<StopOutcome> {
+  let record: { port?: unknown; pid?: unknown };
+  try {
+    record = JSON.parse(await readFile(serveRecordPath(store), 'utf8')) as typeof record;
+  } catch {
+    return { kind: 'nothing' };
+  }
+  const { port, pid } = record;
+  if (typeof port !== 'number' || !Number.isInteger(port) || port <= 0) {
+    await rm(serveRecordPath(store), { force: true });
+    return { kind: 'stale' };
+  }
+  if ((await servedStoreRoot(port)) !== store.root) {
+    await rm(serveRecordPath(store), { force: true });
+    return { kind: 'stale' };
+  }
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
+    throw new Error(`the server at 127.0.0.1:${port} recorded no usable pid — stop it by hand`);
+  }
+  process.kill(pid, 'SIGTERM');
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if ((await servedStoreRoot(port)) !== store.root) {
+      return { kind: 'stopped', url: `http://127.0.0.1:${port}`, pid };
+    }
+    await sleep(100);
+  }
+  throw new Error(
+    `sent SIGTERM to pid ${pid} but 127.0.0.1:${port} is still serving — stop it by hand`,
+  );
 }
 
 /** The address of a live server for this store, or null when nothing serves it. */
