@@ -1,10 +1,12 @@
 # planny
 
 A CLI task and decision tracker for projects where AI agents do the work and
-a human (the operator) steers. It replaces the ever-growing `plan.md`: tasks
-live as one markdown file each, the plan stays current because updating it
-is one cheap command, and an agent loads only the tasks it needs instead of
-a whole document.
+a human (the operator) steers. It replaces the ever-growing `plan.md` — and
+the `DECISIONS.md` beside it. Tasks and decisions live as one markdown file
+each. The plan stays current because updating it is one cheap command, and
+an agent loads only the tasks it needs instead of a whole document. Any
+questions raised by agents queue up as decisions, and the human works through
+them in their own time — none get lost.
 
 ## Why
 
@@ -19,7 +21,7 @@ others, or which tasks are subtasks of others.
 I also find it very useful to have AI track any outstanding decisions
 that it wants me to make. I had a DECISIONS.md, but that too became
 unwieldy and messy. Outstanding decisions were hard to identify and
-understand.
+understand, or they'd just get lost or forgotten.
 
 Altogether, it gobbled up loads of tokens and wasn't very reliable.
 
