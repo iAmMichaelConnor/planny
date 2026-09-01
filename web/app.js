@@ -9,7 +9,7 @@ const state = {
   selected: null, // task id shown in the drawer, or '__new__'
   collapsed: new Set(),
   skippedDecisions: new Set(),
-  justResolved: new Set(), // decisions the operator resolved in this page session
+  justResolved: new Map(), // id → when the operator resolved it in this page (notes expire)
   expandedDecisions: new Set(), // open-decision tiles start collapsed
 
   depsMode: readPreference('planny-deps-mode', 'blocks'),
@@ -122,10 +122,15 @@ function esc(text) {
  * since the agent's cursor, and the skill orders a catch-up at every
  * boundary, so "at its next catch-up" is literally when it acts.
  */
+const LOGGED_NOTE_MS = 60_000; // long enough to copy the commands, then it clears itself
+
 function confirmResolved(id) {
-  state.justResolved.add(id);
+  state.justResolved.set(id, Date.now());
   toast(`${id} resolved — logged to the store; your agent will act on it at its next catch-up`, 'ok');
   if (state.view === 'decisions') renderDecisions();
+  setTimeout(() => {
+    if (state.justResolved.delete(id) && state.view === 'decisions') renderDecisions();
+  }, LOGGED_NOTE_MS);
 }
 
 function toast(message, cls = '') {
@@ -701,14 +706,18 @@ function renderDecisions() {
       </div>`
     : '';
 
-  const logged = [...state.justResolved]
-    .map((id) => state.byId.get(id))
+  const logged = [...state.justResolved.entries()]
+    .filter(([, at]) => Date.now() - at < LOGGED_NOTE_MS)
+    .map(([id]) => state.byId.get(id))
     .filter((t) => t && t.status === 'done');
   const loggedHtml = logged
     .map(
-      (t) => `<div class="decision-logged">✓ <span class="id">${t.id}</span> ${esc(t.name)} —
+      (t) => `<div class="decision-logged"><span class="logged-text">✓ <span class="id">${t.id}</span> ${esc(t.name)} —
         decision logged. Your agent reads resolved decisions at its next catch-up and will
-        create or update tasks where relevant.</div>`,
+        create or update tasks where relevant. From a terminal:
+        <code>planny decisions --resolved</code> lists the newest answers;
+        <code>planny show ${t.id}</code> shows this one.</span>
+        <button class="mini" data-action="dismiss-logged" data-id="${t.id}" title="discard this note">×</button></div>`,
     )
     .join('');
 
@@ -1216,6 +1225,11 @@ document.addEventListener('click', (event) => {
       state.expandedDecisions.has(id)
         ? state.expandedDecisions.delete(id)
         : state.expandedDecisions.add(id);
+      renderDecisions();
+      return;
+    }
+    if (action === 'dismiss-logged') {
+      state.justResolved.delete(id);
       renderDecisions();
       return;
     }

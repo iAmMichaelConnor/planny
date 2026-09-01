@@ -1140,6 +1140,61 @@ describe('logged-decision confirmation', () => {
     expect(note.textContent).toMatch(/catch-up/);
   });
 
+  it('the logged note names the CLI commands and dismisses on its cross', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const draft = document.querySelector(
+      'textarea[data-role="response"][data-id="t4"]',
+    ) as HTMLTextAreaElement;
+    draft.value = 'go';
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+    servedState = {
+      ...sampleState,
+      tasks: sampleState.tasks.map((t) =>
+        t.id === 't4' ? { ...t, status: 'done', resolvedAt: '2026-09-01T10:00:00.000Z' } : t,
+      ),
+      decisions: [],
+    };
+    (document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    const note = document.querySelector('#view-decisions .decision-logged') as HTMLElement;
+    expect(note.textContent).toContain('planny decisions --resolved'); // all recent answers
+    expect(note.textContent).toContain('planny show t4'); // this one
+    const cross = note.querySelector('button[data-action="dismiss-logged"]') as HTMLElement;
+    expect(cross).not.toBeNull();
+    cross.click();
+    expect(document.querySelector('#view-decisions .decision-logged')).toBeNull();
+  });
+
+  it('the logged note expires after a minute', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const draft = document.querySelector(
+      'textarea[data-role="response"][data-id="t4"]',
+    ) as HTMLTextAreaElement;
+    draft.value = 'go';
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+    servedState = {
+      ...sampleState,
+      tasks: sampleState.tasks.map((t) =>
+        t.id === 't4' ? { ...t, status: 'done', resolvedAt: '2026-09-01T10:00:00.000Z' } : t,
+      ),
+      decisions: [],
+    };
+    vi.useFakeTimers();
+    try {
+      (
+        document.querySelector('button[data-action="respond"][data-id="t4"]') as HTMLElement
+      ).click();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(document.querySelector('#view-decisions .decision-logged')).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(document.querySelector('#view-decisions .decision-logged')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('resolving from the drawer also confirms in green', async () => {
     (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
     const resolution = document.querySelector('#f-resolution') as HTMLTextAreaElement;
