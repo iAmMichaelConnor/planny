@@ -133,6 +133,11 @@ Then sanity-check the plan you just built: `planny tree` (shape),
 `planny deps` (order), `planny next` (is the first actionable task the
 right one?).
 
+An operator's quick-add often arrives rough — a two-word name, a pasted
+thought. When you pick one up, bring it to this standard: rename it to a
+short imperative name, and append what done looks like in STE. Keep the
+operator's original words in the body; they are the ask of record.
+
 ## Working tasks
 
 1. `planny next --json` (optionally `--under <id>` for one project). Each item
