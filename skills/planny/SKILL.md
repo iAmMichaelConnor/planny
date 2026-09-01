@@ -232,6 +232,11 @@ you are deep in something else only displaces working context.
   and every decision resolved since you last asked, then advances your
   stored cursor — you carry no state. `--peek` looks without advancing.
   Delivery is at-least-once: treat the delta as idempotent facts.
+  The delta is also delivered once per cursor: a plain `catchup` advances
+  the cursor even when you discard its output, so never pipe it through
+  `head` or `grep` — extract from the JSON with a real tool, and use
+  `--peek` when you only want to look. Only an explicit `--since` window
+  can recover what a truncated read threw away.
 - Explicit windows, when a cursor is not what you mean:
   `planny decisions --resolved --since <time> --json` (answers, each with
   the tasks it unblocked) and `planny list --changed-since <time> --json`.
