@@ -595,7 +595,10 @@ function doResolveDecision(
   }
   const answer = response.trim();
   const background = task.body; // the decision text before any outcome
-  const unblocks = m.graph().blocking(id).map((t) => t.id);
+  // The gate moves rather than opens: work that waited on the answer must
+  // also wait on the answer being interpreted (the outcome task). Order
+  // lives in dependencies, never in prose.
+  const dependants = m.graph().blocking(id).filter(isActive).map((t) => t.id);
   const outcomeText =
     options.reject === true
       ? `Rejected — closed without action.${answer === '' ? '' : ` Reason: ${answer}`}`
@@ -616,7 +619,8 @@ function doResolveDecision(
       {
         name: `Act on the outcome of ${id}: ${task.name}`,
         parent: id,
-        body: outcomeTaskBody(id, task.name, background, outcomeText, unblocks),
+        blocks: dependants,
+        body: outcomeTaskBody(id, task.name, background, outcomeText, dependants),
       },
       actor,
     );
@@ -636,7 +640,7 @@ function outcomeTaskBody(
 ): string {
   const reconcile =
     unblocks.length > 0
-      ? `The resolution already unblocks ${unblocks.join(', ')} — check those before creating new tasks, so the same work is not created twice.`
+      ? `The tasks that waited on the decision now wait on this task instead: ${unblocks.join(', ')}. Update or cancel them to match the outcome — marking this task done releases them.`
       : 'No tasks were waiting on the decision.';
   return `This task records the outcome of decision ${id} ("${name}"). The operator has decided; the decision and the answer follow. If the outcome calls for work, create tasks from this one, then mark this task done. ${reconcile}
 

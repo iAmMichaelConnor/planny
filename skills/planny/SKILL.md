@@ -211,14 +211,15 @@ decision instead of silently attempting contested work.
   (`--accept` takes your proposal; `--response-file` reads long answers;
   `--reject` closes a decision as decided-no and creates nothing).
 - A resolution creates an **outcome task**: a child of the decision
-  carrying the answer, the decision text, and the tasks the answer
-  unblocked — the answer cannot be lost while that task is open. **Work
-  it like any task**: create the follow-on tasks the outcome calls for
-  (first check what the resolution already unblocked, so the same work
-  is not created twice), keep the citations both ways ("Decided in
-  t150" in new tasks; their ids appended to the outcome task), then
-  mark it done. A no-work outcome is still an answer: say so and mark
-  the outcome task done.
+  carrying the answer and the decision text — the answer cannot be lost
+  while that task is open. Tasks that waited on the decision are rewired
+  to wait on the outcome task, so gated work stays gated until the
+  answer is interpreted. **Work it like any task**: update or cancel the
+  rewired tasks to match the outcome, create the follow-on tasks it
+  calls for, keep the citations both ways ("Decided in t150" in new
+  tasks; their ids appended to the outcome task), then mark it done —
+  that releases the gated work. A no-work outcome is still an answer:
+  say so and mark the outcome task done.
 - The user skips → move on; the decision stays open.
 - After the decided work ships, append the record the operator will look
   back on: `planny update <id> --append-desc "Built: … Files: … Tests: …

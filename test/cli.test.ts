@@ -655,7 +655,21 @@ describe('resolution outcome tasks', () => {
     const { task } = JSON.parse(allOut());
     expect(task.parent).toBe('t2');
     expect(task.body).toContain('records the outcome of decision t2');
-    expect(task.body).toContain('t1'); // what the answer unblocked
+    expect(task.body).toContain('t1'); // names the rewired dependant
+  });
+
+  it('gated work stays gated until the outcome task is done', async () => {
+    await run('resolve', 't2', '--response', 'yes, files');
+    out = [];
+    await run('next', '--json');
+    let ready = JSON.parse(allOut()).map((n: { task: { id: string } }) => n.task.id);
+    expect(ready).toContain('t3'); // the outcome task is the actionable step
+    expect(ready).not.toContain('t1'); // the gated work waits for interpretation
+    await run('done', 't3');
+    out = [];
+    await run('next', '--json');
+    ready = JSON.parse(allOut()).map((n: { task: { id: string } }) => n.task.id);
+    expect(ready).toContain('t1'); // finishing the interpretation releases it
   });
 
   it('--reject closes the decision and creates nothing', async () => {

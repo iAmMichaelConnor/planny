@@ -284,6 +284,19 @@ describe('resolveDecision', () => {
     expect(store.load('t2').body).toContain(`Outcome task: ${outcome!.id}`);
   });
 
+  it('active dependants of the decision are rewired onto the outcome task', () => {
+    addTask(store, { name: 'gated work' });
+    addTask(store, { name: 'already finished' });
+    setStatus(store, 't2', 'done');
+    addTask(store, { name: 'Choose db', type: 'decision', blocks: ['t1', 't2'] });
+    const { outcomeTask } = resolveDecision(store, 't3', 'files');
+    // The gate moves: interpretation must finish before the work starts.
+    expect(store.load('t1').blockedBy).toContain(outcomeTask!.id);
+    expect(store.load('t1').blockedBy).toContain('t3'); // the satisfied edge stays, like any done blocker's
+    expect(store.load('t2').blockedBy).not.toContain(outcomeTask!.id); // done tasks are left alone
+    expect(outcomeTask!.body).toContain('now wait on this task');
+  });
+
   it('reject closes the decision without creating any task', () => {
     addTask(store, { name: 'Choose db', type: 'decision' });
     const before = store.loadAll().length;
