@@ -51,6 +51,12 @@ Rules that keep the store consistent:
   yourself. Then work it: `start` when you begin, `done` when it ships. A
   request or idea tracked only in chat, a TODO comment, or your own head
   is one that gets lost.
+- **A status-bearing list in a document is a task list.** Checkboxes,
+  tick marks, `Status:` fields, an open/closed split: when you are about
+  to write these into a markdown file, stop — whatever the section is
+  called (queue, register, backlog, follow-ups, review debt, next steps).
+  Run `planny add` for each item. The document keeps the analysis and
+  cites the task ids.
 - **Serve the board at session start.** When you begin working in a project
   that has a `.planny` store, check whether the UI is already up
   (`planny url` prints the address, and exits 1 when it is not); if not,
@@ -105,6 +111,11 @@ You have a question only the operator can answer → **add a decision task**
 task must exist regardless, because a question that lives only in chat
 disappears when the operator is away, scrolls past, or answers later.
 Never park a question in chat alone or in a TODO comment.
+
+You are about to draft a next-steps, follow-ups, or TODO section in a
+document → `planny add` each item, then cite the task ids in the
+document. The analysis stays in the document; the statuses live in
+planny.
 
 ## Creating tasks and plans
 
