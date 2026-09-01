@@ -1264,6 +1264,85 @@ describe('decision buttons gate on their own input', () => {
   });
 });
 
+describe('save conflict guard', () => {
+  it('save sends the updated stamp the form was built from', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'renamed';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    const patch = fetchCalls.find((c) => c.path === '/api/tasks/t1' && c.init?.method === 'PATCH');
+    expect(JSON.parse(patch!.init!.body as string).ifUnchangedSince).toBe(
+      '2026-08-31T12:00:00.000Z', // the sample task's updated stamp
+    );
+  });
+
+  it('a conflict offers overwrite; accepting resends without the guard', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    let patches = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        fetchCalls.push({ path, init });
+        if (init?.method === 'PATCH') {
+          patches += 1;
+          if (patches === 1) {
+            return {
+              ok: false,
+              json: async () => ({ error: 't1 changed underneath the form — reload or overwrite' }),
+            };
+          }
+        }
+        return {
+          ok: true,
+          json: async () =>
+            path === '/api/state' ? structuredClone(servedState) : { task: task('t9'), warnings: [] },
+        };
+      }),
+    );
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'renamed';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(patches).toBe(2);
+    const retry = fetchCalls.filter((c) => c.init?.method === 'PATCH').at(-1)!;
+    expect(JSON.parse(retry.init!.body as string).ifUnchangedSince).toBeUndefined();
+  });
+
+  it('declining the overwrite reloads the newer version instead', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        fetchCalls.push({ path, init });
+        if (init?.method === 'PATCH') {
+          return {
+            ok: false,
+            json: async () => ({ error: 't1 changed underneath the form — reload or overwrite' }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () =>
+            path === '/api/state' ? structuredClone(servedState) : { task: task('t9'), warnings: [] },
+        };
+      }),
+    );
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'my stale edit';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fetchCalls.filter((c) => c.init?.method === 'PATCH')).toHaveLength(1); // no retry
+    // The form was rebuilt from the store's newer truth; the stale edit is gone.
+    expect((document.querySelector('#f-name') as HTMLInputElement).value).toBe('Build the API');
+    expect((document.querySelector('#save-btn') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe('drawer decision outcome', () => {
   it('a resolved decision shows its outcome rendered below the description', () => {
     (document.querySelector('.card[data-id="t6"]') as HTMLElement).click();

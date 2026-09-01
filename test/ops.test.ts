@@ -260,6 +260,42 @@ describe('resolveDecision', () => {
     expect(() => resolveDecision(store, 't1', 'yes')).toThrow(/decision/i);
   });
 
+  it('a body write with a stale ifUnchangedSince is refused', async () => {
+    addTask(store, { name: 'contested', body: 'original' });
+    const before = store.load('t1').updated;
+    // The stamp has millisecond granularity: step past it so the append
+    // is measurably newer than the captured form time.
+    await new Promise((r) => setTimeout(r, 5));
+    updateTask(store, 't1', { appendBody: 'an agent appended this' }); // bumps updated
+    expect(() => updateTask(store, 't1', { body: 'stale rewrite', ifUnchangedSince: before })).toThrow(
+      /changed underneath/,
+    );
+    expect(store.load('t1').body).toContain('an agent appended this'); // nothing was lost
+  });
+
+  it('a current ifUnchangedSince lets the body write through', () => {
+    addTask(store, { name: 'calm', body: 'original' });
+    const current = store.load('t1').updated;
+    const { task } = updateTask(store, 't1', { body: 'rewritten', ifUnchangedSince: current });
+    expect(task.body).toBe('rewritten');
+  });
+
+  it('the guard only protects body replacement, never other fields', () => {
+    addTask(store, { name: 'renamable' });
+    const before = store.load('t1').updated;
+    updateTask(store, 't1', { appendBody: 'appended' });
+    // A rename with a stale stamp is fine: it clobbers nothing.
+    const { task } = updateTask(store, 't1', { name: 'renamed', ifUnchangedSince: before });
+    expect(task.name).toBe('renamed');
+  });
+
+  it('rejects a malformed ifUnchangedSince at runtime', () => {
+    addTask(store, { name: 'strict' });
+    expect(() =>
+      updateTask(store, 't1', { body: 'x', ifUnchangedSince: 42 as unknown as string }),
+    ).toThrow(/ifUnchangedSince/);
+  });
+
   it('reopening a resolved decision clears the resolvedAt stamp', () => {
     addTask(store, { name: 'Choose db', type: 'decision' });
     resolveDecision(store, 't1', 'Use markdown files.');

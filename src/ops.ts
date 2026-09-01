@@ -61,6 +61,12 @@ export interface UpdateInput {
   addBlocks?: string[];
   removeBlocks?: string[];
   priority?: BumpTarget;
+  /**
+   * Optimistic guard for body replacement: the updated stamp the caller's
+   * copy was read at. When the stored task is newer and a body is being
+   * written, the update is refused instead of clobbering the newer body.
+   */
+  ifUnchangedSince?: string;
 }
 
 /** In-memory working set for one operation; saves changed files on commit. */
@@ -202,6 +208,7 @@ function assertUpdateInput(input: UpdateInput): void {
   assertOptionalString(input.parent, 'parent', true);
   assertOptionalString(input.body, 'body');
   assertOptionalString(input.appendBody, 'appendBody');
+  assertOptionalString(input.ifUnchangedSince, 'ifUnchangedSince');
   assertIdList(input.addChildren, 'addChildren');
   assertIdList(input.removeChildren, 'removeChildren');
   assertIdList(input.addBlockedBy, 'addBlockedBy');
@@ -331,6 +338,16 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: stri
   assertUpdateInput(input);
   const m = new Mutation(store);
   const task = m.get(id);
+
+  if (
+    input.ifUnchangedSince !== undefined &&
+    input.body !== undefined &&
+    task.updated > input.ifUnchangedSince
+  ) {
+    throw new Error(
+      `${id} changed underneath the form (stored ${task.updated}, form loaded ${input.ifUnchangedSince}) — reload the newer version, or overwrite it deliberately`,
+    );
+  }
 
   if (input.name !== undefined) {
     const name = requireName(input.name);

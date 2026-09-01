@@ -96,6 +96,19 @@ async function api(path, method, body, retried = false) {
       ) {
         return api(path, method, { ...body, take: true });
       }
+      // A save conflict: the task changed while the form sat open. Overwrite
+      // is a deliberate choice; declining loads the newer version instead.
+      if (typeof data.error === 'string' && data.error.includes('changed underneath')) {
+        if (confirm(`${data.error.split(' — ')[0]}.\n\nOK overwrites with your version; Cancel discards your edit and loads the newer one.`)) {
+          const retry = { ...body };
+          delete retry.ifUnchangedSince;
+          return api(path, method, retry);
+        }
+        state.drawerDirty = false; // hand the form back to the refresh
+        state.renderedDrawerId = null;
+        await refresh();
+        return null;
+      }
       toast(data.error || 'request failed', 'error');
       return null;
     }
@@ -987,7 +1000,14 @@ function wireDrawer(task, isNew) {
     }
     const addBlockedBy = blockedBy.filter((id) => !task.blockedBy.includes(id));
     const removeBlockedBy = task.blockedBy.filter((id) => !blockedBy.includes(id));
-    api(`/api/tasks/${task.id}`, 'PATCH', { ...fields, addBlockedBy, removeBlockedBy });
+    // The stamp the form was built from: ops refuses the body write if the
+    // task changed underneath (an agent appended, a resolve landed).
+    api(`/api/tasks/${task.id}`, 'PATCH', {
+      ...fields,
+      addBlockedBy,
+      removeBlockedBy,
+      ifUnchangedSince: task.updated,
+    });
   };
 
   const parentPick = $('#f-parent-pick');
