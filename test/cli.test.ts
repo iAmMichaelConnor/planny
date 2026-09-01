@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -606,6 +606,36 @@ describe('url', () => {
     await run('init');
     expect(await run('url')).toBe(1);
     expect(err.join('\n')).toMatch(/planny serve/);
+  });
+});
+
+describe('init inside an existing store', () => {
+  const runIn = (cwd: string, ...args: string[]): Promise<number> =>
+    runCli(args, { cwd, out: (l) => out.push(l), err: (l) => err.push(l) });
+
+  it('refuses to nest, names the owning store, and creates nothing', async () => {
+    await run('init');
+    const sub = join(dir, 'packages', 'web');
+    mkdirSync(sub, { recursive: true });
+    expect(await runIn(sub, 'init')).toBe(1);
+    expect(err.join('\n')).toContain(dir); // says which store already owns this tree
+    expect(err.join('\n')).toMatch(/--nested/); // and how to override deliberately
+    expect(existsSync(join(sub, '.planny'))).toBe(false);
+  });
+
+  it('--nested creates the inner store anyway', async () => {
+    await run('init');
+    const sub = join(dir, 'packages', 'web');
+    mkdirSync(sub, { recursive: true });
+    expect(await runIn(sub, 'init', '--nested')).toBe(0);
+    expect(existsSync(join(sub, '.planny', 'tasks'))).toBe(true);
+  });
+
+  it('re-init at the root stays a friendly no-op', async () => {
+    await run('init');
+    out = [];
+    expect(await run('init')).toBe(0);
+    expect(allOut()).toMatch(/already initialized/);
   });
 });
 

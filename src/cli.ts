@@ -149,8 +149,16 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
   program
     .command('init')
     .description('create a .planny store in the current directory')
-    .action(() => {
+    .option('--nested', 'create a store even though an ancestor store exists')
+    .action((options) => {
       const existing = findRoot(io.cwd);
+      // A store inside another store shadows it for the whole subtree:
+      // every command run there would silently split the plan.
+      if (existing !== null && existing !== io.cwd && options.nested !== true) {
+        throw new Error(
+          `this directory is inside the store at ${existing}/.planny — a nested store would split the plan (commands here would stop seeing the outer one); pass --nested to create it anyway`,
+        );
+      }
       initRepo(io.cwd);
       io.out(
         existing === io.cwd
