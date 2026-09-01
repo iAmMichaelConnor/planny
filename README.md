@@ -250,3 +250,14 @@ Red-green-refactor is the law here; the full testing philosophy is in
 [CLAUDE.md](CLAUDE.md), along with the module map and invariants. The
 founding prompt is kept verbatim in [PROMPT.md](PROMPT.md). This repo tracks
 its own work in its own `.planny` store — run `planny list` in the checkout.
+
+**Releases.** Bump the version in `package.json`, build, test, commit,
+tag `vX.Y.Z`, push the commit and the tag, then trigger the *Publish to
+npm* workflow by hand (`gh workflow run publish.yml`, or the Actions
+tab). Publishing authenticates with [npm trusted
+publishing](https://docs.npmjs.com/trusted-publishers) via OIDC:
+npmjs.com trusts this exact repo and workflow file, so no npm token or
+secret exists locally or in CI, and provenance is generated
+automatically. The npm package carries the CLI, the web UI and the
+skill, so one publish updates all three for `npm update -g planny`
+users.
