@@ -62,6 +62,15 @@ function task(id: string, overrides: Record<string, unknown> = {}) {
 
 const fetchCalls: Array<{ path: string; init?: RequestInit }> = [];
 
+// Tests that need their own task graph swap this and trigger a refresh.
+let servedState: typeof sampleState = sampleState;
+
+async function serveTasks(tasks: ReturnType<typeof task>[]): Promise<void> {
+  servedState = { ...sampleState, tasks, decisions: [] };
+  window.dispatchEvent(new Event('focus'));
+  await new Promise((r) => setTimeout(r, 5));
+}
+
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onmessage: ((event: { data: string }) => void) | null = null;
@@ -109,7 +118,7 @@ function bootApp(): Promise<void> {
       return {
         ok: true,
         json: async () =>
-          path === '/api/state' ? structuredClone(sampleState) : { task: task('t9'), warnings: [] },
+          path === '/api/state' ? structuredClone(servedState) : { task: task('t9'), warnings: [] },
       };
     }),
   );
@@ -131,6 +140,7 @@ function expandDecision(id: string): void {
 }
 
 beforeEach(async () => {
+  servedState = sampleState;
   await bootApp();
 });
 
@@ -916,5 +926,124 @@ describe('ui smoke', () => {
     const post = fetchCalls.find((c) => c.path === '/api/tasks' && c.init?.method === 'POST');
     expect(post).toBeDefined();
     expect(JSON.parse(post!.init!.body as string).name).toBe('Brand new');
+  });
+});
+
+function treeRow(id: string): HTMLElement {
+  return document.querySelector(`#tree-list .tree-row[data-id="${id}"]`) as HTMLElement;
+}
+
+function hover(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+}
+
+function hoverPaths(): SVGPathElement[] {
+  return [...document.querySelectorAll('#tree-hover-svg path')] as SVGPathElement[];
+}
+
+// t1 blocks t2 blocks t3: a two-hop chain for multi-level hover lines.
+const chainTasks = [
+  task('t1', { name: 'Root blocker', blocking: ['t2'], position: 1 }),
+  task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
+  task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
+];
+
+describe('tree hover dependency lines', () => {
+  beforeEach(() => clickTab('tree'));
+
+  it('hovering a blocked row draws a red curve to its blocker; leaving clears it', () => {
+    hover(treeRow('t3')); // t3 waits on t1 in the sample state
+    const paths = hoverPaths();
+    expect(paths).toHaveLength(1);
+    expect(paths[0]!.getAttribute('data-level')).toBe('1');
+    expect(paths[0]!.getAttribute('data-from')).toBe('t3');
+    expect(paths[0]!.getAttribute('data-to')).toBe('t1');
+    expect(paths[0]!.getAttribute('d')).toMatch(/^M.+C/); // a curve, not a straight line
+    (document.querySelector('#tree-list') as HTMLElement).dispatchEvent(
+      new MouseEvent('mouseleave'),
+    );
+    expect(hoverPaths()).toHaveLength(0);
+  });
+
+  it('hovering a row with nothing to wait on draws nothing', () => {
+    hover(treeRow('t1'));
+    expect(hoverPaths()).toHaveLength(0);
+  });
+
+  it('follows the chain: blockers of blockers get dimmer lines per level', async () => {
+    await serveTasks(chainTasks);
+    hover(treeRow('t3'));
+    const paths = hoverPaths();
+    expect(paths).toHaveLength(2);
+    const byLevel = new Map(paths.map((p) => [p.getAttribute('data-level'), p]));
+    expect(byLevel.get('1')!.getAttribute('data-to')).toBe('t2');
+    expect(byLevel.get('2')!.getAttribute('data-from')).toBe('t2');
+    expect(byLevel.get('2')!.getAttribute('data-to')).toBe('t1');
+    const opacity = (p: SVGPathElement) => Number(p.getAttribute('stroke-opacity'));
+    expect(opacity(byLevel.get('2')!)).toBeLessThan(opacity(byLevel.get('1')!));
+  });
+
+  it('ignores blockers that are no longer active', async () => {
+    await serveTasks([
+      task('t1', { name: 'Done blocker', status: 'done', blocking: ['t2'] }),
+      task('t2', { name: 'Freed', blockedBy: ['t1'], blocked: false }),
+    ]);
+    (document.querySelector('#tree-filters .chip[data-status="done"]') as HTMLElement).click();
+    expect(treeRow('t1')).not.toBeNull(); // the done blocker is on screen…
+    hover(treeRow('t2'));
+    expect(hoverPaths()).toHaveLength(0); // …but no line: it no longer blocks
+  });
+});
+
+describe('tree dependency order', () => {
+  const orderSelect = () => document.querySelector('#tree-order') as HTMLSelectElement;
+  const setOrder = (value: string) => {
+    orderSelect().value = value;
+    orderSelect().dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  beforeEach(() => clickTab('tree'));
+
+  it('offers an order toggle that nests blocked tasks under their blockers', () => {
+    expect(orderSelect()).not.toBeNull();
+    expect(orderSelect().value).toBe('parents'); // hierarchy is the default
+    setOrder('deps');
+    // t3 waits on t1, so it nests under t1 now.
+    const t1node = treeRow('t1').parentElement as HTMLElement;
+    expect(t1node.querySelector('.tree-children .tree-row[data-id="t3"]')).not.toBeNull();
+    // t2 is t1's child in the hierarchy but has no blockers: top level here.
+    expect(treeRow('t2').closest('.tree-children')).toBeNull();
+    expect(localStorage.getItem('planny-tree-order')).toBe('deps');
+  });
+
+  it('drops the parent-child progress bars in dependency order', () => {
+    expect(document.querySelector('#tree-list .mini-progress')).not.toBeNull();
+    setOrder('deps');
+    expect(document.querySelector('#tree-list .mini-progress')).toBeNull();
+  });
+
+  it('switching back to hierarchy restores parent nesting', () => {
+    setOrder('deps');
+    setOrder('parents');
+    const t1node = treeRow('t1').parentElement as HTMLElement;
+    expect(t1node.querySelector('.tree-children .tree-row[data-id="t2"]')).not.toBeNull();
+  });
+
+  it('collapse works on dependency nodes too', () => {
+    setOrder('deps');
+    (treeRow('t1').querySelector('.twist') as HTMLElement).click();
+    expect(treeRow('t3')).toBeNull(); // hidden under the collapsed blocker
+    (treeRow('t1').querySelector('.twist') as HTMLElement).click();
+    expect(treeRow('t3')).not.toBeNull();
+  });
+
+  it('a hand-edited dependency cycle still shows every task', async () => {
+    await serveTasks([
+      task('t1', { name: 'Chicken', blockedBy: ['t2'], blocked: true, blocking: ['t2'] }),
+      task('t2', { name: 'Egg', blockedBy: ['t1'], blocked: true, blocking: ['t1'] }),
+    ]);
+    setOrder('deps');
+    expect(treeRow('t1')).not.toBeNull();
+    expect(treeRow('t2')).not.toBeNull();
   });
 });

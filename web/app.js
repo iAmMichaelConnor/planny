@@ -12,6 +12,7 @@ const state = {
   expandedDecisions: new Set(), // open-decision tiles start collapsed
 
   depsMode: readPreference('planny-deps-mode', 'blocks'),
+  treeOrder: readPreference('planny-tree-order', 'parents'), // 'parents' | 'deps'
   treeFilters: {
     statuses: new Set(['todo', 'in-progress']),
     kinds: new Set(), // empty set = no filter
@@ -324,12 +325,18 @@ function renderBoard() {
 }
 
 function renderTree() {
+  clearHoverLines(); // the rebuild wipes the overlay; drop the stale row cache too
   const filters = state.treeFilters;
+  const order = state.treeOrder; // 'parents' | 'deps'
   $('#tree-filters').innerHTML =
     `<span class="chip-group">${statusChips('tree', filters.statuses)}</span>` +
     `<span class="chip-group">${kindChips('tree', filters.kinds)}</span>` +
     `<span class="chip-group">${typeChips('tree', filters.types)}</span>` +
-    `<span class="chip-group"><button class="chip${filters.showDeps ? ' active' : ''}" data-scope="tree" data-toggle="deps">show dependencies</button></span>`;
+    `<span class="chip-group"><button class="chip${filters.showDeps ? ' active' : ''}" data-scope="tree" data-toggle="deps">show dependencies</button></span>` +
+    `<label>nest by: <select id="tree-order" title="parent → child nests the hierarchy; blocker → blocked nests each task under what it waits on, with the most blocking tasks at the top">
+      <option value="parents"${order === 'parents' ? ' selected' : ''}>parent → child</option>
+      <option value="deps"${order === 'deps' ? ' selected' : ''}>blocker → blocked</option>
+    </select></label>`;
 
   const matches = (t) =>
     filters.statuses.has(t.status) &&
@@ -339,18 +346,27 @@ function renderTree() {
   for (const task of state.data.tasks) {
     if (!matches(task)) continue;
     visible.add(task.id);
-    for (const a of ancestorsOf(task.id)) visible.add(a.id);
+    // Hierarchy context: ancestors of a match stay visible. Dependency
+    // order has no such need — the nesting is the relationship itself.
+    if (order === 'parents') for (const a of ancestorsOf(task.id)) visible.add(a.id);
   }
 
-  const nodeHtml = (task) => {
+  // Both orders share one recursive renderer; only the child relation and
+  // the root set differ. In dependency order a task nests under each of
+  // its blockers, so it can appear more than once, and the trail guards
+  // against cycles in a hand-edited store.
+  const kidsOf = order === 'parents'
+    ? (task) => childrenOf(task.id)
+    : (task) => task.blocking.map((id) => state.byId.get(id)).filter(Boolean);
+  const nodeHtml = (task, trail) => {
     if (!visible.has(task.id)) return '';
-    const children = childrenOf(task.id);
+    const children = kidsOf(task).filter((c) => visible.has(c.id) && !trail.has(c.id) && c.id !== task.id);
     const isCollapsed = state.collapsed.has(task.id);
     const twist = children.length > 0
       ? `<span class="twist" data-action="toggle" data-id="${task.id}">${isCollapsed ? '▸' : '▾'}</span>`
       : '<span class="twist"></span>';
     let progressHtml = '';
-    if (children.length > 0) {
+    if (order === 'parents' && children.length > 0) {
       const { done, total } = subtreeCounts(task.id);
       if (total > 0) {
         progressHtml = `<span class="mini-progress" title="${done}/${total} done"><div style="width:${Math.round((done / total) * 100)}%"></div></span><span class="muted" style="font-size:11px">${done}/${total}</span>`;
@@ -362,16 +378,107 @@ function renderTree() {
       <span class="name${task.status === 'done' ? ' done-name' : ''}">${esc(task.name)}</span>
       ${progressHtml}${state.treeFilters.showDeps ? badges(task) : badges({ ...task, blocked: false })}
     </div>`;
+    const nextTrail = new Set(trail).add(task.id);
     const childHtml = !isCollapsed && children.length > 0
-      ? `<div class="tree-children">${children.map(nodeHtml).join('')}</div>`
+      ? `<div class="tree-children">${children.map((c) => nodeHtml(c, nextTrail)).join('')}</div>`
       : '';
     return `<div class="tree-node">${row}${childHtml}</div>`;
   };
 
-  const roots = state.data.tasks.filter((t) => !t.parent || !state.byId.has(t.parent));
-  $('#tree-list').innerHTML =
-    roots.map(nodeHtml).join('') || '<p class="muted">No tasks match the filters.</p>';
+  const roots = order === 'parents'
+    ? state.data.tasks.filter((t) => !t.parent || !state.byId.has(t.parent))
+    : state.data.tasks.filter(
+        (t) => visible.has(t.id) && !t.blockedBy.some((id) => visible.has(id)),
+      );
+  // A cycle in a hand-edited store leaves its members rootless; render any
+  // visible task no root can reach at the top level. Reachability ignores
+  // collapse — a task hidden under a collapsed node must stay hidden.
+  const reached = new Set();
+  const reach = (task) => {
+    if (!visible.has(task.id) || reached.has(task.id)) return;
+    reached.add(task.id);
+    for (const c of kidsOf(task)) reach(c);
+  };
+  for (const t of roots) reach(t);
+  let html = roots.map((t) => nodeHtml(t, new Set())).join('');
+  for (const t of state.data.tasks) {
+    if (visible.has(t.id) && !reached.has(t.id)) {
+      reach(t);
+      html += nodeHtml(t, new Set());
+    }
+  }
+  $('#tree-list').innerHTML = html || '<p class="muted">No tasks match the filters.</p>';
   applySelection(); // this rebuild is sometimes called outside render()
+}
+
+// ---------- tree hover dependency lines ----------
+
+let hoverDepRow = null; // the tree row the current overlay was drawn for
+
+function clearHoverLines() {
+  hoverDepRow = null;
+  const svg = document.getElementById('tree-hover-svg');
+  if (svg) svg.remove();
+}
+
+/**
+ * Red curves from a hovered tree row out rightward to each task it waits
+ * on, then dimmer curves from those blockers to their own blockers, level
+ * by level, until the chain ends.
+ */
+function drawHoverLines(row) {
+  clearHoverLines();
+  hoverDepRow = row;
+  const list = $('#tree-list');
+  const listBox = list.getBoundingClientRect();
+  // A line starts and ends where a row's content finishes: the right edge
+  // of its last inline element, at the row's vertical middle.
+  const endOf = (rowEl) => {
+    const last = rowEl.lastElementChild || rowEl;
+    const rowBox = rowEl.getBoundingClientRect();
+    return {
+      x: last.getBoundingClientRect().right - listBox.left,
+      y: rowBox.top + rowBox.height / 2 - listBox.top,
+    };
+  };
+  const activeBlockersOf = (id) => {
+    const task = state.byId.get(id);
+    return (task ? task.blockedBy : []).filter((b) => {
+      const blocker = state.byId.get(b);
+      return blocker && (blocker.status === 'todo' || blocker.status === 'in-progress');
+    });
+  };
+  const paths = [];
+  const visited = new Set([row.dataset.id]);
+  let frontier = [{ id: row.dataset.id, el: row }];
+  for (let level = 1; frontier.length > 0; level += 1) {
+    const next = [];
+    const opacity = Math.max(0.9 - (level - 1) * 0.3, 0.2).toFixed(2);
+    for (const { id, el } of frontier) {
+      const from = endOf(el);
+      for (const blockerId of activeBlockersOf(id)) {
+        const target = list.querySelector(`.tree-row[data-id="${blockerId}"]`);
+        if (!target) continue; // filtered out or inside a collapsed subtree
+        const to = endOf(target);
+        // The curve bows out to the right of both endpoints; each extra
+        // line bows a little further so parallel lines stay apart.
+        const bow = Math.max(from.x, to.x) + 30 + level * 14 + paths.length * 6;
+        paths.push(
+          `<path data-level="${level}" data-from="${esc(id)}" data-to="${esc(blockerId)}" stroke-opacity="${opacity}" d="M${from.x},${from.y} C${bow},${from.y} ${bow},${to.y} ${to.x},${to.y}"/>`,
+        );
+        if (!visited.has(blockerId)) {
+          visited.add(blockerId);
+          next.push({ id: blockerId, el: target });
+        }
+      }
+    }
+    frontier = next;
+  }
+  if (paths.length === 0) return;
+  list.insertAdjacentHTML(
+    'beforeend',
+    `<svg id="tree-hover-svg" width="${list.clientWidth}" height="${list.scrollHeight}">${paths.join('')}</svg>`,
+  );
 }
 
 function renderDeps() {
@@ -874,6 +981,24 @@ function wireDrawer(task, isNew) {
 }
 
 // ---------- events ----------
+
+$('#tree-list').addEventListener('mouseover', (event) => {
+  const row = event.target.closest('.tree-row[data-id]');
+  if (!row) {
+    clearHoverLines();
+    return;
+  }
+  if (row !== hoverDepRow) drawHoverLines(row);
+});
+$('#tree-list').addEventListener('mouseleave', clearHoverLines);
+
+// The nest-by select is rebuilt with the tree filters, so delegate.
+document.addEventListener('change', (event) => {
+  if (!event.target.closest || !event.target.closest('#tree-order')) return;
+  state.treeOrder = event.target.value;
+  writePreference('planny-tree-order', state.treeOrder);
+  renderTree();
+});
 
 document.addEventListener('click', (event) => {
   // The waits-on picker closes on any click outside its wrap.
