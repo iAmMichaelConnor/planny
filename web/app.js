@@ -24,6 +24,7 @@ const state = {
   boardFilters: { kinds: new Set(), types: new Set() },
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
+  descEditing: false, // the description editor was opened deliberately; rebuilds keep it
   renderedDrawerId: null,
   descExpanded: true, // always the default on open; collapse is per-view only
 };
@@ -804,11 +805,13 @@ function renderDrawer() {
     state.renderedDrawerId = null;
     state.drawerDirty = false;
     state.descExpanded = true; // next open starts expanded again
+    state.descEditing = false;
     return;
   }
   drawer.classList.remove('hidden');
   // A background refresh must not rebuild a form the user is editing.
   if (state.selected === state.renderedDrawerId && state.drawerDirty) return;
+  if (state.selected !== state.renderedDrawerId) state.descEditing = false; // a fresh task, fresh default
   const isNew = state.selected === '__new__';
   const task = isNew
     ? { name: '', body: '', type: 'task', kind: 'ai', model: '', parent: state.newParent || '', blockedBy: [], status: 'todo' }
@@ -979,17 +982,29 @@ function wireDrawer(task, isNew) {
   if (state.descExpanded) autosizeDesc();
 
   // View renders the current text — unsaved edits included — with known
-  // ids clickable; edit hands the same text back untouched.
-  $('#desc-mode').onclick = () => {
+  // ids clickable; edit hands the same text back untouched. The chosen
+  // mode is remembered so a background rebuild cannot snap an open
+  // editor back to view.
+  const descView = $('#f-desc-view');
+  const setDescMode = (toView) => {
     const textarea = $('#f-desc');
-    const view = $('#f-desc-view');
-    const toView = view.hidden;
-    if (toView) view.innerHTML = renderMarkdown(textarea.value);
-    view.hidden = !toView;
+    if (toView) descView.innerHTML = renderMarkdown(textarea.value);
+    descView.hidden = !toView;
     textarea.hidden = toView;
     $('#desc-mode').textContent = toView ? 'edit' : 'view';
     $('#desc-toggle').hidden = toView; // collapse applies to the editor only
+    state.descEditing = !toView;
+    if (!toView && state.descExpanded) autosizeDesc();
   };
+  $('#desc-mode').onclick = () => setDescMode(descView.hidden);
+  descView.addEventListener('click', (event) => {
+    if (event.target.closest('[data-goto-task], a')) return; // links keep their job
+    if (String(window.getSelection?.() ?? '') !== '') return; // copying is not editing
+    setDescMode(false);
+    $('#f-desc').focus();
+  });
+  // Reading is the default when there is something to read.
+  setDescMode(!isNew && task.body !== '' && !state.descEditing);
 
   // "custom…" turns the kind select into a free-form input: ai and
   // operator are the conventional kinds, but the store accepts new ones.

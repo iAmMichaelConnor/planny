@@ -1367,33 +1367,56 @@ describe('drawer description view mode', () => {
     }),
   ];
 
-  it('view renders the body with clickable ids; code spans stay plain', async () => {
+  it('a task with a body opens in view mode with clickable ids; code spans stay plain', async () => {
     await serveTasks(bodies);
     (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
-    const mode = document.querySelector('#desc-mode') as HTMLElement;
-    expect(mode.textContent).toBe('view'); // editing stays the default
-    mode.click();
     const view = document.querySelector('#f-desc-view') as HTMLElement;
-    expect(view.hidden).toBe(false);
+    expect(view.hidden).toBe(false); // reading is the default
     expect((document.querySelector('#f-desc') as HTMLElement).hidden).toBe(true);
+    expect((document.querySelector('#desc-mode') as HTMLElement).textContent).toBe('edit');
     const links = view.querySelectorAll('[data-goto-task="t1"]');
     expect(links).toHaveLength(1); // the prose mention; the code span untouched
     (links[0] as HTMLElement).click();
     expect(document.querySelector('#drawer-title')!.textContent).toContain('t1');
   });
 
-  it('switching back to edit keeps an unsaved edit', async () => {
+  it('a new task and an empty body open in the editor', async () => {
+    await serveTasks(bodies);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click(); // empty body
+    expect((document.querySelector('#f-desc') as HTMLElement).hidden).toBe(false);
+    expect((document.querySelector('#f-desc-view') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('clicking plain text in the view flips to the editor', async () => {
     await serveTasks(bodies);
     (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    const view = document.querySelector('#f-desc-view') as HTMLElement;
+    view.click(); // anywhere that is not a link
+    expect((document.querySelector('#f-desc') as HTMLElement).hidden).toBe(false);
+    expect(view.hidden).toBe(true);
+  });
+
+  it('the chosen editor mode survives a background rebuild of the same task', async () => {
+    await serveTasks(bodies);
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    (document.querySelector('#f-desc-view') as HTMLElement).click(); // into edit, nothing typed
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect((document.querySelector('#f-desc') as HTMLElement).hidden).toBe(false); // still editing
+  });
+
+  it('the mode round-trip keeps an unsaved edit', async () => {
+    await serveTasks(bodies);
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    (document.querySelector('#f-desc-view') as HTMLElement).click(); // into edit
     const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
     desc.value = 'half-typed thought mentioning t1';
     desc.dispatchEvent(new Event('input', { bubbles: true }));
-    const mode = () => document.querySelector('#desc-mode') as HTMLElement;
-    mode().click(); // view renders the *current* text, unsaved edits included
+    (document.querySelector('#desc-mode') as HTMLElement).click(); // back to view
     expect((document.querySelector('#f-desc-view') as HTMLElement).textContent).toContain(
       'half-typed thought',
     );
-    mode().click(); // and edit hands the same text back
+    (document.querySelector('#f-desc-view') as HTMLElement).click(); // and in again
     const after = document.querySelector('#f-desc') as HTMLTextAreaElement;
     expect(after.hidden).toBe(false);
     expect(after.value).toBe('half-typed thought mentioning t1');
