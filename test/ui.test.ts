@@ -33,7 +33,13 @@ const sampleState = {
       body: '## Background\n\nWe need a host.\n\n## Proposal\n\nUse **Fly.io**.\n\n- cheap\n- fast',
     }),
     task('t5', { name: 'Old idea', status: 'cancelled', replacedBy: ['t1'] }),
-    task('t6', { name: 'Settled question', type: 'decision', status: 'done', body: '## Outcome\n\nDone deal.' }),
+    task('t6', {
+      name: 'Settled question',
+      type: 'decision',
+      status: 'done',
+      body: '## Outcome\n\nDone deal.',
+      resolvedAt: '2026-08-30T10:00:00.000Z',
+    }),
   ],
   progress: { done: 1, total: 5, percent: 20, byStatus: { todo: 3, 'in-progress': 1, done: 1, cancelled: 1 } },
   decisions: [{ id: 't4', blocked: false }],
@@ -947,6 +953,46 @@ const chainTasks = [
   task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
+
+describe('drawer decision outcome', () => {
+  it('a resolved decision shows its outcome rendered below the description', () => {
+    (document.querySelector('.card[data-id="t6"]') as HTMLElement).click();
+    const section = document.querySelector('#drawer-body .decision-outcome') as HTMLElement;
+    expect(section).not.toBeNull();
+    expect(section.textContent).toContain('Done deal.');
+    expect(section.textContent).toContain('resolved 2026-08-30'); // when it was decided
+    // Rendered prose, not another raw editor.
+    expect(section.querySelector('textarea')).toBeNull();
+    // It sits below the description editor.
+    const body = (document.querySelector('#drawer-body') as HTMLElement).innerHTML;
+    expect(body.indexOf('f-desc')).toBeLessThan(body.indexOf('decision-outcome'));
+  });
+
+  it('open decisions and plain tasks get no outcome section', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click(); // open decision
+    expect(document.querySelector('#drawer-body .decision-outcome')).toBeNull();
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click(); // plain task
+    expect(document.querySelector('#drawer-body .decision-outcome')).toBeNull();
+  });
+
+  it('shows everything after the last Outcome heading, including later appends', async () => {
+    await serveTasks([
+      task('t1', {
+        name: 'Settled with a record',
+        type: 'decision',
+        status: 'done',
+        body: '## Proposal\n\nUse A.\n\n## Outcome\n\nChose **B** instead.\n\nBuilt: shipped in 0.2.',
+        resolvedAt: '2026-08-30T10:00:00.000Z',
+      }),
+    ]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const section = document.querySelector('#drawer-body .decision-outcome') as HTMLElement;
+    expect(section.textContent).toContain('Chose B instead.');
+    expect(section.textContent).toContain('Built: shipped in 0.2.');
+    expect(section.textContent).not.toContain('Use A.'); // pre-outcome body stays out
+    expect(section.querySelector('strong')!.textContent).toBe('B'); // markdown is rendered
+  });
+});
 
 describe('tree hover dependency lines', () => {
   beforeEach(() => clickTab('tree'));

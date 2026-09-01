@@ -269,6 +269,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .decision-card.collapsed .badges { margin: 0; }
 .decision-card.blocked { opacity: 0.65; }
 .decision-body { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
+/* In the drawer the section already draws its own top border. */
+.decision-outcome .decision-body { border-top: none; margin-top: 0; padding-top: 0; }
 .decision-body h2 { font-size: 15px; margin: 14px 0 4px; }
 .decision-body h3 { font-size: 14px; margin: 12px 0 4px; }
 .decision-body p { margin: 6px 0; }

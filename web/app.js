@@ -660,6 +660,20 @@ function renderDecisions() {
 
 // ---------- drawer ----------
 
+/**
+ * The recorded decision: everything after the last "## Outcome" heading
+ * that `planny resolve` appended — later appends (the built record) are
+ * part of what the operator looks back on. Null when nothing is recorded.
+ */
+function outcomeOf(task) {
+  if (task.type !== 'decision' || !task.body) return null;
+  const headings = [...task.body.matchAll(/^## Outcome[ \t]*\r?\n/gm)];
+  if (headings.length === 0) return null;
+  const last = headings[headings.length - 1];
+  const text = task.body.slice(last.index + last[0].length).trim();
+  return text === '' ? null : text;
+}
+
 function renderDrawer() {
   applySelection(); // the views are already rendered whenever the drawer is
   const drawer = $('#drawer');
@@ -739,6 +753,14 @@ function renderDrawer() {
       </div>`
     : '';
 
+  const outcome = isNew ? null : outcomeOf(task);
+  const outcomeSection = outcome !== null
+    ? `<div class="drawer-section decision-outcome">
+        <label>outcome${task.resolvedAt ? ` — resolved ${esc(task.resolvedAt.slice(0, 10))}` : ''}</label>
+        <div class="decision-body">${renderMarkdown(outcome)}</div>
+      </div>`
+    : '';
+
   const prioritySection = isNew
     ? `<label>priority</label>
        <select id="f-priority"><option value="bottom">bottom of list</option><option value="top">top of list</option></select>`
@@ -756,7 +778,7 @@ function renderDrawer() {
       <button id="desc-toggle" type="button" class="mini" tabindex="-1">${state.descExpanded ? 'collapse' : 'expand'}</button>
     </label>
     <textarea id="f-desc" class="desc-area${state.descExpanded ? ' expanded' : ''}">${esc(task.body)}</textarea>
-    ${resolveSection}
+    ${resolveSection}${outcomeSection}
     <div class="row">
       <div><label>type</label><select id="f-type">
         <option value="task"${task.type === 'task' ? ' selected' : ''}>task</option>
