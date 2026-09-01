@@ -639,6 +639,55 @@ describe('init inside an existing store', () => {
   });
 });
 
+describe('catchup output shape', () => {
+  // The delta is consumed once; if a reader truncates it anyway, the
+  // resolutions — the part that changes what an agent does next — must
+  // be the last thing a truncation loses.
+  beforeEach(async () => {
+    await seedTrio();
+    await run('add', 'Pick a colour', '--type', 'decision');
+    await run('done', 't1');
+    await run('resolve', 't4', '--response', 'blue');
+    out = [];
+  });
+
+  it('--json puts resolved before changed', async () => {
+    expect(await run('catchup', '--as', 'reader', '--json')).toBe(0);
+    const text = allOut();
+    expect(text.indexOf('"resolved"')).toBeGreaterThan(-1);
+    expect(text.indexOf('"resolved"')).toBeLessThan(text.indexOf('"changed"'));
+  });
+
+  it('text output prints resolutions before the changed list', async () => {
+    expect(await run('catchup', '--as', 'reader2')).toBe(0);
+    const text = allOut();
+    expect(text.indexOf('resolved: t4')).toBeGreaterThan(-1);
+    expect(text.indexOf('resolved: t4')).toBeLessThan(text.indexOf('first task'));
+  });
+
+  it('--compact keeps ids, names, statuses and stamps; drops bodies and history', async () => {
+    expect(await run('catchup', '--as', 'reader3', '--compact', '--json')).toBe(0);
+    const data = JSON.parse(allOut());
+    expect(data.resolved[0]).toEqual({
+      id: 't4',
+      name: 'Pick a colour',
+      resolvedAt: expect.any(String),
+      unblocks: [],
+    });
+    const first = data.changed.find((t: { id: string }) => t.id === 't1');
+    expect(first).toEqual({
+      id: 't1',
+      name: 'first task',
+      status: 'done',
+      type: 'task',
+      kind: 'ai',
+      updated: expect.any(String),
+    });
+    expect(JSON.stringify(data)).not.toContain('"body"');
+    expect(JSON.stringify(data)).not.toContain('"history"');
+  });
+});
+
 describe('mutations name the store they acted on', () => {
   // A command run in the wrong directory writes to the wrong plan; the
   // confirmation line must make that visible at zero interaction cost.

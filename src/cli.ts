@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command, CommanderError } from 'commander';
-import { catchup } from './catchup.js';
+import { catchup, compactCatchup } from './catchup.js';
 import { buildGraph } from './graph.js';
 import {
   addTask,
@@ -539,6 +539,7 @@ Examples:
     .option('--as <id>', 'consumer id (defaults to --session / $PLANNY_SESSION)')
     .option('--peek', 'look without advancing the cursor')
     .option('--json', 'machine-readable output')
+    .option('--compact', 'with --json: ids, names, statuses and stamps only — no bodies or history')
     .addHelpText(
       'after',
       `
@@ -558,17 +559,23 @@ Examples:
       }
       const store = open();
       const result = catchup(store, consumer, { peek: options.peek });
+      // Resolutions come first in every form: the delta is consumed once,
+      // and a truncated read must lose the least important part last.
       if (options.json) {
         io.out(
           JSON.stringify(
-            {
-              ...result,
-              since: result.since ?? null, // always present: JSON drops undefined keys
-              resolved: result.resolved.map(({ task, unblocks }) => ({
-                task,
-                unblocks: unblocks.map((t) => t.id),
-              })),
-            },
+            options.compact
+              ? compactCatchup(result)
+              : {
+                  consumer: result.consumer,
+                  since: result.since ?? null, // always present: JSON drops undefined keys
+                  now: result.now,
+                  resolved: result.resolved.map(({ task, unblocks }) => ({
+                    task,
+                    unblocks: unblocks.map((t) => t.id),
+                  })),
+                  changed: result.changed,
+                },
             null,
             2,
           ),
@@ -580,15 +587,15 @@ Examples:
           ? `first catch-up for ${consumer}: full state follows`
           : `changes since ${result.since}`;
       io.out(header);
+      for (const { task, unblocks } of result.resolved) {
+        const tail = unblocks.length > 0 ? ` (unblocked ${unblocks.map((t) => t.id).join(', ')})` : '';
+        io.out(`resolved: ${task.id} ${task.name}${tail}`);
+      }
       if (result.changed.length === 0) {
         io.out('Nothing changed.');
       } else {
         const graph = buildGraph(store.loadAll());
         io.out(result.changed.map((task) => taskLabel(task, graph)).join('\n'));
-      }
-      for (const { task, unblocks } of result.resolved) {
-        const tail = unblocks.length > 0 ? ` (unblocked ${unblocks.map((t) => t.id).join(', ')})` : '';
-        io.out(`resolved: ${task.id} ${task.name}${tail}`);
       }
       if (options.peek) io.out('(peek: cursor not advanced)');
     });

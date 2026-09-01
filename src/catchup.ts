@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { withLock } from './lock.js';
 import { listTasks, resolvedDecisions, type ResolvedDecision } from './query.js';
 import type { Store } from './store.js';
-import type { Task } from './types.js';
+import type { Status, Task, TaskType } from './types.js';
 
 /**
  * Per-consumer catch-up: "everything since I last asked", then advance my
@@ -22,6 +22,44 @@ export interface CatchupResult {
   now: string;
   changed: Task[];
   resolved: ResolvedDecision[];
+}
+
+/** The delta without bodies or history: sized to be read whole. */
+export interface CompactCatchup {
+  consumer: string;
+  since: string | null;
+  now: string;
+  resolved: Array<{ id: string; name: string; resolvedAt: string | null; unblocks: string[] }>;
+  changed: Array<{
+    id: string;
+    name: string;
+    status: Status;
+    type: TaskType;
+    kind: string;
+    updated: string;
+  }>;
+}
+
+export function compactCatchup(result: CatchupResult): CompactCatchup {
+  return {
+    consumer: result.consumer,
+    since: result.since ?? null,
+    now: result.now,
+    resolved: result.resolved.map(({ task, unblocks }) => ({
+      id: task.id,
+      name: task.name,
+      resolvedAt: task.resolvedAt ?? null,
+      unblocks: unblocks.map((t) => t.id),
+    })),
+    changed: result.changed.map((task) => ({
+      id: task.id,
+      name: task.name,
+      status: task.status,
+      type: task.type,
+      kind: task.kind,
+      updated: task.updated,
+    })),
+  };
 }
 
 const CURSOR_FILE = 'cursors.json';
