@@ -115,7 +115,9 @@ think about it.
 `planny resolve` appends the answer under `## Outcome`, so resolved
 decisions double as a browsable decision log — and it creates an
 *outcome task* as the decision's child, carrying the answer as work an
-agent picks up, so a resolution cannot be lost. `--reject` closes a
+agent picks up, so a resolution cannot be lost. The outcome task takes
+the decision's own place in the queue: an urgent question makes urgent
+work. `--reject` closes a
 decision as decided-no and creates nothing.
 
 **Attribution.** `planny --session <id> <command>` — or

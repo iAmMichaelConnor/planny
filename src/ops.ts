@@ -666,6 +666,11 @@ function doResolveDecision(
   m.touch(id);
   let outcomeTask: Task | undefined;
   if (options.reject !== true) {
+    // The answer is as urgent as the question was, so the outcome task
+    // takes the decision's place in the queue instead of joining at the
+    // bottom. The decision is already done here, so it no longer counts
+    // among the active tasks the position indexes.
+    const position = m.tasks.filter((t) => isActive(t) && t.priority < task.priority).length + 1;
     // The answer becomes work the queue cannot lose: an outcome task,
     // child of the decision, carrying everything a fresh agent needs.
     outcomeTask = createTask(
@@ -675,6 +680,7 @@ function doResolveDecision(
         name: `Act on the outcome of ${id}: ${task.name}`,
         parent: id,
         blocks: dependants,
+        priority: position,
         body: outcomeTaskBody(id, task.name, background, outcomeText, dependants),
       },
       actor,

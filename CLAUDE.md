@@ -52,7 +52,8 @@ structure, so a re-parent never moves a file.
 - Cancelling a task with `--replaced-by` rewires dependants' `blocked_by` onto
   the replacement tasks.
 - Resolving a decision creates an outcome task as the decision's child,
-  rewires the decision's active dependants to wait on it, and appends
+  gives it the decision's own place in the priority order, rewires the
+  decision's active dependants to wait on it, and appends
   `Outcome task: <id>` to the decision body — all in the same locked
   mutation. `--reject` records the rejection and creates nothing.
 - Ids are never reused.

@@ -301,6 +301,33 @@ describe('resolveDecision', () => {
     expect(outcomeTask!.body).toContain('does not close them');
   });
 
+  it('the outcome task takes the decision\'s place in the queue', () => {
+    addTask(store, { name: 'first' });
+    addTask(store, { name: 'Choose db', type: 'decision' });
+    addTask(store, { name: 'third' });
+    addTask(store, { name: 'fourth' });
+    const { outcomeTask } = resolveDecision(store, 't2', 'files');
+    // The answer is as urgent as the question was: the outcome task
+    // stands where the decision stood, not at the bottom of the queue.
+    expect(activeOrder()).toEqual(['t1', outcomeTask!.id, 't3', 't4']);
+  });
+
+  it('an outcome task from the top decision starts at the top', () => {
+    addTask(store, { name: 'Choose db', type: 'decision' });
+    addTask(store, { name: 'second' });
+    const { outcomeTask } = resolveDecision(store, 't1', 'files');
+    expect(activeOrder()).toEqual([outcomeTask!.id, 't2']);
+  });
+
+  it('the outcome task still ranks above the work it unblocks', () => {
+    addTask(store, { name: 'gated work' });
+    addTask(store, { name: 'Choose db', type: 'decision', blocks: ['t1'] });
+    const { outcomeTask } = resolveDecision(store, 't2', 'files');
+    // t1 ranks below the decision already; inheriting the rank must not
+    // put the outcome task under the task waiting on it.
+    expect(activeOrder()).toEqual([outcomeTask!.id, 't1']);
+  });
+
   it('reject closes the decision without creating any task', () => {
     addTask(store, { name: 'Choose db', type: 'decision' });
     const before = store.loadAll().length;

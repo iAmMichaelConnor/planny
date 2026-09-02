@@ -778,7 +778,8 @@ Examples:
       `
 The answer is appended to the task under "## Outcome", the decision is
 marked done, and an outcome task is created as the decision's child —
-the answer as work an agent picks up. --reject closes the decision as
+the answer as work an agent picks up, at the decision's own place in the
+priority order. --reject closes the decision as
 decided-no and creates nothing (--response adds the reason). Afterwards,
 enrich the record with what was built:
 planny update <id> --append-desc "Consequences: … Files: … How to test: …"

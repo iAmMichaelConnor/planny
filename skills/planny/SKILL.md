@@ -257,7 +257,8 @@ with one open question inside it. The commands and layout live in
   `--reject` closes a decision as decided-no and creates nothing).
 - A resolution creates an **outcome task**: a child of the decision
   carrying the answer and the decision text — the answer cannot be lost
-  while that task is open. Tasks that waited on the decision are rewired
+  while that task is open. It takes the decision's own place in the
+  priority order, so an urgent question yields urgent work. Tasks that waited on the decision are rewired
   to wait on the outcome task, so work that waited on the decision
   keeps waiting until the answer is interpreted. **Work it like any task**: update or cancel the
   rewired tasks to match the outcome, and create the follow-on tasks it
