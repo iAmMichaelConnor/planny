@@ -2168,17 +2168,69 @@ describe('parked work on the board', () => {
     expect(document.querySelector('#drawer-body')!.textContent).toMatch(/of 2 open tasks/);
   });
 
-  it('shows the wake note in the drawer, and hides it on live work', async () => {
+  const noteBox = () => document.querySelector('#f-parked-until') as HTMLInputElement | null;
+
+  async function openParked(parkedUntil?: string): Promise<void> {
     await serveTasks([
-      task('t1', { status: 'parked', parkedUntil: 'the payments API ships', position: 1 }),
+      task('t1', { status: 'parked', ...(parkedUntil ? { parkedUntil } : {}), position: 1 }),
       task('t2', { position: 2 }),
     ]);
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
-    expect(document.querySelector('#drawer-body')!.textContent).toContain(
-      'the payments API ships',
-    );
+  }
+
+  it('offers the wake note as a field, and hides it on live work', async () => {
+    await openParked('the payments API ships');
+    expect(noteBox()!.value).toBe('the payments API ships');
+    expect(document.querySelector('#drawer-body')!.textContent).toContain('Nothing acts on it');
     (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    expect(noteBox()).toBeNull();
     expect(document.querySelector('#drawer-body')!.textContent).not.toContain('parked until');
+  });
+
+  it('writes a note the parking never asked for, and arms Save on the way', async () => {
+    await openParked();
+    expect(noteBox()!.value).toBe('');
+    noteBox()!.value = 'the payments API ships';
+    noteBox()!.dispatchEvent(new Event('input', { bubbles: true }));
+    expect((document.querySelector('#save-btn') as HTMLButtonElement).disabled).toBe(false);
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    const patch = fetchCalls.find((c) => c.init?.method === 'PATCH');
+    expect(JSON.parse(patch!.init!.body as string).parkedUntil).toBe('the payments API ships');
+  });
+
+  it('emptying the box and saving clears the note', async () => {
+    await openParked('the payments API ships');
+    noteBox()!.value = '';
+    noteBox()!.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    const patch = fetchCalls.find((c) => c.init?.method === 'PATCH');
+    expect(JSON.parse(patch!.init!.body as string).parkedUntil).toBeNull();
+  });
+
+  it('carries a note with a quote in it into the box unbroken', async () => {
+    await openParked('after the "big" demo');
+    expect(noteBox()!.value).toBe('after the "big" demo');
+  });
+
+  it('a background refresh leaves a half-typed note alone', async () => {
+    await openParked();
+    noteBox()!.value = 'the payments API ships';
+    noteBox()!.dispatchEvent(new Event('input', { bubbles: true }));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(noteBox()!.value).toBe('the payments API ships');
+  });
+
+  it('a live task saves nothing about a note, so ops never refuses the form', async () => {
+    await serveTasks([task('t1', { position: 1 })]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    (document.querySelector('#f-name') as HTMLInputElement).value = 'Renamed';
+    (document.querySelector('#f-name') as HTMLElement).dispatchEvent(
+      new Event('input', { bubbles: true }),
+    );
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    const patch = fetchCalls.find((c) => c.init?.method === 'PATCH');
+    expect(JSON.parse(patch!.init!.body as string)).not.toHaveProperty('parkedUntil');
   });
 
   it('parks from the drawer in one click, and offers an undo', async () => {

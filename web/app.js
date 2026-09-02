@@ -1271,10 +1271,13 @@ function renderDrawer() {
       (entry) => `${describeHistory(entry)}${entry.by ? ` by ${esc(entry.by)}` : ''}${stamp(entry.at)}`,
     ),
   ];
+  // Parking asks nothing (t288); the note is written here instead, whenever
+  // the reader has words for it. Only a parked task carries one, so the box
+  // appears with the status and the form leaves it out otherwise.
   const parkedNote = !isNew && task.status === 'parked'
-    ? `<div class="parked-note"><label>parked until</label><div>${
-        task.parkedUntil ? linkifyIds(esc(task.parkedUntil)) : '<span class="muted">no reason recorded</span>'
-      }</div></div>`
+    ? `<label for="f-parked-until">parked until</label>
+       <input id="f-parked-until" value="${esc(task.parkedUntil || '')}">
+       <p class="hint">A note for whoever picks this up. Nothing acts on it.</p>`
     : '';
 
   const relSection = isNew ? '' : `
@@ -1385,11 +1388,11 @@ function renderDrawer() {
           .join('')}
       </div>
     </div>
+    ${parkedNote}
     ${prioritySection}
     <div style="margin-top:14px"><button class="primary" id="save-btn"${isNew ? '' : ' disabled title="type a change first"'}>${isNew ? 'Create task' : 'Save changes'}</button>
       <span id="unsaved-note" class="muted" hidden>changes not saved</span></div>
     ${statusButtons}
-    ${parkedNote}
     ${relSection}`;
 
   wireDrawer(task, isNew);
@@ -1540,6 +1543,10 @@ function wireDrawer(task, isNew) {
       model: $('#f-model').value || null,
       parent: $('#f-parent').value || null,
     };
+    // The box exists only on a parked task, so a live task's save says
+    // nothing about a note and ops never has to refuse it.
+    const noteBox = $('#f-parked-until');
+    if (noteBox) fields.parkedUntil = noteBox.value.trim() || null;
     const blockedBy = parseIdList($('#f-blocked-by').value);
     if (isNew) {
       api('/api/tasks', 'POST', {

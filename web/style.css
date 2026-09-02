@@ -341,7 +341,6 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .parked-list h4 { margin: 0 0 6px; font-weight: 500; }
 .parked-row { padding: 4px 0; display: flex; align-items: center; gap: 8px; }
 .parked-row .parked-why { font-size: 12px; }
-.parked-note { margin-top: 10px; }
 .activity-list { margin: 0; padding-left: 18px; max-height: 190px; overflow-y: auto; }
 .activity-list li { margin: 2px 0; }
 .activity-list time { color: var(--muted); font-size: 12px; white-space: nowrap; }
