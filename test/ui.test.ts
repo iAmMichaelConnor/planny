@@ -1045,6 +1045,111 @@ const chainTasks = [
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
 
+describe('filtering by when something happened', () => {
+  beforeEach(bootApp);
+
+  const cards = () =>
+    [...document.querySelectorAll('#board-columns .card')].map((c) => (c as HTMLElement).dataset.id);
+  const rows = () =>
+    [...document.querySelectorAll('#tree-list .tree-row')].map((r) => (r as HTMLElement).dataset.id);
+  const setWindow = (from: string, to = '') => {
+    const fromInput = document.querySelector('#date-from') as HTMLInputElement;
+    const toInput = document.querySelector('#date-to') as HTMLInputElement;
+    fromInput.value = from;
+    toInput.value = to;
+    fromInput.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const setEvent = (value: string) => {
+    const select = document.querySelector('#date-event') as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  async function history(): Promise<void> {
+    await serveTasks([
+      task('t1', { name: 'Old and quiet', created: '2026-07-01T09:00:00.000Z', updated: '2026-07-01T09:00:00.000Z', position: 1 }),
+      task('t2', {
+        name: 'Started in the window',
+        created: '2026-08-10T09:00:00.000Z',
+        updated: '2026-08-20T09:00:00.000Z',
+        status: 'in-progress',
+        history: [{ at: '2026-08-20T09:00:00.000Z', status: 'in-progress', by: 'a' }],
+        position: 2,
+      }),
+      task('t3', {
+        name: 'Renamed in the window',
+        created: '2026-08-10T09:00:00.000Z',
+        updated: '2026-08-21T09:00:00.000Z',
+        history: [{ at: '2026-08-21T09:00:00.000Z', event: 'rename', from: 'a', to: 'b' }],
+        position: 3,
+      }),
+      task('t4', { name: 'Made in the window', created: '2026-08-22T09:00:00.000Z', updated: '2026-08-22T09:00:00.000Z', position: 4 }),
+    ]);
+  }
+
+  it('shows everything until a window is set', async () => {
+    await history();
+    expect(cards()).toHaveLength(4);
+    expect(document.querySelector('#date-from')).not.toBeNull();
+  });
+
+  it('keeps only tasks that changed inside the window', async () => {
+    await history();
+    setWindow('2026-08-19', '2026-08-21');
+    expect(cards().sort()).toEqual(['t2', 't3']);
+  });
+
+  it('an open end means no bound on that side', async () => {
+    await history();
+    setWindow('2026-08-21');
+    expect(cards().sort()).toEqual(['t3', 't4']);
+    setWindow('', '2026-08-02');
+    expect(cards().sort()).toEqual(['t1']);
+  });
+
+  it('the last day of the window counts in full', async () => {
+    await history();
+    setWindow('2026-08-22', '2026-08-22');
+    expect(cards()).toEqual(['t4']);
+  });
+
+  it('narrows to one kind of event', async () => {
+    await history();
+    setWindow('2026-08-19', '2026-08-31');
+    setEvent('created');
+    expect(cards()).toEqual(['t4']);
+    setEvent('started');
+    expect(cards()).toEqual(['t2']);
+    setEvent('renamed');
+    expect(cards()).toEqual(['t3']);
+  });
+
+  it('the same window filters the tree', async () => {
+    await history();
+    setWindow('2026-08-22', '2026-08-22');
+    clickTab('tree');
+    expect(rows()).toEqual(['t4']);
+  });
+
+  it('counts columns after the window, not before it', async () => {
+    await history();
+    setWindow('2026-08-22', '2026-08-22');
+    const header = [...document.querySelectorAll('#board-columns .column h2')].find((h) =>
+      h.textContent!.includes('To do'),
+    )!;
+    expect(header.textContent).toMatch(/\b1\b/);
+  });
+
+  it('a preset sets the window, and clear puts it back', async () => {
+    await history();
+    (document.querySelector('[data-days="7"]') as HTMLElement).click();
+    expect((document.querySelector('#date-from') as HTMLInputElement).value).not.toBe('');
+    (document.querySelector('#date-clear') as HTMLElement).click();
+    expect((document.querySelector('#date-from') as HTMLInputElement).value).toBe('');
+    expect(cards()).toHaveLength(4);
+  });
+});
+
 describe('dragging a card to a new priority', () => {
   beforeEach(bootApp);
 

@@ -22,6 +22,9 @@ const state = {
   depsStatuses: new Set(['todo', 'in-progress', 'parked']),
   // statuses is null until the operator picks columns; see boardStatuses().
   boardFilters: { kinds: new Set(), types: new Set(), statuses: readColumnPreference() },
+  // One window for both views: "what happened this week" is a question about
+  // the plan, not about the view you happen to be in.
+  dateFilter: { event: 'any', from: '', to: '' },
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
   descEditing: false, // the description editor was opened deliberately; rebuilds keep it
@@ -263,6 +266,83 @@ function typeChips(scope, activeSet) {
   return ['task', 'decision'].map((t) => chip(scope, 'type', t, t, activeSet.has(t))).join('');
 }
 
+// ---------- the date window ----------
+
+/**
+ * What each choice matches. 'any' is the union: the task was made, edited, or
+ * has a recorded action inside the window. The rest read one kind of entry
+ * from the task's own history, so no new data is needed.
+ */
+const DATE_EVENTS = [
+  ['any', 'any change'],
+  ['created', 'created'],
+  ['started', 'started'],
+  ['finished', 'finished'],
+  ['status', 'status changed'],
+  ['priority', 'priority moved'],
+  ['renamed', 'renamed'],
+  ['parent', 're-parented'],
+  ['blocked-by', 'dependencies changed'],
+];
+
+/** The times at which the chosen kind of thing happened to this task. */
+function eventTimes(task, kind) {
+  const entries = task.history || [];
+  switch (kind) {
+    case 'created':
+      return [task.created];
+    case 'started':
+      return entries.filter((e) => e.status === 'in-progress').map((e) => e.at);
+    case 'finished':
+      return entries.filter((e) => e.status === 'done').map((e) => e.at);
+    case 'status':
+      return entries.filter((e) => e.status !== undefined).map((e) => e.at);
+    case 'priority':
+    case 'renamed':
+    case 'parent':
+    case 'blocked-by':
+      return entries.filter((e) => e.event === (kind === 'renamed' ? 'rename' : kind)).map((e) => e.at);
+    default:
+      return [task.created, task.updated, ...entries.map((e) => e.at)];
+  }
+}
+
+/** True when the task passes the window. An empty end is no bound at all. */
+function inDateWindow(task) {
+  const { event, from, to } = state.dateFilter;
+  if (from === '' && to === '') return true;
+  // The window is whole days in the reader's own time zone, end included.
+  const start = from === '' ? -Infinity : new Date(`${from}T00:00:00`).getTime();
+  const end = to === '' ? Infinity : new Date(`${to}T23:59:59.999`).getTime();
+  return eventTimes(task, event).some((at) => {
+    const when = Date.parse(at);
+    return !Number.isNaN(when) && when >= start && when <= end;
+  });
+}
+
+function dateFilterHtml() {
+  const { event, from, to } = state.dateFilter;
+  const options = DATE_EVENTS.map(
+    ([value, label]) => `<option value="${value}"${value === event ? ' selected' : ''}>${label}</option>`,
+  ).join('');
+  const active = from !== '' || to !== '';
+  return `<span class="chip-group date-filter${active ? ' active' : ''}">
+    <select id="date-event" title="which kind of thing must have happened in the window">${options}</select>
+    <label>from <input type="date" id="date-from" value="${esc(from)}"></label>
+    <label>to <input type="date" id="date-to" value="${esc(to)}"></label>
+    ${[['1', 'today'], ['7', '7 days'], ['30', '30 days']]
+      .map(([days, label]) => `<button class="chip" data-days="${days}">${label}</button>`)
+      .join('')}
+    <button class="chip" id="date-clear"${active ? '' : ' disabled title="no window is set"'}>clear</button>
+  </span>`;
+}
+
+/** An ISO day (YYYY-MM-DD) in the reader's own time zone. */
+function isoDay(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
 function toggleInSet(set, value) {
   if (set.has(value)) set.delete(value);
   else set.add(value);
@@ -402,14 +482,17 @@ function renderBoard() {
   clearHoverLines(); // the rebuild wipes the overlay; drop the stale element cache too
   const f = state.boardFilters;
   const visible = (t) =>
-    (f.kinds.size === 0 || f.kinds.has(t.kind)) && (f.types.size === 0 || f.types.has(t.type));
+    (f.kinds.size === 0 || f.kinds.has(t.kind)) &&
+    (f.types.size === 0 || f.types.has(t.type)) &&
+    inDateWindow(t);
   const countOf = (status) =>
     state.data.tasks.filter((t) => t.status === status && visible(t)).length;
   const shown = boardStatuses();
   $('#board-filters').innerHTML =
     `<span class="chip-group">${statusChips('board', shown, countOf)}</span>` +
     `<span class="chip-group">${kindChips('board', f.kinds)}</span>` +
-    `<span class="chip-group">${typeChips('board', f.types)}</span>`;
+    `<span class="chip-group">${typeChips('board', f.types)}</span>` +
+    dateFilterHtml();
 
   $('#board-columns').innerHTML = BOARD_COLUMNS
     .filter(([status]) => shown.has(status))
@@ -438,6 +521,7 @@ function renderTree() {
     `<span class="chip-group">${kindChips('tree', filters.kinds)}</span>` +
     `<span class="chip-group">${typeChips('tree', filters.types)}</span>` +
     `<span class="chip-group"><button class="chip${filters.showDeps ? ' active' : ''}" data-scope="tree" data-toggle="deps">show dependencies</button></span>` +
+    dateFilterHtml() +
     `<label>nest by: <select id="tree-order" title="parent → child nests the hierarchy; blocker → blocked nests each task under what it waits on, with the most blocking tasks at the top">
       <option value="parents"${order === 'parents' ? ' selected' : ''}>parent → child</option>
       <option value="deps"${order === 'deps' ? ' selected' : ''}>blocker → blocked</option>
@@ -446,7 +530,8 @@ function renderTree() {
   const matches = (t) =>
     filters.statuses.has(t.status) &&
     (filters.kinds.size === 0 || filters.kinds.has(t.kind)) &&
-    (filters.types.size === 0 || filters.types.has(t.type));
+    (filters.types.size === 0 || filters.types.has(t.type)) &&
+    inDateWindow(t);
   const visible = new Set();
   for (const task of state.data.tasks) {
     if (!matches(task)) continue;
@@ -1426,10 +1511,37 @@ $('#board-columns').addEventListener('dragend', () => {
 
 // The nest-by select is rebuilt with the tree filters, so delegate.
 document.addEventListener('change', (event) => {
-  if (!event.target.closest || !event.target.closest('#tree-order')) return;
-  state.treeOrder = event.target.value;
-  writePreference('planny-tree-order', state.treeOrder);
-  renderTree();
+  const el = event.target.closest?.('#tree-order, #date-event, #date-from, #date-to');
+  if (!el) return;
+  if (el.id === 'tree-order') {
+    state.treeOrder = el.value;
+    writePreference('planny-tree-order', state.treeOrder);
+    renderTree();
+    return;
+  }
+  // Both filter bars carry the same controls; read whichever pair is on screen.
+  state.dateFilter = {
+    event: $('#date-event').value,
+    from: $('#date-from').value,
+    to: $('#date-to').value,
+  };
+  render();
+});
+
+document.addEventListener('click', (event) => {
+  const preset = event.target.closest?.('[data-days]');
+  if (preset) {
+    const days = Number(preset.dataset.days);
+    const from = new Date();
+    from.setDate(from.getDate() - (days - 1));
+    state.dateFilter = { ...state.dateFilter, from: isoDay(from), to: isoDay(new Date()) };
+    render();
+    return;
+  }
+  if (event.target.closest?.('#date-clear')) {
+    state.dateFilter = { ...state.dateFilter, from: '', to: '' };
+    render();
+  }
 });
 
 document.addEventListener('click', (event) => {
