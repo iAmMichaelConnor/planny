@@ -243,10 +243,11 @@ planny add "Choose the database" --type decision --kind operator \
 Write the body using the section layout in
 [references/decision-format.md](references/decision-format.md) — read it
 before writing your first decision. planny warns when the body has no
-Background, no Proposal and no Needed from you; the task is still
-written, so answer the warning by rewriting the body. Blocked work gets `--blocked-by` pointing
-at the decision, so the queue shows what each answer unlocks. After a
-resolution, dependants wait on the outcome task instead.
+Background, no Proposal and no Needed from you; the task is still written,
+so answer the warning by rewriting the body. Blocked work gets
+`--blocked-by` pointing at the decision, so the queue shows what each
+answer unlocks. After a resolution, dependants wait on the outcome task
+instead.
 
 **New ideas, which carry doubts, become a decision task first.** When you are unsure an
 approach is right, when you have flagged risk or downsides, or when
@@ -275,11 +276,12 @@ with one open question inside it. The commands and layout live in
 - A resolution creates an **outcome task**: a child of the decision
   carrying the answer and the decision text — the answer cannot be lost
   while that task is open. It takes the decision's own place in the
-  priority order, so an urgent question yields urgent work. Tasks that waited on the decision are rewired
-  to wait on the outcome task, so work that waited on the decision
-  keeps waiting until the answer is interpreted. **Work it like any task**: update or cancel the
-  rewired tasks to match the outcome, and create the follow-on tasks it
-  calls for, each citing the decision in its body ("Decided in t150").
+  priority order, so an urgent question yields urgent work. Tasks that
+  waited on the decision are rewired to wait on the outcome task, so work
+  that waited on the decision keeps waiting until the answer is
+  interpreted. **Work it like any task**: update or cancel the rewired
+  tasks to match the outcome, and create the follow-on tasks it calls for,
+  each citing the decision in its body ("Decided in t150").
   Before you mark the outcome task done, append a record that starts
   `Subsequent actions:` and says what you did with the answer — the
   tasks you spawned and what each covers, or why no work was needed.
