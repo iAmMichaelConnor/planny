@@ -53,9 +53,9 @@ later: what the decision was, why, what was built, where to look (file
 paths), tests written, how to test, where it runs — where applicable.
 
 ```bash
-planny update t12 --append-desc "Consequences: the export module shipped. Files:
-src/render.ts, test/render.test.ts. Test: npm test. Runs in: the CLI
-(planny export)."
+planny update t12 --append-desc "Consequences: the export module shipped.
+Files: src/render.ts. Tests: test/render.test.ts. How to test: npm test.
+Runs at: the CLI (planny export)."
 ```
 
 ## Example

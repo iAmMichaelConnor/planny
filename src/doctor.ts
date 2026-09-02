@@ -4,7 +4,7 @@ import { buildGraph } from './graph.js';
 import { withLock } from './lock.js';
 import { viableReplacements } from './ops.js';
 import { repairDependencyOrder, resequenceRanks } from './priority.js';
-import { TASK_FILE_RE, type Store } from './store.js';
+import { behindMark, TASK_FILE_RE, type Store } from './store.js';
 import { holderOf, isActive, type Task } from './types.js';
 
 /**
@@ -39,7 +39,8 @@ export type FindingCode =
   | 'cursor-in-future'
   | 'stale-lock'
   | 'merge-conflict'
-  | 'last-seen-unreadable';
+  | 'last-seen-unreadable'
+  | 'store-rewound';
 
 export interface Finding {
   code: FindingCode;
@@ -322,6 +323,27 @@ export function diagnose(store: Store): Finding[] {
       const seen = JSON.parse(readFileSync(lastSeenFile, 'utf8')) as Record<string, unknown>;
       if (typeof seen.maxId !== 'number' || typeof seen.updated !== 'string') {
         throw new Error('wrong shape');
+      }
+      // A store behind the mark was rewound (a checkout, a restore).
+      // Not fixable: restoring the store or accepting the rewind (by
+      // deleting the mark) both belong to the operator.
+      const maxNow = store
+        .listIds()
+        .reduce((acc, id) => Math.max(acc, Number(id.slice(1))), 0);
+      const newest = tasks.reduce((acc, t) => (t.updated > acc ? t.updated : acc), '');
+      const behindOnIds = maxNow < seen.maxId;
+      const behindOnTime = tasks.length > 0 && behindMark(newest, seen.updated as string);
+      if (behindOnIds || behindOnTime) {
+        const detail = behindOnIds
+          ? `highest task id t${maxNow}, but t${seen.maxId} was minted here`
+          : `newest update ${newest}, but ${seen.updated} was written here`;
+        add(
+          'store-rewound',
+          'warning',
+          false,
+          lastSeenFile,
+          `the store is behind what this machine last wrote (${detail}) — a git checkout or restore probably rewound the plan. Find the newer snapshot with \`git log --all --oneline -- .planny\` and bring it back with \`git checkout <commit> -- .planny\`. A newer state that was never committed cannot be restored: delete last-seen.json to accept the rewind. This choice belongs to the operator — an agent that sees this must stop and report it, not decide it`,
+        );
       }
     } catch {
       add(
