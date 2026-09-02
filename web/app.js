@@ -365,7 +365,10 @@ function cardHtml(task, position) {
   const pos = position !== undefined
     ? `<span class="pos" title="priority position among active tasks">#${position}</span>`
     : '';
-  return `<div class="${classes.join(' ')}" data-id="${task.id}">
+  // Only ranked work can be dragged: done and cancelled tasks hold no
+  // position to move them to.
+  const drag = isActiveStatus(task.status) ? ' draggable="true"' : '';
+  return `<div class="${classes.join(' ')}" data-id="${task.id}"${drag}>
     <span class="id">${task.id}</span><span class="name">${linkifyIds(esc(task.name))}</span>
     <div class="badges">${badges(task)}</div>
     <div class="quick">${quick.join('')}</div>${pos}
@@ -1335,6 +1338,91 @@ function wireHoverLines(container, itemClass, edgeFactory) {
 }
 wireHoverLines($('#tree-list'), 'tree-row', treeEdge);
 wireHoverLines($('#board-columns'), 'card', boardEdge);
+
+// ---------- dragging a card to a new priority ----------
+
+/**
+ * Reordering by hand, inside one column. A drop across columns would mean a
+ * status change as well as a move, so it is refused: the status buttons do
+ * that, one act at a time.
+ *
+ * The move goes through the same bump the buttons use, so the dependency
+ * rules hold. A drop that dependencies will not allow lands at the nearest
+ * legal position, and ops explains the difference in a warning.
+ */
+let dragged = null;
+
+function clearDropMarks() {
+  for (const el of document.querySelectorAll('.drop-above, .drop-below')) {
+    el.classList.remove('drop-above', 'drop-below');
+  }
+}
+
+/** True while the pointer sits in the top half of the card it is over. */
+function dropsAbove(el, clientY) {
+  const rect = el.getBoundingClientRect();
+  return clientY < rect.top + rect.height / 2;
+}
+
+/** The card being hovered, when it can accept the card being dragged. */
+function dropTarget(event) {
+  if (dragged === null) return null;
+  const el = event.target.closest?.('.card[data-id]');
+  if (!el) return null;
+  const over = state.byId.get(el.dataset.id);
+  const moving = state.byId.get(dragged);
+  if (!over || !moving || over.status !== moving.status) return null;
+  return { el, over, moving };
+}
+
+$('#board-columns').addEventListener('dragstart', (event) => {
+  const el = event.target.closest?.('.card[draggable]');
+  if (!el) return;
+  dragged = el.dataset.id;
+  el.classList.add('dragging');
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    // Firefox starts no drag without payload; the id itself lives in `dragged`.
+    event.dataTransfer.setData('text/plain', dragged);
+  }
+});
+
+$('#board-columns').addEventListener('dragover', (event) => {
+  const target = dropTarget(event);
+  if (target === null) return;
+  event.preventDefault(); // this is a place the card may land
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  clearDropMarks();
+  target.el.classList.add(dropsAbove(target.el, event.clientY) ? 'drop-above' : 'drop-below');
+});
+
+$('#board-columns').addEventListener('drop', (event) => {
+  const target = dropTarget(event);
+  clearDropMarks();
+  if (target === null) return;
+  event.preventDefault();
+  const { over, moving } = target;
+  const before = dropsAbove(target.el, event.clientY);
+  const id = moving.id;
+  dragged = null;
+  // bump takes a 1-based position among the other active tasks, so count
+  // the order with the moving card already lifted out of it.
+  const others = activeTasks()
+    .filter((t) => t.id !== id)
+    .sort((a, b) => a.position - b.position);
+  const index = others.findIndex((t) => t.id === over.id);
+  if (index === -1) return;
+  const position = before ? index + 1 : index + 2;
+  if (position === moving.position) return; // it landed where it started
+  if (!guard(`Move ${id} to position ${position} in the priority order?`)) return;
+  api(`/api/tasks/${id}/bump`, 'POST', { target: position });
+});
+
+$('#board-columns').addEventListener('dragend', () => {
+  dragged = null;
+  clearDropMarks();
+  for (const el of document.querySelectorAll('.card.dragging')) el.classList.remove('dragging');
+});
 
 // The nest-by select is rebuilt with the tree filters, so delegate.
 document.addEventListener('change', (event) => {

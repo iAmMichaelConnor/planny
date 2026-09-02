@@ -1045,6 +1045,137 @@ const chainTasks = [
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
 
+describe('dragging a card to a new priority', () => {
+  beforeEach(bootApp);
+
+  /** jsdom gives every element a zero-sized rect; drop side needs a real one. */
+  function stubRect(el: Element, top: number, height = 40): void {
+    el.getBoundingClientRect = () =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top }) as DOMRect;
+  }
+
+  function card(id: string): HTMLElement {
+    return document.querySelector(`.card[data-id="${id}"]`) as HTMLElement;
+  }
+
+  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+
+  function drag(type: string, el: Element, clientY = 0): Event {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY });
+    Object.defineProperty(event, 'dataTransfer', { value: transfer });
+    el.dispatchEvent(event);
+    return event;
+  }
+
+  async function threeTodos(): Promise<void> {
+    await serveTasks([
+      task('t1', { name: 'First', position: 1 }),
+      task('t2', { name: 'Second', position: 2 }),
+      task('t3', { name: 'Third', position: 3 }),
+    ]);
+    for (const [i, id] of ['t1', 't2', 't3'].entries()) stubRect(card(id), i * 40);
+  }
+
+  it('marks active cards draggable and finished ones not', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'in-progress', position: 2 }),
+      task('t3', { status: 'parked', position: 3 }),
+      task('t4', { status: 'done' }),
+      task('t5', { status: 'cancelled' }),
+    ]);
+    for (const id of ['t1', 't2', 't3']) expect(card(id).draggable, id).toBe(true);
+    for (const id of ['t4', 't5']) expect(card(id).draggable, id).toBe(false);
+  });
+
+  it('drops above a card and asks for that card\'s position', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await threeTodos();
+    drag('dragstart', card('t3'));
+    drag('dragover', card('t1'), 5); // top half of t1: insert above it
+    drag('drop', card('t1'), 5);
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t3/bump');
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ target: 1 });
+  });
+
+  it('drops below a card and asks for the next position along', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await threeTodos();
+    drag('dragstart', card('t3'));
+    drag('dragover', card('t1'), 35); // bottom half of t1: insert below it
+    drag('drop', card('t1'), 35);
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t3/bump');
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ target: 2 });
+  });
+
+  it('counts positions after the dragged card leaves the order', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await threeTodos();
+    // t3 sits at 80..120, so 110 is its bottom half: drop below it.
+    drag('dragstart', card('t1')); // t1 leaves the order, so the count shifts
+    drag('dragover', card('t3'), 110);
+    drag('drop', card('t3'), 110);
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/bump');
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ target: 3 });
+  });
+
+  it('lands a card between two others, counting from the lifted order', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await threeTodos();
+    drag('dragstart', card('t1'));
+    drag('dragover', card('t3'), 85); // t3's top half: land between t2 and t3
+    drag('drop', card('t3'), 85);
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/bump');
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ target: 2 });
+  });
+
+  it('shows where the card would land while it hovers', async () => {
+    await threeTodos();
+    drag('dragstart', card('t3'));
+    drag('dragover', card('t1'), 5);
+    expect(card('t1').classList.contains('drop-above')).toBe(true);
+    drag('dragover', card('t1'), 35);
+    expect(card('t1').classList.contains('drop-above')).toBe(false);
+    expect(card('t1').classList.contains('drop-below')).toBe(true);
+    drag('dragend', card('t3'));
+    expect(document.querySelector('.drop-above, .drop-below')).toBeNull();
+  });
+
+  it('refuses a drop into another column: that would be a status change', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'in-progress', position: 2 }),
+    ]);
+    stubRect(card('t1'), 0);
+    stubRect(card('t2'), 0);
+    drag('dragstart', card('t1'));
+    const over = drag('dragover', card('t2'), 5);
+    expect(over.defaultPrevented).toBe(false); // no drop target, so no line drawn
+    expect(card('t2').classList.contains('drop-above')).toBe(false);
+    drag('drop', card('t2'), 5);
+    expect(fetchCalls.some((c) => c.path.includes('/bump'))).toBe(false);
+  });
+
+  it('does nothing when a card lands back where it started', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await threeTodos();
+    drag('dragstart', card('t2'));
+    drag('dragover', card('t2'), 45);
+    drag('drop', card('t2'), 45);
+    expect(fetchCalls.some((c) => c.path.includes('/bump'))).toBe(false);
+  });
+
+  it('asks before it moves anything, and a refusal posts nothing', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    await threeTodos();
+    drag('dragstart', card('t3'));
+    drag('dragover', card('t1'), 5);
+    drag('drop', card('t1'), 5);
+    expect(fetchCalls.some((c) => c.path.includes('/bump'))).toBe(false);
+  });
+});
+
 describe('board columns: counts and toggles', () => {
   beforeEach(bootApp);
 
