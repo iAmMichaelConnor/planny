@@ -175,7 +175,9 @@ skip. Filter chips slice every view by status, kind and type. The edit
 drawer covers every CLI action, docks to either side or the bottom, and
 resizes. The server watches the store and pushes events to open tabs, so
 CLI edits appear without a reload; refreshes never clobber a half-typed
-form. One status colour code runs through every view. The UI is three
+form. A refresh nobody asked for waits while you are typing and lands
+when you step out of the box, the panel comes back scrolled where you
+left it, and leaving unsaved words behind asks first. One status colour code runs through every view. The UI is three
 static files (`web/`), no framework, no build step.
 
 From inside an agent session, start the server with `planny serve

@@ -764,6 +764,8 @@ describe('ui smoke', () => {
     const box = () => document.querySelector('#f-resolution') as HTMLTextAreaElement;
     box().value = 'leaning towards Fly';
     box().dispatchEvent(new Event('input', { bubbles: true }));
+    // Leaving a half-typed answer asks first (t298); this reader means it.
+    vi.stubGlobal('confirm', vi.fn(() => true));
     (document.querySelector('#drawer-close') as HTMLElement).click();
     (document.querySelector('.card[data-id="t6"]') as HTMLElement).click(); // another decision
     expect(document.querySelector('#f-resolution')).toBeNull(); // t6 is answered already
@@ -786,6 +788,7 @@ describe('ui smoke', () => {
     (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
     box().value = 'leaning towards Fly';
     box().dispatchEvent(new Event('input', { bubbles: true }));
+    vi.stubGlobal('confirm', vi.fn(() => true)); // the guard asks; this reader means it
     (document.querySelector('.card[data-id="t7"]') as HTMLElement).click();
     expect(document.querySelector('#drawer-title')!.textContent).toContain('t7');
     expect(box().value).toBe('');
@@ -3294,5 +3297,185 @@ describe('how old a question is', () => {
     const card = document.querySelector('#view-decisions .decision-card[data-id="t4"]')!;
     expect(card.classList.contains('collapsed')).toBe(true);
     expect(card.contains(when)).toBe(true);
+  });
+});
+
+describe('a rebuild waits for the reader to finish typing', () => {
+  /** A tag the next rebuild would wipe: it proves the element survived. */
+  function tag(el: Element): void {
+    (el as HTMLElement).dataset.probe = 'kept';
+  }
+
+  const rebuilt = (el: Element | null): boolean => (el as HTMLElement).dataset.probe !== 'kept';
+
+  async function backgroundChange(): Promise<void> {
+    FakeEventSource.instances[0]!.onmessage!({ data: 'changed' } as MessageEvent);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  it('an answer half-typed in the drawer holds the rebuild off', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const box = () => document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    box().focus();
+    box().value = 'leaning towards Fly';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    tag(box());
+    await backgroundChange();
+    expect(rebuilt(box())).toBe(false); // the ground did not move under them
+  });
+
+  it('an answer half-typed on the decisions tab holds it off too', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const box = () =>
+      document.querySelector('#view-decisions textarea[data-role="response"]') as HTMLTextAreaElement;
+    box().focus();
+    box().value = 'Fly.io';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    tag(box());
+    await backgroundChange();
+    expect(rebuilt(box())).toBe(false);
+  });
+
+  it('the held change lands as soon as the reader steps out of the box', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const box = document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    box.focus();
+    box.value = 'leaning towards Fly';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    servedState = {
+      ...sampleState,
+      tasks: sampleState.tasks.map((t) => (t.id === 't1' ? { ...t, name: 'Build the API v2' } : t)),
+    };
+    await backgroundChange();
+    expect(document.querySelector('.card[data-id="t1"]')!.textContent).toContain('Build the API');
+    expect(document.querySelector('.card[data-id="t1"]')!.textContent).not.toContain('v2');
+    box.blur();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(document.querySelector('.card[data-id="t1"]')!.textContent).toContain('v2');
+  });
+
+  it('a reader who is only reading still gets the change at once', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    tag(document.querySelector('#f-resolution')!);
+    await backgroundChange();
+    expect(rebuilt(document.querySelector('#f-resolution'))).toBe(true);
+  });
+
+  it('the search box never holds the board back', async () => {
+    const search = document.querySelector('#search') as HTMLInputElement;
+    search.focus();
+    search.value = 'api';
+    tag(document.querySelector('.card[data-id="t1"]')!);
+    await backgroundChange();
+    expect(rebuilt(document.querySelector('.card[data-id="t1"]'))).toBe(true);
+  });
+
+  it('the drawer keeps the reader where they were scrolled to', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const body = () => document.querySelector('#drawer-body') as HTMLElement;
+    body().scrollTop = 240;
+    body().dispatchEvent(new Event('scroll'));
+    // A real browser clamps the pane to the top the moment a rebuild empties
+    // it; jsdom has no layout, so the test does the clamping itself.
+    body().scrollTop = 0;
+    await backgroundChange();
+    expect(body().scrollTop).toBe(240); // the reader keeps their place
+  });
+
+  it('opening another task starts at the top of the pane', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const body = () => document.querySelector('#drawer-body') as HTMLElement;
+    body().scrollTop = 240;
+    body().dispatchEvent(new Event('scroll'));
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    expect(body().scrollTop).toBe(0); // a different task, a fresh read
+  });
+});
+
+describe('nothing typed is thrown away without a question', () => {
+  const drawerTitle = () => document.querySelector('#drawer-title')!.textContent!;
+
+  function typeAnswer(text: string): void {
+    const box = document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    box.focus();
+    box.value = text;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function typeEdit(text: string): void {
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = text;
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  it('opening another task asks first, and stays put when the answer is no', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    typeAnswer('leaning towards Fly');
+    const asked = vi.fn(() => false);
+    vi.stubGlobal('confirm', asked);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(asked).toHaveBeenCalled();
+    expect(drawerTitle()).toContain('t4');
+    expect((document.querySelector('#f-resolution') as HTMLTextAreaElement).value).toBe(
+      'leaning towards Fly',
+    );
+  });
+
+  it('saying yes moves on to the other task', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    typeAnswer('leaning towards Fly');
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(drawerTitle()).toContain('t1');
+  });
+
+  it('the close button asks about a half-typed answer', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    typeAnswer('leaning towards Fly');
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    (document.querySelector('#drawer-close') as HTMLElement).click();
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('Escape asks about an unsaved edit', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    typeEdit('precious edit');
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('a panel with nothing typed in it never asks', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const asked = vi.fn(() => true);
+    vi.stubGlobal('confirm', asked);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    (document.querySelector('#drawer-close') as HTMLElement).click();
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  it('a half-written new task is not thrown away either', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    (document.querySelector('#add-note-continue') as HTMLElement).click();
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'A thought I had';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    const asked = vi.fn(() => false);
+    vi.stubGlobal('confirm', asked);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(asked).toHaveBeenCalled();
+    expect((document.querySelector('#f-name') as HTMLInputElement).value).toBe('A thought I had');
+  });
+
+  it('the task already open asks nothing when it is opened again', () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    typeAnswer('leaning towards Fly');
+    const asked = vi.fn(() => true);
+    vi.stubGlobal('confirm', asked);
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    expect(asked).not.toHaveBeenCalled();
+    expect(drawerTitle()).toContain('t4');
   });
 });

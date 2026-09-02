@@ -36,6 +36,8 @@ const state = {
   descEditing: false, // the description editor was opened deliberately; rebuilds keep it
   renderedDrawerId: null,
   descExpanded: true, // always the default on open; collapse is per-view only
+  heldRefresh: false, // a background change waiting for the reader to stop typing
+  drawerScroll: null, // {id, top}: where the reader had scrolled the panel to
 };
 
 /** An edit happened in the drawer: enable Save and show the reminder. */
@@ -93,6 +95,20 @@ function keepTyped(root, selector, { onlyFocused = false } = {}) {
 }
 
 /**
+ * The panes a reader composes work in. A rebuild of one of these takes the
+ * ground out from under them: the pane scrolls back to the top and their
+ * place in a long question is gone.
+ */
+const COMPOSING_PANES = '#drawer-body, #view-decisions';
+
+/** Is the reader in the middle of filling a box in? */
+function isComposing() {
+  const el = document.activeElement;
+  if (el === null || (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT')) return false;
+  return el.closest(COMPOSING_PANES) !== null;
+}
+
+/**
  * Guardrail for a change that cannot be taken back. Reserved for cancelling
  * and rejecting: both rewire or close other work, so neither has an inverse
  * a single request can post. Everything else acts at once and offers an undo
@@ -100,6 +116,44 @@ function keepTyped(root, selector, { onlyFocused = false } = {}) {
  */
 function guard(question) {
   return confirm(question);
+}
+
+/**
+ * Work in the panel the store has not got yet: unsaved form edits, or an
+ * answer typed into the resolve box — which never arms Save by design, and
+ * so would otherwise go without a word.
+ */
+function drawerHasUnsaved() {
+  if (state.selected === null) return false;
+  if (state.drawerDirty) return true;
+  const answer = $('#f-resolution');
+  return answer !== null && answer.value.trim() !== '';
+}
+
+/** Ask before a move that would throw the panel's unsaved work away. */
+function leaveDrawer() {
+  if (!drawerHasUnsaved()) return true;
+  return confirm('Discard what you typed in the panel? It is not saved yet.');
+}
+
+/**
+ * Show a task in the panel. Every way in comes through here — a card, a
+ * link, the search, the keyboard — so the question about unsaved work is
+ * asked once, in one place. Returns false when the reader said no.
+ */
+function openTask(id) {
+  if (id !== state.selected && !leaveDrawer()) return false;
+  state.selected = id;
+  renderDrawer();
+  return true;
+}
+
+/** Close the panel, asking first when it holds unsaved work. */
+function closeDrawer() {
+  if (!leaveDrawer()) return false;
+  state.selected = null;
+  renderDrawer();
+  return true;
 }
 
 // ---------- acting, and taking it back ----------
@@ -257,7 +311,12 @@ window.addEventListener('popstate', () => {
   renderDrawer();
 });
 
-async function refresh() {
+/**
+ * Read the store and redraw. A `background` refresh is one nobody asked
+ * for — the event stream, a returning tab — so it waits while the reader is
+ * typing; a refresh that follows the reader's own action always draws.
+ */
+async function refresh({ background = false } = {}) {
   const res = await fetch('/api/state');
   state.data = await res.json();
   state.byId = new Map(state.data.tasks.map((t) => [t.id, t]));
@@ -273,6 +332,18 @@ async function refresh() {
     urlApplied = true;
     applyUrl();
   }
+  // The new state is held, never dropped: it lands the moment the reader
+  // steps out of the box, and any action of their own draws it sooner.
+  if (background && isComposing()) {
+    state.heldRefresh = true;
+    return;
+  }
+  drawNow();
+}
+
+/** Draw the state the page holds, and forget any refresh waiting on it. */
+function drawNow() {
+  state.heldRefresh = false;
   render();
   renderDrawer();
 }
@@ -1441,6 +1512,13 @@ function renderDrawer() {
   restoreTyped(); // after wiring, so the restored input event finds its listeners
   state.renderedDrawerId = state.selected;
   state.drawerDirty = false;
+  // A rebuild empties the panel, and the browser clamps it to the top. Put
+  // the reader back where they were reading — but only in the same task; a
+  // different task is a fresh read.
+  $('#drawer-body').scrollTop =
+    state.drawerScroll !== null && state.drawerScroll.id === state.selected
+      ? state.drawerScroll.top
+      : 0;
   if (opening) {
     // Remember where the reader came from before moving them into the panel.
     // A refresh must not do this, or it would steal the focus mid-edit.
@@ -1748,10 +1826,7 @@ function wireDrawer(task, isNew) {
       };
     }
     for (const li of body.querySelectorAll('[data-goto]')) {
-      li.onclick = () => {
-        state.selected = li.dataset.goto;
-        renderDrawer();
-      };
+      li.onclick = () => openTask(li.dataset.goto);
     }
   }
 }
@@ -1820,10 +1895,7 @@ document.addEventListener('keydown', (event) => {
       hideSearchResults();
       return;
     }
-    if (state.selected !== null) {
-      state.selected = null;
-      renderDrawer();
-    }
+    if (state.selected !== null) closeDrawer();
     return;
   }
   if (typing(event.target)) return;
@@ -1856,8 +1928,7 @@ document.addEventListener('keydown', (event) => {
     const el = event.target.closest('[data-id]');
     if (el) {
       event.preventDefault();
-      state.selected = el.dataset.id;
-      renderDrawer();
+      openTask(el.dataset.id);
     }
   }
 });
@@ -2086,8 +2157,7 @@ document.addEventListener('click', (event) => {
   const chipLink = event.target.closest('[data-goto-task]');
   if (chipLink) {
     event.stopPropagation();
-    state.selected = chipLink.dataset.gotoTask;
-    renderDrawer();
+    openTask(chipLink.dataset.gotoTask);
     return;
   }
 
@@ -2189,8 +2259,7 @@ document.addEventListener('click', (event) => {
 
   const opener = event.target.closest('.card[data-id], .tree-row[data-id], .dep-node[data-id]');
   if (opener) {
-    state.selected = opener.dataset.id;
-    renderDrawer();
+    openTask(opener.dataset.id);
     return;
   }
 
@@ -2200,9 +2269,7 @@ document.addEventListener('click', (event) => {
     !event.target.closest('#drawer') &&
     !event.target.closest('button, input, select, textarea, label, a, summary')
   ) {
-    if (state.drawerDirty && !confirm('Close the panel and discard unsaved changes?')) return;
-    state.selected = null;
-    renderDrawer();
+    closeDrawer();
   }
 });
 
@@ -2262,6 +2329,7 @@ applyDock();
 }
 
 function openNewTaskForm(parentId) {
+  if (!leaveDrawer()) return;
   $('#add-note').classList.add('hidden');
   state.newParent = typeof parentId === 'string' ? parentId : null;
   state.selected = '__new__';
@@ -2345,8 +2413,7 @@ function renderSearchResults(query) {
 
 function openSearchHit(id) {
   hideSearchResults();
-  state.selected = id;
-  renderDrawer();
+  if (!openTask(id)) return;
   const el = document.querySelector(`#view-${state.view} [data-id="${id}"]`);
   el?.scrollIntoView?.({ block: 'nearest' });
 }
@@ -2392,14 +2459,13 @@ $('#search').addEventListener('keydown', (event) => {
     return;
   }
   hideSearchResults();
-  state.selected = id;
+  if (!openTask(id)) return;
   const openDecision =
     task.type === 'decision' && isActiveStatus(task.status);
   if (state.view === 'decisions' && openDecision) {
     state.expandedDecisions.add(id);
     renderDecisions();
   }
-  renderDrawer();
   const el = document.querySelector(`#view-${state.view} [data-id="${id}"]`);
   el?.scrollIntoView?.({ block: 'nearest' });
   event.target.select(); // leave the text ready for the next search
@@ -2417,6 +2483,10 @@ $('#add-note-dismiss').onclick = () => {
   writePreference('planny-add-note-dismissed', '1');
   openNewTaskForm();
 };
+$('#drawer-body').addEventListener('scroll', () => {
+  // Where the reader is in this task, so a rebuild can put them back.
+  state.drawerScroll = { id: state.selected, top: $('#drawer-body').scrollTop };
+});
 $('#drawer-body').addEventListener('input', (event) => {
   // The resolve box is not part of the edit form: arming Save from it
   // once let Save clobber a freshly appended Outcome with the stale body.
@@ -2454,24 +2524,30 @@ window.addEventListener('resize', positionDrawer);
 if (typeof EventSource !== 'undefined') {
   // The server pushes an event whenever any task file changes (CLI edits included).
   const stream = new EventSource('/api/events');
-  stream.onmessage = () => refresh();
+  stream.onmessage = () => refresh({ background: true });
   // A (re)connect means events may have been missed — a server restart, a
   // dropped connection — so catch up immediately.
-  stream.onopen = () => refresh();
+  stream.onopen = () => refresh({ background: true });
 }
 document.addEventListener('visibilitychange', () => {
   // Background tabs get throttled and can miss events.
-  if (!document.hidden) refresh();
+  if (!document.hidden) refresh({ background: true });
 });
-$('#drawer-close').onclick = () => {
-  state.selected = null;
-  renderDrawer();
-};
+
+// The reader left the box: whatever the store changed while they typed can
+// land now. The wait lets the focus settle, because a move from one box to
+// the next is a leaving and an arriving.
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (state.heldRefresh && !isComposing()) drawNow();
+  }, 0);
+});
+$('#drawer-close').onclick = () => closeDrawer();
 $('#deps-mode').addEventListener('change', () => {
   state.depsMode = $('#deps-mode').value;
   writePreference('planny-deps-mode', state.depsMode);
   renderDeps();
 });
-window.addEventListener('focus', refresh);
+window.addEventListener('focus', () => refresh({ background: true }));
 
 refresh().catch((err) => toast(err.message, 'error'));
