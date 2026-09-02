@@ -110,10 +110,10 @@ function inverseBump(task) {
 }
 
 /** Change a task's status, and offer to change it back. */
-function setTaskStatus(task, status, extra = {}) {
+function setTaskStatus(task, status) {
   return act(
     `${task.id} → ${status}`,
-    post(`/api/tasks/${task.id}/status`, { status, ...extra }),
+    post(`/api/tasks/${task.id}/status`, { status }),
     inverseStatus(task),
   );
 }
@@ -1413,14 +1413,12 @@ function restoreDrawerFocus() {
 }
 
 /**
- * Park a task, asking for the note that should wake it. Cancel abandons the
- * park; an empty answer parks with no note ("not for now" needs no reason).
+ * Park a task. One click, like every other board action: the undo toast makes
+ * a mis-click cheap. The note that explains the parking is a field on the
+ * parked task in the drawer, written whenever the reader has words for it.
  */
 function parkTask(id) {
-  const note = prompt(`Park ${id}. What should bring it back? (optional)`);
-  if (note === null) return;
-  const task = state.byId.get(id);
-  setTaskStatus(task, 'parked', note.trim() === '' ? {} : { parkedUntil: note.trim() });
+  setTaskStatus(state.byId.get(id), 'parked');
 }
 
 /**
@@ -1930,13 +1928,7 @@ $('#board-columns').addEventListener('drop', (event) => {
  * its old position is asked for.
  */
 function moveTaskToColumn(task, status, position) {
-  const extra = {};
-  if (status === 'parked') {
-    const note = prompt(`Park ${task.id}. What should bring it back? (optional)`);
-    if (note === null) return; // the reader called the whole drop off
-    if (note.trim() !== '') extra.parkedUntil = note.trim();
-  }
-  const requests = [post(`/api/tasks/${task.id}/status`, { status, ...extra })];
+  const requests = [post(`/api/tasks/${task.id}/status`, { status })];
   if (position !== null) requests.push(post(`/api/tasks/${task.id}/bump`, { target: position }));
   const inverses = [inverseStatus(task)];
   // A task with no rank — one dragged out of Done — has no position to

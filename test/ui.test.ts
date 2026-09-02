@@ -481,7 +481,6 @@ describe('ui smoke', () => {
     expect(tile().classList.contains('collapsed')).toBe(false);
 
     // A button inside the tile acts without also toggling it.
-    vi.stubGlobal('prompt', vi.fn(() => ''));
     (document.querySelector('button[data-action="park"][data-id="t4"]') as HTMLElement).click();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t4/status')).toBe(true);
     expect(tile().classList.contains('collapsed')).toBe(false);
@@ -599,12 +598,14 @@ describe('ui smoke', () => {
   });
 
   it('parking a decision writes the status, so the choice survives a reload', () => {
-    vi.stubGlobal('prompt', vi.fn(() => ''));
+    const asked = vi.fn(() => 'a note nobody asked for');
+    vi.stubGlobal('prompt', asked);
     clickTab('decisions');
     expandDecision('t4');
     (document.querySelector('button[data-action="park"][data-id="t4"]') as HTMLElement).click();
     const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status');
     expect(JSON.parse(call!.init!.body as string)).toEqual({ status: 'parked' });
+    expect(asked).not.toHaveBeenCalled(); // one click; the note lives in the drawer
   });
 
   it('accepting a decision posts a resolve', () => {
@@ -1888,24 +1889,17 @@ describe('dragging a card to a new priority', () => {
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
   });
 
-  it('a drop on Parked asks for the wake note, and a refusal moves nothing', async () => {
-    vi.stubGlobal('prompt', vi.fn(() => null));
+  it('a drop on Parked parks the card at once, asking nothing', async () => {
+    const asked = vi.fn(() => 'a note nobody asked for');
+    vi.stubGlobal('prompt', asked);
     await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'parked', position: 2 })]);
     stubRect(card('t2'), 0);
     drag('dragstart', card('t1'));
     drag('drop', card('t2'), 5);
     await new Promise((r) => setTimeout(r, 5));
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
-
-    vi.stubGlobal('prompt', vi.fn(() => 'the API ships'));
-    drag('dragstart', card('t1'));
-    drag('drop', card('t2'), 5);
-    await new Promise((r) => setTimeout(r, 5));
     const posted = fetchCalls.filter((c) => c.init?.body).map((c) => [c.path, JSON.parse(c.init!.body as string)]);
-    expect(posted).toContainEqual([
-      '/api/tasks/t1/status',
-      { status: 'parked', parkedUntil: 'the API ships' },
-    ]);
+    expect(posted).toContainEqual(['/api/tasks/t1/status', { status: 'parked' }]);
+    expect(asked).not.toHaveBeenCalled();
   });
 
   it('does nothing when a card is dropped inside its own unranked column', async () => {
@@ -2187,36 +2181,17 @@ describe('parked work on the board', () => {
     expect(document.querySelector('#drawer-body')!.textContent).not.toContain('parked until');
   });
 
-  it('parks from the drawer, asking for the wake note', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('prompt', vi.fn(() => 'the payments API ships'));
+  it('parks from the drawer in one click, and offers an undo', async () => {
+    const asked = vi.fn(() => 'a note nobody asked for');
+    vi.stubGlobal('prompt', asked);
     await serveTasks([task('t1', { position: 1 })]);
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     (document.querySelector('#drawer-body button[data-status="parked"]') as HTMLElement).click();
-    const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/status' && c.init?.body);
-    expect(JSON.parse(call!.init!.body as string)).toMatchObject({
-      status: 'parked',
-      parkedUntil: 'the payments API ships',
-    });
-  });
-
-  it('parks with no note when the operator leaves the box empty', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('prompt', vi.fn(() => ''));
-    await serveTasks([task('t1', { position: 1 })]);
-    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
-    (document.querySelector('#drawer-body button[data-status="parked"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
     const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/status' && c.init?.body);
     expect(JSON.parse(call!.init!.body as string)).toEqual({ status: 'parked' });
-  });
-
-  it('parks nothing when the operator cancels the box', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('prompt', vi.fn(() => null));
-    await serveTasks([task('t1', { position: 1 })]);
-    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
-    (document.querySelector('#drawer-body button[data-status="parked"]') as HTMLElement).click();
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
+    expect(asked).not.toHaveBeenCalled();
+    expect(document.querySelector('#toasts .toast-action')!.textContent).toBe('undo');
   });
 
   it('wakes a parked task straight from its card', async () => {
@@ -2255,7 +2230,6 @@ describe('parking a decision', () => {
   beforeEach(bootApp);
 
   it('parks the decision instead of hiding it in this browser only', async () => {
-    vi.stubGlobal('prompt', vi.fn(() => 'after the demo'));
     clickTab('decisions');
     expandDecision('t4');
     const btn = document.querySelector(
@@ -2264,10 +2238,7 @@ describe('parking a decision', () => {
     expect(btn.textContent).toMatch(/park for now/i);
     btn.click();
     const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status' && c.init?.body);
-    expect(JSON.parse(call!.init!.body as string)).toMatchObject({
-      status: 'parked',
-      parkedUntil: 'after the demo',
-    });
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ status: 'parked' });
   });
 
   it('lists parked decisions with a way to bring one back', async () => {
