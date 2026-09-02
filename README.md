@@ -192,7 +192,8 @@ that links to them all: one address to keep, never a port. `planny serve
 Working over SSH takes two machines, which is the point of a forward. On
 the machine that serves the boards, `planny serve --all --forward` prints
 a whole ssh command; paste that line on the machine you sit at and every
-board is tunnelled at once. Inside an ssh session it fills in the host
+board is tunnelled at once. It carries `-N`, so that terminal only holds the
+tunnel open — leave it running, and interrupt it when you are done. Inside an ssh session it fills in the host
 itself, from the address your machine dialled to get here, so there is
 nothing to edit — pass one (`--forward my-box`) when you reach the machine
 by another name, such as an alias in your own ssh config. Outside one it

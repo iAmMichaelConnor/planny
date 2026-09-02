@@ -142,12 +142,19 @@ describe('the ssh target this machine can work out', () => {
 });
 
 describe('the ssh forward', () => {
+  it('forwards and nothing else, so no stray shell holds the tunnel', () => {
+    // -N means "run no remote command": the terminal exists to hold the
+    // tunnel open, and the login shell it would otherwise start is clutter
+    // nobody types in.
+    expect(forwardCommand([5891])).toMatch(/^ssh -N /);
+  });
+
   it('prints a whole command, not a fragment to compose', () => {
     // The flags are made on the machine that serves and used on the machine
     // the operator sits at. A bare fragment invites `ssh $(planny …) host`,
     // which runs planny on the laptop, where there is no plan to find.
     expect(forwardCommand([5890, 5891])).toBe(
-      'ssh -L 5890:127.0.0.1:5890 -L 5891:127.0.0.1:5891 <host>',
+      'ssh -N -L 5890:127.0.0.1:5890 -L 5891:127.0.0.1:5891 <host>',
     );
   });
 
@@ -157,13 +164,13 @@ describe('the ssh forward', () => {
 
   it('fills the host in when it knows one, so nothing needs editing', () => {
     expect(forwardCommand([5891], { target: 'mike@173.26.1.11' })).toBe(
-      'ssh -L 5891:127.0.0.1:5891 mike@173.26.1.11',
+      'ssh -N -L 5891:127.0.0.1:5891 mike@173.26.1.11',
     );
   });
 
   it('puts an unusual port before the forwards, where ssh wants it', () => {
     expect(forwardCommand([5891], { target: 'mike@173.26.1.11', port: 2222 })).toBe(
-      'ssh -p 2222 -L 5891:127.0.0.1:5891 mike@173.26.1.11',
+      'ssh -N -p 2222 -L 5891:127.0.0.1:5891 mike@173.26.1.11',
     );
   });
 });

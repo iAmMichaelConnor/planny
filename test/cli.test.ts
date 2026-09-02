@@ -1221,13 +1221,13 @@ describe('serve --all: one command for every board on this machine', () => {
       out = [];
       err = [];
       await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
-      expect(out.join('\n')).toBe('ssh -p 2222 -L 5890:127.0.0.1:5890 mike@10.0.0.9');
+      expect(out.join('\n')).toBe('ssh -N -p 2222 -L 5890:127.0.0.1:5890 mike@10.0.0.9');
       // The note must not reach stdout, or it would break `$(...)`.
       expect(err.join(' ')).toMatch(/guessing host/);
 
       out = [];
       await run('serve', '--all', '--forward', 'my-box', '--root', dir, '--port', '5890');
-      expect(out.join('\n')).toBe('ssh -L 5890:127.0.0.1:5890 my-box');
+      expect(out.join('\n')).toBe('ssh -N -L 5890:127.0.0.1:5890 my-box');
     } finally {
       if (saved === undefined) delete process.env.SSH_CONNECTION;
       else process.env.SSH_CONNECTION = saved;
@@ -1249,7 +1249,7 @@ describe('serve --all: one command for every board on this machine', () => {
       delete process.env.SSH_CONNECTION;
       expect(await run('serve', '--all', '--forward', '--root', dir, '--port', '5890')).toBe(0);
       expect(out.join('\n')).toBe(
-        `ssh -L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port} <host>`,
+        `ssh -N -L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port} <host>`,
       );
     } finally {
       await board.close();

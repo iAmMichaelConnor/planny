@@ -257,9 +257,14 @@ export function sshTarget(): SshTarget | null {
  * laptop, where planny is not installed and no plan exists.
  *
  * Without a target the host is left blank for the operator to fill in.
+ *
+ * -N runs no remote command: this terminal exists to hold the tunnel open,
+ * and the login shell ssh would otherwise start is clutter nobody types in.
+ * Not -f as well — backgrounding hides the tunnel, and stopping it then means
+ * hunting a pid, where a terminal can just be interrupted.
  */
 export function forwardCommand(ports: number[], where: SshTarget | null = null): string {
   const port = where?.port === undefined ? '' : `-p ${where.port} `;
   const flags = ports.map((p) => `-L ${p}:127.0.0.1:${p}`).join(' ');
-  return `ssh ${port}${flags} ${where?.target ?? '<host>'}`;
+  return `ssh -N ${port}${flags} ${where?.target ?? '<host>'}`;
 }
