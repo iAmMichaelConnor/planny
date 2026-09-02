@@ -1953,6 +1953,34 @@ describe('board columns: counts and toggles', () => {
     expect(headers().find((h) => h.includes('To do'))).toMatch(/\b1\b/);
   });
 
+  it('lists the chips in the order the columns stand', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'parked', position: 2 }),
+      task('t3', { status: 'cancelled' }),
+    ]);
+    const chipOrder = [...document.querySelectorAll('#board-filters .chip[data-status]')].map(
+      (c) => (c as HTMLElement).dataset.status,
+    );
+    const columnOrder = [...document.querySelectorAll('#board-columns .column')].map(
+      (c) => (c as HTMLElement).dataset.status,
+    );
+    expect(chipOrder).toEqual(['parked', 'todo', 'in-progress', 'done', 'cancelled']);
+    // Every column shown must sit in the chips in the same order.
+    expect(chipOrder.filter((s) => columnOrder.includes(s!))).toEqual(columnOrder);
+  });
+
+  it('the tree chips read in the same order as the board chips', async () => {
+    await serveTasks([task('t1', { position: 1 })]);
+    const order = (scope: string) =>
+      [...document.querySelectorAll(`.chip[data-scope="${scope}"][data-status]`)].map(
+        (c) => (c as HTMLElement).dataset.status,
+      );
+    const board = order('board');
+    clickTab('tree');
+    expect(order('tree')).toEqual(board);
+  });
+
   it('offers a chip per status, each carrying its own count', async () => {
     await serveTasks([
       task('t1', { position: 1 }),

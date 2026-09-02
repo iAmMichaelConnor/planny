@@ -12,6 +12,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
+import { resolveDecision } from '../src/ops.js';
+import { openStore } from '../src/store.js';
 
 let dir: string;
 let out: string[];
@@ -623,14 +625,57 @@ describe('error clarity and help', () => {
   });
 });
 
+describe('the help and the README agree', () => {
+  /** Every command the binary offers, less commander's own `help`. */
+  async function commands(): Promise<string[]> {
+    out = [];
+    await run('--help');
+    const help = allOut();
+    // The Commands block ends where the Examples block begins.
+    const start = help.indexOf('Commands:');
+    const end = help.indexOf('\nExamples:', start);
+    const section = help.slice(start, end === -1 ? undefined : end);
+    return [...section.matchAll(/^ {2}([a-z][a-z-]*)/gm)]
+      .map((m) => m[1]!)
+      .filter((name) => name !== 'help');
+  }
+
+  it('lists every command in the README command table', async () => {
+    const readme = readFileSync(join(__dirname, '..', 'README.md'), 'utf8');
+    for (const command of await commands()) {
+      // The command must open a table row, so the table cannot fall behind
+      // the binary without this test saying so.
+      expect(readme, command).toMatch(new RegExp(`^\\|[^|]*\`${command}\\b`, 'm'));
+    }
+  });
+
+  it('prints help for every command without falling over', async () => {
+    for (const command of await commands()) {
+      out = [];
+      err = [];
+      expect(await run(command, '--help'), command).toBe(0);
+      expect(allOut(), command).toContain('Usage: planny');
+    }
+  });
+});
+
 describe('decide loop', () => {
-  function runWithPrompt(answers: string[], ...args: string[]): Promise<number> {
+  let asked: string[] = [];
+
+  function runWithPrompt(
+    answers: string[],
+    ...args: string[]
+  ): Promise<number> {
     const queue = [...answers];
+    asked = [];
     return runCli(args, {
       cwd: dir,
       out: (line) => out.push(line),
       err: (line) => err.push(line),
-      prompt: async () => queue.shift() ?? 'q',
+      prompt: async (question) => {
+        asked.push(question);
+        return queue.shift() ?? 'q';
+      },
     });
   }
 
@@ -652,20 +697,79 @@ describe('decide loop', () => {
     expect(JSON.parse(allOut()).task.status).toBe('todo'); // quit before it
   });
 
-  it('respond records the typed answer', async () => {
-    await runWithPrompt(['r', 'Use blue.', 'q'], 'decide');
+  it('submit records the typed answer', async () => {
+    await runWithPrompt(['s', 'Use blue.', 'q'], 'decide');
     out = [];
     await run('show', 't1');
     expect(allOut()).toContain('Use blue.');
   });
 
-  it('skip leaves decisions open and reports the remainder', async () => {
-    await runWithPrompt(['s', 's'], 'decide');
+  it('next leaves decisions open and reports the remainder', async () => {
+    await runWithPrompt(['n', 'n'], 'decide');
     expect(allOut()).toMatch(/2 open decisions remaining/);
     out = [];
     await run('decisions');
     expect(allOut()).toContain('First question');
     expect(allOut()).toContain('Second question');
+  });
+
+  it('offers the same choices the board offers, in its words', async () => {
+    await runWithPrompt(['q'], 'decide');
+    // The menu marks each key with brackets ("[a]ccept"); read the words.
+    const menu = asked.join(' ').toLowerCase().replace(/[[\]]/g, '');
+    for (const word of ['accept', 'submit', 'reject', 'park', 'cancel', 'next', 'quit']) {
+      expect(menu, word).toContain(word);
+    }
+  });
+
+  it('park takes a wake note and leaves the queue', async () => {
+    await runWithPrompt(['p', 'after the demo', 'q'], 'decide');
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toMatch(/status: parked/);
+    expect(allOut()).toMatch(/parked until: after the demo/);
+    out = [];
+    await run('decisions');
+    expect(allOut()).not.toContain('First question');
+  });
+
+  it('park with no note still parks', async () => {
+    await runWithPrompt(['p', '', 'q'], 'decide');
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toMatch(/status: parked/);
+    expect(allOut()).not.toMatch(/parked until:/);
+  });
+
+  it('cancel closes a question that no longer needs an answer', async () => {
+    await runWithPrompt(['c', 'q'], 'decide');
+    out = [];
+    await run('show', 't1');
+    expect(allOut()).toMatch(/status: cancelled/);
+  });
+
+  it('a decision answered elsewhere mid-loop is reported, and the loop goes on', async () => {
+    out = [];
+    err = [];
+    let first = true;
+    // Another writer answers t1 while the loop sits at its first prompt. The
+    // queue was read before that, so decide still offers t1.
+    await runCli(['decide'], {
+      cwd: dir,
+      out: (line) => out.push(line),
+      err: (line) => err.push(line),
+      prompt: async () => {
+        if (first) {
+          first = false;
+          resolveDecision(openStore(dir), 't1', 'Answered in another shell.');
+        }
+        return 'a';
+      },
+    });
+    expect(err.join(' ')).toMatch(/already resolved/);
+    out = [];
+    await run('show', 't2', '--json');
+    expect(JSON.parse(allOut()).task.status).toBe('done');
   });
 });
 

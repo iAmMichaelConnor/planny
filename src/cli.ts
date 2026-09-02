@@ -825,34 +825,61 @@ Examples:
       if (ask === undefined) {
         const { createInterface } = await import('node:readline/promises');
         const rl = createInterface({ input: process.stdin, output: process.stdout });
-        ask = (question) => rl.question(question);
+        // Input can end before the loop does — a piped file, a closed
+        // terminal. readline's question never settles then, so the command
+        // would hang forever. Treat the end of input as "quit".
+        let ended = false;
+        rl.once('close', () => {
+          ended = true;
+        });
+        ask = async (question) => {
+          if (ended) return 'q';
+          return Promise.race([
+            rl.question(question),
+            new Promise<string>((resolve) => rl.once('close', () => resolve('q'))),
+          ]);
+        };
         cleanup = () => rl.close();
       }
       try {
         for (const item of ready) {
+          const id = item.task.id;
           io.out('');
-          io.out(renderShow(item.task, store.loadAll(), store.path(item.task.id)));
+          io.out(renderShow(item.task, store.loadAll(), store.path(id)));
           const finish = (response: string, reject = false): void => {
-            const result = resolveDecision(store, item.task.id, response, actor() ?? 'operator', {
-              reject,
-            });
-            report(store, result, resolvedLine(item.task.id, result));
+            const result = resolveDecision(store, id, response, actor() ?? 'operator', { reject });
+            report(store, result, resolvedLine(id, result));
           };
-          const choice = (await ask('\n[a]ccept proposal / [r]espond / [x] reject / [s]kip / [q]uit: '))
+          // The same choices the board offers, in the same words.
+          const choice = (
+            await ask('\n[a]ccept proposal / [s]ubmit answer / [x] reject / [p]ark / [c]ancel / [n]ext / [q]uit: ')
+          )
             .trim()
             .toLowerCase();
           if (choice === 'q') break;
-          if (choice === 'a') {
-            finish('Accepted the proposal.');
-          } else if (choice === 'x') {
-            finish((await ask('Reason (optional): ')).trim(), true);
-          } else if (choice === 'r') {
-            const answer = (await ask('Your decision: ')).trim();
-            if (answer !== '') {
-              finish(answer);
-            } else {
-              io.out('Empty answer; skipped.');
+          try {
+            if (choice === 'a') {
+              finish('Accepted the proposal.');
+            } else if (choice === 'x') {
+              finish((await ask('Reason (optional): ')).trim(), true);
+            } else if (choice === 's') {
+              const answer = (await ask('Your decision: ')).trim();
+              if (answer !== '') finish(answer);
+              else io.out('Empty answer; nothing recorded.');
+            } else if (choice === 'p') {
+              const note = (await ask('What should bring it back? (optional): ')).trim();
+              const result = setStatus(store, id, 'parked', actor() ?? 'operator', {
+                parkedUntil: note === '' ? undefined : note,
+              });
+              report(store, result, `${id} → parked`);
+            } else if (choice === 'c') {
+              const result = cancelTask(store, id, [], actor() ?? 'operator');
+              report(store, result, `cancelled ${id}`);
             }
+          } catch (error) {
+            // Another writer may have answered this one since the queue was
+            // read. Say so and keep going: the rest of the queue is still good.
+            io.err(`${id}: ${(error as Error).message}`);
           }
         }
       } finally {

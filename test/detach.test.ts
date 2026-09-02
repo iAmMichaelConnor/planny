@@ -105,6 +105,31 @@ async function answering(url: string): Promise<boolean> {
   }
 }
 
+/**
+ * decide reads a real terminal, so like the serve tests it needs the compiled
+ * binary and a real process — the in-process harness injects its own prompt
+ * and never touches readline.
+ */
+describe('decide over real stdin', () => {
+  it('answers what it is fed, then quits when the input ends', async () => {
+    await cli('init');
+    await cli('add', 'First question', '--type', 'decision', '-d', '## Proposal\n\nDo it.');
+    await cli('add', 'Second question', '--type', 'decision');
+    // execFileSync, not the async form: only the sync one feeds stdin, which
+    // is the whole point of this test.
+    const stdout = execFileSync(process.execPath, [bin, 'decide'], {
+      cwd: dir,
+      env: { ...process.env, TMPDIR: dir },
+      input: 'a\n', // one answer, then the input ends mid-loop
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+    expect(stdout).toMatch(/resolved t1/);
+    const shown = await cli('show', 't2', '--json');
+    expect(JSON.parse(shown.stdout).task.status).toBe('todo');
+  }, 30_000);
+});
+
 describe('serve --detach and --stop', () => {
   it('detach outlives the CLI, url finds it, stop ends it and clears the record', async () => {
     await cli('init');

@@ -406,7 +406,20 @@ function badges(task) {
 
 // ---------- filter chips ----------
 
-const ALL_STATUSES = ['todo', 'in-progress', 'parked', 'done', 'cancelled'];
+/**
+ * The one order the board reads in: the columns stand in it, and so do the
+ * status chips in both filter bars. A chip that sits somewhere its column
+ * does not is a chip the reader has to hunt for.
+ */
+const BOARD_COLUMNS = [
+  ['parked', 'Parked'],
+  ['todo', 'To do'],
+  ['in-progress', 'In progress'],
+  ['done', 'Done'],
+  ['cancelled', 'Cancelled'],
+];
+
+const ALL_STATUSES = BOARD_COLUMNS.map(([status]) => status);
 
 /**
  * The coloured status dot. Colour alone carries no meaning, so the dot names
@@ -724,14 +737,6 @@ function cardHtml(task, position) {
     <div class="quick">${quick.join('')}</div>${pos}
   </div>`;
 }
-
-const BOARD_COLUMNS = [
-  ['parked', 'Parked'],
-  ['todo', 'To do'],
-  ['in-progress', 'In progress'],
-  ['done', 'Done'],
-  ['cancelled', 'Cancelled'],
-];
 
 /**
  * Which columns the board shows. The operator's choice wins once they make
