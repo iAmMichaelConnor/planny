@@ -149,6 +149,13 @@ function clickTab(view: string): void {
   (document.querySelector(`.tab[data-view="${view}"]`) as HTMLElement).click();
 }
 
+/** Resolve when the target fires the event, so no test guesses at a delay. */
+function nextEvent(target: EventTarget, type: string): Promise<void> {
+  return new Promise((resolve) => {
+    target.addEventListener(type, () => resolve(), { once: true });
+  });
+}
+
 function expandDecision(id: string): void {
   (
     document.querySelector(
@@ -1264,6 +1271,13 @@ describe('a URL for every view and task', () => {
 
   const bootAt = (search: string): Promise<void> => boot(true, search);
 
+  /** The section on show, named, so a wrong view reads as a name not a flag. */
+  const shownView = (): string =>
+    [...document.querySelectorAll('section.view')]
+      .filter((section) => !section.classList.contains('hidden'))
+      .map((section) => section.id)
+      .join(' and ');
+
   it('opens the view the address names', async () => {
     await bootAt('/?view=decisions');
     expect(document.querySelector('#view-decisions')!.classList.contains('hidden')).toBe(false);
@@ -1299,10 +1313,13 @@ describe('a URL for every view and task', () => {
     await bootAt('/');
     clickTab('tree');
     clickTab('decisions');
+    // jsdom moves the history on a later task and fires popstate when it
+    // lands. Wait for that event: a fixed delay races it under load.
+    const moved = nextEvent(window, 'popstate');
     history.back();
-    await new Promise((r) => setTimeout(r, 5));
-    window.dispatchEvent(new PopStateEvent('popstate'));
-    expect(document.querySelector('#view-tree')!.classList.contains('hidden')).toBe(false);
+    await moved;
+    expect(url()).toContain('view=tree');
+    expect(shownView()).toBe('view-tree');
   });
 
   it('a background refresh writes no new history entry', async () => {
