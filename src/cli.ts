@@ -609,8 +609,9 @@ Examples:
       `
 Each consumer id has its own cursor, stored in .planny/cursors.json: a call
 returns everything changed since that consumer's previous call, then
-advances the cursor. The first call returns the full state. Delivery is
-at-least-once — treat the delta as facts, safe to see twice.
+advances the cursor. The first call returns the full state. You can see
+the same change twice — never missed, sometimes repeated — so treat each
+entry as a current fact, safe to read again.
 
 Examples:
   planny catchup --json                          uses $PLANNY_SESSION as the id
