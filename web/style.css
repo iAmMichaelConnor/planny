@@ -449,7 +449,7 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 .rel-list li:hover { color: var(--accent); }
 
 /* Add-note modal */
-#add-note {
+#add-note, #keys-help {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
@@ -458,7 +458,7 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
   justify-content: center;
   z-index: 30;
 }
-#add-note .modal {
+#add-note .modal, #keys-help .modal {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -466,7 +466,16 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
   max-width: 440px;
   padding: 18px 22px;
 }
-#add-note .row { margin-top: 12px; }
+#add-note .row, #keys-help .row { margin-top: 12px; }
+#keys-help h2 { margin: 0 0 10px; font-size: 16px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+.keys dt { font-family: ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+.keys dd { margin: 0; }
+.search-hit.active { background: var(--bg); outline: 1px solid var(--accent); }
+/* The keyboard walk moves real focus, so the browser's own ring is the mark.
+   One rule covers every control, in both themes. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card:focus-visible, .tree-row:focus-visible { outline-offset: 2px; }
 
 /* Toasts */
 #toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 20; }

@@ -7,6 +7,7 @@ const state = {
   byId: new Map(),
   view: 'board',
   selected: null, // task id shown in the drawer, or '__new__'
+  drawerOpener: null, // where the focus goes when the drawer closes
   collapsed: new Set(),
   justResolved: new Map(), // id → when the operator resolved it in this page (notes expire)
   expandedDecisions: new Set(), // open-decision tiles start collapsed
@@ -176,6 +177,44 @@ function writePreference(key, value) {
 
 // ---------- data ----------
 
+const VIEWS = ['board', 'tree', 'deps', 'decisions'];
+
+// ---------- the address bar ----------
+
+/**
+ * Every view and every open task has an address, so a board can be
+ * bookmarked, reopened where it was left, and pasted to someone else.
+ *
+ * The state is the source of truth and the address follows it: syncUrl runs
+ * after every render and writes only when the address would actually change,
+ * so a background refresh adds no history entry while a real move does. A
+ * popstate applies the address back to the state, and the sync that follows
+ * finds nothing to write.
+ */
+function applyUrl() {
+  const params = new URLSearchParams(location.search);
+  const view = params.get('view');
+  const task = params.get('task');
+  if (VIEWS.includes(view)) state.view = view;
+  state.selected = task !== null && state.byId.has(task) ? task : null;
+  if (task !== null && !state.byId.has(task)) toast(`no task "${task}"`, 'warn');
+}
+
+function syncUrl() {
+  const params = new URLSearchParams();
+  params.set('view', state.view);
+  if (state.selected !== null && state.selected !== '__new__') params.set('task', state.selected);
+  const next = `${location.pathname}?${params}`;
+  if (next === `${location.pathname}${location.search}`) return;
+  history.pushState({}, '', next);
+}
+
+window.addEventListener('popstate', () => {
+  applyUrl();
+  render();
+  renderDrawer();
+});
+
 async function refresh() {
   const res = await fetch('/api/state');
   state.data = await res.json();
@@ -186,8 +225,17 @@ async function refresh() {
     state.seenAt = new Date().toISOString();
     writePreference('planny-seen-at', state.seenAt);
   }
+  if (!urlApplied) {
+    // The first state is the first moment an id in the address can be
+    // checked against the store.
+    urlApplied = true;
+    applyUrl();
+  }
   render();
+  renderDrawer();
 }
+
+let urlApplied = false;
 
 async function api(path, method, body, retried = false) {
   try {
@@ -360,6 +408,17 @@ function badges(task) {
 
 const ALL_STATUSES = ['todo', 'in-progress', 'parked', 'done', 'cancelled'];
 
+/**
+ * The coloured status dot. Colour alone carries no meaning, so the dot names
+ * its status — except where the word already sits beside it, and repeating it
+ * would only make a screen reader say everything twice.
+ */
+function statusDot(status, quiet = false) {
+  return quiet
+    ? `<span class="status-dot ${status}" aria-hidden="true"></span>`
+    : `<span class="status-dot ${status}" role="img" aria-label="status: ${status}"></span>`;
+}
+
 function chip(scope, attr, value, label, active) {
   return `<button class="chip${active ? ' active' : ''}" data-scope="${scope}" data-${attr}="${esc(value)}">${label}</button>`;
 }
@@ -367,7 +426,7 @@ function chip(scope, attr, value, label, active) {
 function statusChips(scope, activeSet, countOf) {
   return ALL_STATUSES.map((s) => {
     const count = countOf === undefined ? '' : ` <span class="chip-count">${countOf(s)}</span>`;
-    return chip(scope, 'status', s, `<span class="status-dot ${s}"></span>${s.replace('-', ' ')}${count}`, activeSet.has(s));
+    return chip(scope, 'status', s, `${statusDot(s, true)}${s.replace('-', ' ')}${count}`, activeSet.has(s));
   }).join('');
 }
 
@@ -604,20 +663,29 @@ function render() {
   $('#decision-count').textContent = openCount > 0 ? `(${openCount})` : '';
 
   for (const tab of document.querySelectorAll('.tab')) {
-    tab.classList.toggle('active', tab.dataset.view === state.view);
+    const chosen = tab.dataset.view === state.view;
+    tab.classList.toggle('active', chosen);
+    tab.setAttribute('aria-selected', String(chosen));
+    // A tab strip is one tab stop: Tab reaches it, the arrows walk it.
+    tab.tabIndex = chosen ? 0 : -1;
   }
   for (const view of document.querySelectorAll('.view')) view.classList.add('hidden');
   $(`#view-${state.view}`).classList.remove('hidden');
+  syncUrl();
 
   if (state.view === 'board') renderBoard();
   if (state.view === 'tree') renderTree();
   if (state.view === 'deps') renderDeps();
   if (state.view === 'decisions') renderDecisions();
+  setTabStop(); // the list has to exist before one of it can be the stop
   renderDrawer();
 }
 
 /** Mark the selected task's representation in whichever views show one. */
 function applySelection() {
+  // The drawer owns the selection, so the address follows from here too;
+  // render() alone would miss a task opened without a full rebuild.
+  syncUrl();
   for (const el of document.querySelectorAll('.is-selected')) el.classList.remove('is-selected');
   const id = state.selected;
   if (id === null || id === '__new__') return;
@@ -650,7 +718,7 @@ function cardHtml(task, position) {
   // Anything but a cancelled card can be picked up: cancelling asks about
   // replacements, so it belongs in the drawer, never in a drag.
   const drag = task.status === 'cancelled' ? '' : ' draggable="true"';
-  return `<div class="${classes.join(' ')}" data-id="${task.id}"${drag}>
+  return `<div class="${classes.join(' ')}" data-id="${task.id}"${drag} tabindex="-1">
     <span class="id">${task.id}</span><span class="name">${linkifyIds(esc(task.name))}</span>
     <div class="badges">${badges(task)}</div>
     <div class="quick">${quick.join('')}</div>${pos}
@@ -709,7 +777,7 @@ function renderBoard() {
       const empty = status === 'in-progress'
         ? '<p class="muted col-tip">Nothing in progress. Ask your AI to work the plan — it has the planny skill. Try: &ldquo;do more tasks&rdquo;.</p>'
         : '<p class="muted">—</p>';
-      return `<div class="column" data-status="${status}"><h2><span class="status-dot ${status}"></span>${title} <span class="colcount">${countOf(status)}</span>${ordered}</h2>${cards || empty}</div>`;
+      return `<div class="column" data-status="${status}"><h2>${statusDot(status, true)}${title} <span class="colcount">${countOf(status)}</span>${ordered}</h2>${cards || empty}</div>`;
     })
     .join('');
 }
@@ -755,8 +823,8 @@ function renderTree() {
     const children = kidsOf(task).filter((c) => visible.has(c.id) && !trail.has(c.id) && c.id !== task.id);
     const isCollapsed = state.collapsed.has(task.id);
     const twist = children.length > 0
-      ? `<span class="twist" data-action="toggle" data-id="${task.id}">${isCollapsed ? '▸' : '▾'}</span>`
-      : '<span class="twist"></span>';
+      ? `<span class="twist" role="button" tabindex="0" data-action="toggle" data-id="${task.id}" aria-expanded="${!isCollapsed}" aria-label="${isCollapsed ? 'show' : 'hide'} the tasks under ${task.id}">${isCollapsed ? '▸' : '▾'}</span>`
+      : '<span class="twist" aria-hidden="true"></span>';
     let progressHtml = '';
     if (order === 'parents' && children.length > 0) {
       const { done, total } = subtreeCounts(task.id);
@@ -764,8 +832,8 @@ function renderTree() {
         progressHtml = `<span class="mini-progress" title="${done}/${total} done"><div style="width:${Math.round((done / total) * 100)}%"></div></span><span class="muted" style="font-size:11px">${done}/${total}</span>`;
       }
     }
-    const row = `<div class="tree-row${isNewToReader(task) ? ' is-new' : ''}" data-id="${task.id}">
-      ${twist}<span class="status-dot ${task.status}"></span>
+    const row = `<div class="tree-row${isNewToReader(task) ? ' is-new' : ''}" data-id="${task.id}" tabindex="-1">
+      ${twist}${statusDot(task.status)}
       <span class="id">${task.id}</span>
       <span class="name${task.status === 'done' ? ' done-name' : ''}">${linkifyIds(esc(task.name))}</span>
       ${progressHtml}${state.treeFilters.showDeps ? badges(task) : badges({ ...task, blocked: false })}
@@ -1044,7 +1112,7 @@ function renderDecisions() {
         <button class="mini" data-action="bottom" data-id="${task.id}"${task.position > 0 && task.position === activeTotal ? ' disabled title="already at the bottom"' : ' title="move to the bottom of the priority order"'}>▼ bottom</button>
       </div>`;
     return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}" data-action="toggle-decision" data-id="${task.id}">
-      <h3><span class="disclose muted">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${linkifyIds(esc(task.name))}</h3>
+      <h3><span class="disclose muted" aria-hidden="true">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${linkifyIds(esc(task.name))}</h3>
       <div class="badges">${badges(task)}</div>
       ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
       ${actions}${priority}` : ''}
@@ -1087,7 +1155,7 @@ function renderDecisions() {
         ${what} From a terminal:
         <code>planny decisions --resolved</code> lists the newest answers;
         <code>planny show ${t.id}</code> shows this one.</span>
-        <button class="mini" data-action="dismiss-logged" data-id="${t.id}" title="discard this note">×</button></div>`;
+        <button class="mini" data-action="dismiss-logged" data-id="${t.id}" aria-label="discard this note" title="discard this note">×</button></div>`;
     })
     .join('');
 
@@ -1143,7 +1211,12 @@ function outcomeOf(task) {
 function renderDrawer() {
   applySelection(); // the views are already rendered whenever the drawer is
   const drawer = $('#drawer');
+  const opening = state.selected !== null && state.selected !== state.renderedDrawerId;
   if (state.selected === null) {
+    // Hand the focus back to whatever opened the panel, so a keyboard reader
+    // is not left standing at the top of the page.
+    if (drawer.contains(document.activeElement)) restoreDrawerFocus();
+    state.drawerOpener = null;
     drawer.classList.add('hidden');
     state.renderedDrawerId = null;
     state.drawerDirty = false;
@@ -1162,6 +1235,7 @@ function renderDrawer() {
   if (!task) {
     state.selected = null;
     drawer.classList.add('hidden');
+    syncUrl();
     return;
   }
   // Reading a task is reading it: its "new" mark goes, and stays gone until
@@ -1173,8 +1247,8 @@ function renderDrawer() {
   }
   $('#drawer-title').innerHTML = isNew
     ? 'New task'
-    : `<span class="status-dot ${esc(task.status)}"></span>${esc(task.id)} · ${esc(task.status)}${task.status === 'todo' ? `
-       <span class="do-copy"><code>"Do ${esc(task.id)}"</code><button id="copy-do" class="mini" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉</button></span>` : ''}`;
+    : `${statusDot(esc(task.status), true)}${esc(task.id)} · ${esc(task.status)}${task.status === 'todo' ? `
+       <span class="do-copy"><code>"Do ${esc(task.id)}"</code><button id="copy-do" class="mini" aria-label="copy &quot;Do ${esc(task.id)}&quot; to the clipboard" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉</button></span>` : ''}`;
 
   const options = state.data.tasks
     .map((t) => `<option value="${t.id}">${t.id} ${esc(t.name)}</option>`)
@@ -1316,6 +1390,21 @@ function renderDrawer() {
   wireDrawer(task, isNew);
   state.renderedDrawerId = state.selected;
   state.drawerDirty = false;
+  if (opening) {
+    // Remember where the reader came from before moving them into the panel.
+    // A refresh must not do this, or it would steal the focus mid-edit.
+    const from = document.activeElement;
+    state.drawerOpener = from instanceof Element && !drawer.contains(from) ? from : null;
+    $('#drawer-close').focus();
+  }
+}
+
+function restoreDrawerFocus() {
+  const opener = state.drawerOpener;
+  // The views rebuild constantly, so find the element again by what it was.
+  const id = opener instanceof Element ? opener.closest('[data-id]')?.dataset.id : undefined;
+  const back = id === undefined ? opener : document.querySelector(`#view-${state.view} [data-id="${id}"]`) ?? opener;
+  if (back instanceof Element && document.contains(back)) back.focus?.();
 }
 
 /**
@@ -1601,6 +1690,112 @@ function wireDrawer(task, isNew) {
     }
   }
 }
+
+// ---------- the keyboard ----------
+
+/**
+ * One roving tab stop per view: the reader tabs into the list once and walks
+ * it with the arrows, instead of tabbing past every card. Real focus does the
+ * work, so the browser draws the ring and a screen reader follows along.
+ */
+function walkableItems() {
+  const selector = state.view === 'tree' ? '.tree-row[data-id]' : '.card[data-id]';
+  return [...document.querySelectorAll(`#view-${state.view} ${selector}`)];
+}
+
+function setTabStop() {
+  const items = walkableItems();
+  if (items.length === 0) return;
+  const current = items.find((el) => el.tabIndex === 0);
+  for (const el of items) el.tabIndex = -1;
+  (current ?? items[0]).tabIndex = 0;
+}
+
+/** Move the focus one item along, and carry the tab stop with it. */
+function walk(step) {
+  const items = walkableItems();
+  if (items.length === 0) return;
+  const here = items.indexOf(document.activeElement);
+  const next = items[Math.min(Math.max(here + step, 0), items.length - 1)] ?? items[0];
+  for (const el of items) el.tabIndex = -1;
+  next.tabIndex = 0;
+  next.focus();
+}
+
+/** True while the reader is typing: every shortcut must stay out of the way. */
+function typing(target) {
+  return target instanceof Element && target.closest('input, textarea, select') !== null;
+}
+
+function toggleKeysHelp(show) {
+  $('#keys-help').classList.toggle('hidden', !show);
+}
+
+$('#keys-help-close').onclick = () => toggleKeysHelp(false);
+
+document.addEventListener('keydown', (event) => {
+  // The tab strip walks with left and right while one of its tabs has focus.
+  const tab = event.target instanceof Element ? event.target.closest('.tab') : null;
+  if (tab && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll('.tab')];
+    const next = tabs[(tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+    state.view = next.dataset.view;
+    render();
+    document.querySelector(`.tab[data-view="${state.view}"]`).focus();
+    return;
+  }
+  if (event.key === 'Escape') {
+    // Nearest thing first: the key list, then the search panel, then the drawer.
+    if (!$('#keys-help').classList.contains('hidden')) {
+      toggleKeysHelp(false);
+      return;
+    }
+    if (!$('#search-results').hidden) {
+      hideSearchResults();
+      return;
+    }
+    if (state.selected !== null) {
+      state.selected = null;
+      renderDrawer();
+    }
+    return;
+  }
+  if (typing(event.target)) return;
+  if (event.key === '/') {
+    event.preventDefault();
+    $('#search').focus();
+    $('#search').select();
+    return;
+  }
+  if (event.key === '?') {
+    event.preventDefault();
+    toggleKeysHelp(true);
+    return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    walk(event.key === 'ArrowDown' ? 1 : -1);
+    return;
+  }
+  if (event.key === 'Enter' || event.key === ' ') {
+    if (!(event.target instanceof Element)) return;
+    // A control announces itself as a button, so it must act like one.
+    const control = event.target.closest('[role="button"], button');
+    if (control) {
+      event.preventDefault();
+      control.click();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    const el = event.target.closest('[data-id]');
+    if (el) {
+      event.preventDefault();
+      state.selected = el.dataset.id;
+      renderDrawer();
+    }
+  }
+});
 
 // ---------- events ----------
 
@@ -2052,6 +2247,21 @@ const SEARCH_CAP = 20;
 
 function hideSearchResults() {
   $('#search-results').hidden = true;
+  searchCursor = -1;
+}
+
+/** Which row the arrows have walked to; -1 while none is highlighted. */
+let searchCursor = -1;
+
+function moveSearchCursor(step) {
+  const panel = $('#search-results');
+  if (panel.hidden) return;
+  const count = panel.querySelectorAll('.search-hit').length;
+  if (count === 0) return;
+  searchCursor = Math.min(Math.max(searchCursor + step, 0), count - 1);
+  const hits = panel.querySelectorAll('.search-hit');
+  hits.forEach((hit, i) => hit.classList.toggle('active', i === searchCursor));
+  hits[searchCursor].scrollIntoView({ block: 'nearest' });
 }
 
 function renderSearchResults(query) {
@@ -2061,9 +2271,10 @@ function renderSearchResults(query) {
     return;
   }
   const matches = searchTasks(query);
+  // A fresh query highlights nothing until the reader arrows into the list.
   const rows = matches.slice(0, SEARCH_CAP).map(
-    (t) => `<div class="picker-item search-hit" data-search-goto="${t.id}">
-      <span class="status-dot ${t.status}"></span>
+    (t, i) => `<div class="picker-item search-hit${i === searchCursor ? ' active' : ''}" data-search-goto="${t.id}">
+      ${statusDot(t.status)}
       <span class="id">${t.id}</span> ${esc(t.name)}</div>`,
   );
   const more = matches.length > SEARCH_CAP
@@ -2081,18 +2292,29 @@ function openSearchHit(id) {
   el?.scrollIntoView?.({ block: 'nearest' });
 }
 
-$('#search').addEventListener('input', (event) => renderSearchResults(event.target.value));
+$('#search').addEventListener('input', (event) => {
+  searchCursor = -1; // a new query starts the walk again
+  renderSearchResults(event.target.value);
+});
 $('#search-results').addEventListener('click', (event) => {
   const hit = event.target.closest('[data-search-goto]');
   if (hit) openSearchHit(hit.dataset.searchGoto);
 });
 
 $('#search').addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    hideSearchResults();
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    moveSearchCursor(event.key === 'ArrowDown' ? 1 : -1);
     return;
   }
+  // Escape is the document handler's: it knows what else is open.
   if (event.key !== 'Enter') return;
+  const highlighted = $('#search-results').querySelector('.search-hit.active');
+  if (highlighted !== null && !$('#search-results').hidden) {
+    openSearchHit(highlighted.dataset.searchGoto);
+    event.target.select();
+    return;
+  }
   const raw = event.target.value.trim().toLowerCase();
   if (raw === '') return;
   const id = /^\d+$/.test(raw) ? `t${raw}` : raw;

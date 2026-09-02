@@ -98,7 +98,10 @@ function bootApp(): Promise<void> {
   return boot(true);
 }
 
-function boot(clearPreferences: boolean): Promise<void> {
+function boot(clearPreferences: boolean, search = '/'): Promise<void> {
+  // A fresh load starts at a fresh address; the app writes the view and the
+  // open task into it, so a leftover one would steer the next test.
+  history.replaceState({}, '', search);
   if (clearPreferences) localStorage.clear(); // preferences persist per jsdom origin
   // app.js attaches document/window listeners at boot. The page never boots
   // twice in real life, but each test re-runs it, so stale instances would
@@ -1035,6 +1038,268 @@ const chainTasks = [
   task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
+
+describe('the board without colour or a mouse', () => {
+  beforeEach(bootApp);
+
+  it('names the status in text wherever a dot stands alone', () => {
+    clickTab('tree');
+    const dot = document.querySelector('.tree-row[data-id="t1"] .status-dot') as HTMLElement;
+    expect(dot.getAttribute('aria-label')).toMatch(/todo/);
+    // Where the word is already beside it, the dot must not repeat it.
+    clickTab('board');
+    const columnDot = document.querySelector('#board-columns .column h2 .status-dot') as HTMLElement;
+    expect(columnDot.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('the tabs announce themselves as tabs and say which is chosen', () => {
+    expect(document.querySelector('#tabs')!.getAttribute('role')).toBe('tablist');
+    const board = document.querySelector('.tab[data-view="board"]') as HTMLElement;
+    const tree = document.querySelector('.tab[data-view="tree"]') as HTMLElement;
+    expect(board.getAttribute('role')).toBe('tab');
+    expect(board.getAttribute('aria-selected')).toBe('true');
+    expect(tree.getAttribute('aria-selected')).toBe('false');
+    expect(document.querySelector(`#${board.getAttribute('aria-controls')}`)).not.toBeNull();
+    expect(document.querySelector('#view-board')!.getAttribute('role')).toBe('tabpanel');
+  });
+
+  it('arrow keys move along the tab strip', () => {
+    const board = document.querySelector('.tab[data-view="board"]') as HTMLElement;
+    board.focus();
+    board.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect((document.activeElement as HTMLElement).dataset.view).toBe('tree');
+    expect(document.querySelector('#view-tree')!.classList.contains('hidden')).toBe(false);
+    (document.activeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+    );
+    expect((document.activeElement as HTMLElement).dataset.view).toBe('board');
+  });
+
+  it('only the chosen tab is a tab stop', () => {
+    const stops = [...document.querySelectorAll('.tab')].filter((t) => (t as HTMLElement).tabIndex === 0);
+    expect(stops).toHaveLength(1);
+    expect((stops[0] as HTMLElement).dataset.view).toBe('board');
+  });
+
+  it('opening the drawer takes the focus, and closing hands it back', () => {
+    const card = document.querySelector('.card[data-id="t1"]') as HTMLElement;
+    card.focus();
+    card.click();
+    expect(document.querySelector('#drawer')!.contains(document.activeElement)).toBe(true);
+    (document.querySelector('#drawer-close') as HTMLElement).click();
+    expect(document.activeElement).toBe(document.querySelector('.card[data-id="t1"]'));
+  });
+
+  it('gives every icon-only button a name', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    for (const sel of ['#theme-btn', '#drawer-close', '.dock-btn[data-dock="left"]']) {
+      const el = document.querySelector(sel) as HTMLElement;
+      expect(el, sel).not.toBeNull();
+      expect(el.getAttribute('aria-label'), sel).toBeTruthy();
+    }
+  });
+
+  it('names the small symbol buttons too', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(
+      (document.querySelector('#copy-do') as HTMLElement).getAttribute('aria-label'),
+    ).toBeTruthy();
+    clickTab('tree');
+    const twist = document.querySelector('.twist[data-action="toggle"]') as HTMLElement;
+    expect(twist.getAttribute('aria-label')).toBeTruthy();
+    expect(twist.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('the twist opens and closes from the keyboard, like the button it claims to be', () => {
+    clickTab('tree');
+    const twist = () => document.querySelector('.twist[data-action="toggle"]') as HTMLElement;
+    const id = twist().dataset.id!;
+    twist().focus();
+    twist().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    const after = document.querySelector(`.twist[data-id="${id}"]`) as HTMLElement;
+    expect(after.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(true);
+  });
+
+  it('hides the decorative arrows from a reader that cannot see them', () => {
+    clickTab('decisions');
+    expect(
+      (document.querySelector('#view-decisions .disclose') as HTMLElement).getAttribute('aria-hidden'),
+    ).toBe('true');
+  });
+
+  it('reads out what the toasts say', () => {
+    const toasts = document.querySelector('#toasts') as HTMLElement;
+    expect(toasts.getAttribute('aria-live')).toBe('polite');
+    expect(toasts.getAttribute('role')).toBe('status');
+  });
+
+  it('draws a focus ring on every control, in one rule', () => {
+    const css = readFileSync(join(webDir, 'style.css'), 'utf8');
+    expect(css).toMatch(/:focus-visible\s*{[^}]*outline/);
+  });
+});
+
+describe('working the board from the keyboard', () => {
+  beforeEach(bootApp);
+
+  const key = (k: string, target: EventTarget = document) =>
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const focused = () => (document.activeElement as HTMLElement | null)?.dataset?.id;
+
+  it('slash puts the cursor in the search box', () => {
+    key('/');
+    expect(document.activeElement).toBe(document.querySelector('#search'));
+  });
+
+  it('slash typed into a text box stays a slash', () => {
+    const box = document.querySelector('#search') as HTMLInputElement;
+    const others = document.querySelectorAll('textarea, input');
+    expect(others.length).toBeGreaterThan(0);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const area = document.querySelector('#drawer-body textarea') as HTMLTextAreaElement;
+    area.focus();
+    const event = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true });
+    area.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(box);
+  });
+
+  it('arrows walk the cards, and only one card is ever a tab stop', () => {
+    const stops = () =>
+      [...document.querySelectorAll('#view-board .card')].filter(
+        (c) => (c as HTMLElement).tabIndex === 0,
+      ).length;
+    expect(stops()).toBe(1);
+    key('ArrowDown');
+    const first = focused();
+    expect(first).toBeDefined();
+    key('ArrowDown');
+    expect(focused()).not.toBe(first);
+    expect(stops()).toBe(1);
+    key('ArrowUp');
+    expect(focused()).toBe(first);
+  });
+
+  it('Enter opens the card the cursor sits on', () => {
+    key('ArrowDown');
+    const id = focused();
+    key('Enter', document.activeElement!);
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('#drawer-title')!.textContent).toContain(id!);
+  });
+
+  it('arrows walk the tree rows too', () => {
+    clickTab('tree');
+    key('ArrowDown');
+    expect(document.activeElement!.classList.contains('tree-row')).toBe(true);
+  });
+
+  it('arrows walk the search results, and Enter opens the highlighted one', async () => {
+    const box = document.querySelector('#search') as HTMLInputElement;
+    box.value = 'e';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    const hits = () => [...document.querySelectorAll('#search-results .search-hit')];
+    expect(hits().length).toBeGreaterThan(1);
+    key('ArrowDown', box);
+    key('ArrowDown', box);
+    const highlighted = hits().find((h) => h.classList.contains('active')) as HTMLElement;
+    expect(highlighted).toBe(hits()[1]);
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.querySelector('#drawer-title')!.textContent).toContain(
+      highlighted.dataset.searchGoto!,
+    );
+  });
+
+  it('Escape shuts the search panel first, then the drawer', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const box = document.querySelector('#search') as HTMLInputElement;
+    box.value = 'e';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    expect((document.querySelector('#search-results') as HTMLElement).hidden).toBe(false);
+
+    key('Escape', box);
+    expect((document.querySelector('#search-results') as HTMLElement).hidden).toBe(true);
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+
+    key('Escape');
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(true);
+  });
+
+  it('a question mark lists the keys, and Escape puts the list away', () => {
+    key('?');
+    const help = document.querySelector('#keys-help') as HTMLElement;
+    expect(help.classList.contains('hidden')).toBe(false);
+    expect(help.textContent).toContain('/');
+    key('Escape');
+    expect(help.classList.contains('hidden')).toBe(true);
+  });
+
+  it('the shortcuts stay out of the way while a form has the focus', () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.focus();
+    key('ArrowDown', name);
+    expect(document.activeElement).toBe(name);
+    key('?', name);
+    expect(document.querySelector('#keys-help')!.classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('a URL for every view and task', () => {
+  const url = () => `${location.pathname}${location.search}`;
+
+  const bootAt = (search: string): Promise<void> => boot(true, search);
+
+  it('opens the view the address names', async () => {
+    await bootAt('/?view=decisions');
+    expect(document.querySelector('#view-decisions')!.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('.tab[data-view="decisions"]')!.classList.contains('active')).toBe(
+      true,
+    );
+  });
+
+  it('opens the drawer on the task the address names', async () => {
+    await bootAt('/?view=board&task=t3');
+    expect(document.querySelector('#drawer')!.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t3');
+  });
+
+  it('falls back to the board and says so when the id is unknown', async () => {
+    await bootAt('/?task=t99');
+    expect(document.querySelector('#view-board')!.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('#toasts')!.textContent).toContain('t99');
+  });
+
+  it('writes the view and the open task into the address', async () => {
+    await bootAt('/');
+    expect(url()).toContain('view=board');
+    clickTab('tree');
+    expect(url()).toContain('view=tree');
+    (document.querySelector('.tree-row[data-id="t3"]') as HTMLElement).click();
+    expect(url()).toContain('task=t3');
+    (document.querySelector('#drawer-close') as HTMLElement).click();
+    expect(url()).not.toContain('task=');
+  });
+
+  it('the back button returns to the view before', async () => {
+    await bootAt('/');
+    clickTab('tree');
+    clickTab('decisions');
+    history.back();
+    await new Promise((r) => setTimeout(r, 5));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(document.querySelector('#view-tree')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('a background refresh writes no new history entry', async () => {
+    await bootAt('/');
+    const before = url();
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(url()).toBe(before);
+  });
+});
 
 describe('acting at once, with an undo', () => {
   beforeEach(bootApp);
