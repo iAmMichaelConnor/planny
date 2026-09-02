@@ -996,7 +996,7 @@ Examples:
   planny serve --clean-logs        delete dead serve logs older than 7 days`,
     )
     .action(async (options) => {
-      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts } =
+      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts, currentServeUrl } =
         await import('./server.js');
       if (options.detach === true && options.stop === true) {
         throw new Error('pass --detach or --stop, not both');
@@ -1040,6 +1040,23 @@ Examples:
               : 'nothing to stop — the UI is not being served for this store',
         );
         return;
+      }
+      if (options.all === true) {
+        // One plan, one board. Two servers on one plan would fight over its
+        // address record, and `planny url` there would answer for whichever
+        // wrote last. A plan already holding a board of its own keeps it.
+        const held: string[] = [];
+        for (const candidate of stores) {
+          const url = await currentServeUrl(candidate);
+          if (url !== null) held.push(`${candidate.root} → ${url}`);
+        }
+        // All of them on one board is this command already running; some of
+        // them is a different server, and we must not take its plans.
+        if (held.length > 0 && held.length < stores.length) {
+          throw new Error(
+            `these plans already have a board of their own:\n  ${held.join('\n  ')}\nStop each with \`planny serve --stop\` in its directory, then run this again.`,
+          );
+        }
       }
       // No --port: take the port this store used last, else the first free
       // one from the base. Two stores on one machine then settle on two

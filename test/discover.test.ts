@@ -50,6 +50,18 @@ describe('discoverStores', () => {
     expect(discoverStores([dir])).toEqual([]);
   });
 
+  it('passes over hidden directories, where tools keep their scratch', () => {
+    const kept = project('work');
+    project('.claude', 'jobs', 'abc', 'tmp', 'skill-copy');
+    project('.cache', 'thing');
+    expect(discoverStores([dir]).map((s) => s.root)).toEqual([kept]);
+  });
+
+  it('still reaches a hidden directory named as a root', () => {
+    const hidden = project('.config', 'notes');
+    expect(discoverStores([join(dir, '.config')]).map((s) => s.root)).toEqual([hidden]);
+  });
+
   it('stops at the depth it is given', () => {
     project('one', 'two', 'three', 'deep');
     expect(discoverStores([dir], { depth: 2 })).toEqual([]);

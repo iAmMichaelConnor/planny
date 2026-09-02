@@ -32,20 +32,24 @@ const PLANNY_DIR = '.planny';
 const FORK_MARKER = 'fork';
 const DEFAULT_DEPTH = 8;
 
-/** Directories that never hold a plan and cost a lot to walk. */
+/**
+ * Directories the walk passes over. Hidden ones are where tools keep their
+ * caches and scratch — a home directory is full of them, and a plan found in
+ * one is a fixture somebody left behind, not a project. A hidden directory
+ * named as a root is still searched: that is a deliberate ask.
+ */
+function skip(name: string): boolean {
+  return name.startsWith('.') || SKIP.has(name);
+}
+
+/** Visible directories that never hold a plan and cost a lot to walk. */
 const SKIP = new Set([
   'node_modules',
-  '.git',
-  '.hg',
-  '.svn',
   'dist',
   'build',
   'out',
   'target',
   'vendor',
-  '.cache',
-  '.next',
-  '.venv',
   'venv',
   '__pycache__',
   'Library',
@@ -74,7 +78,7 @@ function walk(dir: string, budget: number, found: Set<string>): void {
     return; // unreadable, gone, or not a directory: nothing to find here
   }
   for (const entry of entries) {
-    if (!entry.isDirectory() || SKIP.has(entry.name)) continue;
+    if (!entry.isDirectory() || skip(entry.name)) continue;
     walk(join(dir, entry.name), budget - 1, found);
   }
 }
