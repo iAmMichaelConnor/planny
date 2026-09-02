@@ -184,11 +184,11 @@ taking a plain backgrounded `planny serve` with them; the detached form
 survives. `planny serve --stop` ends it. From your own terminal, plain
 `planny serve` is fine.
 
-With several plans on one machine, `planny boards --detach` starts a
+With several plans on one machine, `planny serve --all --detach` starts a
 board for every plan that has none and serves one page, on port 5890,
 that links to them all: one address to keep, never a port. `planny
-boards --stop` takes the page and every board down. Over SSH,
-`ssh $(planny boards --forward) <host>` forwards the page and every
+uis --stop` takes the page and every board down. Over SSH,
+`ssh $(planny serve --all --forward) <host>` forwards the page and every
 running board in one line.
 
 ## Quickstart
@@ -213,7 +213,7 @@ planny progress                        # █████░░░░░░░░
 planny export --out plan.md            # the whole plan as one document
 planny serve                           # localhost UI: kanban, tree, deps, decisions
 planny url                             # where that UI is being served
-planny boards --detach                 # every plan's board up, and one page that links them
+planny serve --all --detach                 # every plan's board up, and one page that links them
 ```
 
 ## Command reference
@@ -240,9 +240,8 @@ planny boards --detach                 # every plan's board up, and one page tha
 | `decide` | work the open decisions one by one, in a terminal: accept, submit an answer, reject, park, cancel, next, quit — the choices the board offers |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
-| `serve [--port] [--detach] [--stop] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); with no `--port` it takes the port this store used last, else the first free one from 5891, so two stores never collide; `--detach` outlives the launching (agent) session, `--stop` ends the detached server, `--clean-logs` deletes this store's dead old log |
+| `serve [--all [--root d]] [--port] [--detach] [--stop] [--forward] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); with no `--port` it takes the port this store used last, else the first free one from 5891, so two stores never collide; `--all` does every plan on this machine — a board each, plus one page (port 5890) linking them, so you keep one address and never a port; `--detach` outlives the launching (agent) session, `--stop` ends it (with `--all`, the page and every board), `--forward` prints the `ssh -L` flags for what it serves, `--clean-logs` deletes this store's dead old log |
 | `url` | print the address where the UI serves this store; exits 1 when it is not up |
-| `boards [--root d] [--port] [--detach] [--stop] [--forward]` | every board on this machine: starts a board for each plan that has none and serves one page (port 5890) that links to them all, so you keep one address and never a port; `--detach` outlives the launching session, `--stop` ends the page and every board, `--forward` prints the `ssh -L` flags for the page and every running board |
 
 Every command's `--help` carries examples; mistyped commands get a
 did-you-mean suggestion.

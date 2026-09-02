@@ -934,12 +934,93 @@ Examples:
       failOnErrors(findings, false);
     });
 
+  /**
+   * `serve --all`: a board for every plan on this machine, and one page that
+   * links to them. Each board is the ordinary per-plan one, started the
+   * ordinary way, so nothing here knows more about a plan than `serve` does.
+   */
+  const serveEveryPlan = async (options: {
+    root: string[];
+    port?: number;
+    stop?: boolean;
+    forward?: boolean;
+    detach?: boolean;
+  }): Promise<void> => {
+    const all = await import('./serve-all.js');
+    const { discoverStores } = await import('./discover.js');
+    const roots: string[] = options.root.length > 0 ? options.root : [homedir()];
+    const port: number = options.port === undefined ? all.PAGE_PORT : options.port;
+    const plans = discoverStores(roots);
+    if (options.stop === true) {
+      const page = await all.stopPage(port);
+      io.out(
+        page.kind === 'stopped'
+          ? `stopped the boards page ${page.url} (pid ${page.pid})`
+          : 'the boards page was not running',
+      );
+      for (const { name, outcome } of await all.stopBoards(plans)) {
+        io.out(
+          outcome.kind === 'stopped'
+            ? `stopped ${name} ${outcome.url} (pid ${outcome.pid})`
+            : `${name}: no board was running${outcome.kind === 'stale' ? ' (cleared a stale record)' : ''}`,
+        );
+      }
+      return;
+    }
+    if (options.forward === true) {
+      const running = (await all.probeBoards(plans)).filter((b) => b.url !== null);
+      io.out(all.forwardFlags([port, ...running.map((b) => Number(new URL(b.url!).port))]));
+      return;
+    }
+    if (plans.length === 0) {
+      throw new Error(
+        `no .planny plans found under ${roots.join(', ')} — run \`planny init\` in a project, or pass --root <dir>`,
+      );
+    }
+    for (const ui of await all.startBoards(plans)) {
+      io.out(`${ui.name}: ${ui.started ? 'started' : 'already up'} at ${ui.url}`);
+    }
+    if (options.detach === true) {
+      const outcome = await all.detachPage(roots, port);
+      if (outcome.kind === 'already') {
+        io.out(`boards page: ${outcome.url} (already up)`);
+        return;
+      }
+      io.out(`boards page: ${outcome.url} (detached, pid ${outcome.pid})`);
+      io.out(`log: ${outcome.log}`);
+      io.out('stop everything with: planny serve --all --stop');
+      return;
+    }
+    const already = await all.currentPageUrl(port);
+    if (already !== null) {
+      io.out(`boards page: ${already} (already up)`);
+      return;
+    }
+    let page;
+    try {
+      page = await all.startPage({ plans, roots }, port);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+      throw new Error(`port ${port} is in use by something else — pass --port <other>`);
+    }
+    io.out(`boards page: http://127.0.0.1:${page.port} (ctrl-c stops the page; the UIs stay up)`);
+    // Keep the process alive until interrupted.
+    await new Promise<void>((resolve) => {
+      process.once('SIGINT', resolve);
+      process.once('SIGTERM', resolve);
+    });
+    await page.close();
+  };
+
   program
     .command('serve')
     .description('start the localhost control site')
-    .option('--port <port>', 'port to listen on (default: the first free port from 5891)', (v: string) => Number(v))
+    .option('--all', 'every plan on this machine: a board each, and one page linking them')
+    .option('--root <dir>', 'with --all: where to look (repeatable; default your home directory)', collectRoots, [])
+    .option('--port <port>', 'port to listen on (with --all, the page\'s port; default: the first free port from 5891)', (v: string) => Number(v))
     .option('--detach', 'launch the server as its own detached process and return')
     .option('--stop', 'stop the detached server for this store')
+    .option('--forward', 'print the ssh -L flags for what this command serves')
     .option('--clean-logs', "delete this store's serve log once it is old and its server is gone")
     .option(
       '--older-than <days>',
@@ -961,23 +1042,59 @@ deletes this store's log once its server is gone and it is older than
 also sweeps dead planny-serve-<port>.log files that planny 0.1.9 and older
 left in the OS temp dir.
 
+--forward prints the \`ssh -L\` flags for what this command serves, so a
+remote operator pastes one line: ssh $(planny serve --forward) <host>.
+
+--all works on every plan on this machine instead of this one. It finds
+them under your home directory, or under each --root you name, starts a
+board for each plan that has none, and serves one page that links to them
+all — one address to keep, never a port. A board already running is left
+alone, and each runs whichever planny started it. The search looks past
+node_modules, build directories, hidden directories, and a linked git
+worktree's checkout of a plan (that worktree shares the main one). With
+--all, --port is the page's port, --stop takes the page and every board
+down, and --forward covers them all. --clean-logs works on one plan's log,
+so it takes no --all.
+
 Examples:
   planny serve --detach            board that outlives this session
   planny serve --stop              stop it (the log stays)
+  planny serve --forward           the -L flags for an ssh forward
+  planny serve --all --detach      every plan's board, and one link to them all
+  planny serve --all --root ~/code look under ~/code only
+  planny serve --all --stop        take the page and every board down
   planny serve --clean-logs        delete dead serve logs older than 7 days`,
     )
     .action(async (options) => {
-      const store = open();
       const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts, BASE_PORT } =
         await import('./server.js');
-      if (options.detach === true && options.stop === true) {
-        throw new Error('pass --detach or --stop, not both');
-      }
-      if (options.cleanLogs === true && (options.detach === true || options.stop === true)) {
-        throw new Error('pass --clean-logs on its own, not with --detach or --stop');
+      const modes = ['detach', 'stop', 'forward'].filter((mode) => options[mode] === true);
+      if (modes.length > 1) throw new Error('pass one of --detach, --stop or --forward');
+      if (options.cleanLogs === true && modes.length > 0) {
+        throw new Error('pass --clean-logs on its own');
       }
       if (options.olderThan !== undefined && options.cleanLogs !== true) {
         throw new Error('--older-than only works with --clean-logs');
+      }
+      if (options.root.length > 0 && options.all !== true) {
+        throw new Error('--root only works with --all');
+      }
+      if (options.all === true && options.cleanLogs === true) {
+        throw new Error("--clean-logs works on one plan's log, so it takes no --all");
+      }
+      if (options.all === true) {
+        await serveEveryPlan(options);
+        return;
+      }
+      const store = open();
+      if (options.forward === true) {
+        const { forwardFlags } = await import('./serve-all.js');
+        const url = await (await import('./server.js')).currentServeUrl(store);
+        if (url === null) {
+          throw new Error('no board is running for this store — start one with `planny serve --detach`');
+        }
+        io.out(forwardFlags([Number(new URL(url).port)]));
+        return;
       }
       if (options.cleanLogs === true) {
         const days = options.olderThan === undefined ? 7 : (options.olderThan as number);
@@ -1078,110 +1195,6 @@ Examples:
       io.out(url);
     });
 
-  program
-    .command('boards')
-    .description('start every board on this machine and serve the page that links them')
-    .option('--root <dir>', 'where to look for plans (repeatable; default: your home directory)', collectRoots, [])
-    .option('--port <port>', 'port for the boards page (default 5890)', (v: string) => Number(v))
-    .option('--detach', 'run the page as its own detached process and return')
-    .option('--stop', 'stop the page and every board')
-    .option('--forward', 'print the ssh -L flags for the page and every running board')
-    .addHelpText(
-      'after',
-      `
-Each plan keeps its own board on its own port, as \`planny serve\` starts
-it. This command finds every plan under your home directory (or under each
---root you name), starts a board for each plan that has none, and serves
-one page that links to them all — one address to keep, never a port. A
-board that is already running is left alone. The page finds the boards
-again on every load, so it is never stale. It looks past node_modules,
-build directories, hidden directories, and a linked git worktree's checkout
-of a plan (that worktree shares the main one).
-
---detach runs the page in its own OS session, like \`serve --detach\`; its
-output goes to planny-boards.log in the OS temp dir. --stop ends the page
-and every board it finds. --forward prints the \`ssh -L\` flags for the
-page and every running board, so a remote operator pastes one line:
-ssh $(planny boards --forward) <host>.
-
-A board started here runs the planny that ran this command. To run one
-plan's board from another build, stop it in that plan's directory and
-start it from that build; the page follows.
-
-Examples:
-  planny boards --detach           every board up, and one link to them all
-  planny boards --root ~/code      look under ~/code only
-  planny boards --forward          the -L flags for an ssh forward
-  planny boards --stop             take the page and every board down`,
-    )
-    .action(async (options) => {
-      const modes = ['detach', 'stop', 'forward'].filter((mode) => options[mode] === true);
-      if (modes.length > 1) throw new Error('pass one of --detach, --stop or --forward');
-      const boards = await import('./boards.js');
-      const { discoverStores } = await import('./discover.js');
-      const roots: string[] = options.root.length > 0 ? options.root : [homedir()];
-      const port: number = options.port === undefined ? boards.PAGE_PORT : options.port;
-      const plans = discoverStores(roots);
-      if (options.stop === true) {
-        const page = await boards.stopBoardsPage(port);
-        io.out(
-          page.kind === 'stopped'
-            ? `stopped the boards page ${page.url} (pid ${page.pid})`
-            : 'the boards page was not running',
-        );
-        for (const { name, outcome } of await boards.stopBoards(plans)) {
-          io.out(
-            outcome.kind === 'stopped'
-              ? `stopped ${name} ${outcome.url} (pid ${outcome.pid})`
-              : `${name}: no board was running${outcome.kind === 'stale' ? ' (cleared a stale record)' : ''}`,
-          );
-        }
-        return;
-      }
-      if (options.forward === true) {
-        const running = (await boards.probeBoards(plans)).filter((b) => b.url !== null);
-        io.out(boards.forwardFlags([port, ...running.map((b) => Number(new URL(b.url!).port))]));
-        return;
-      }
-      if (plans.length === 0) {
-        throw new Error(
-          `no .planny plans found under ${roots.join(', ')} — run \`planny init\` in a project, or pass --root <dir>`,
-        );
-      }
-      for (const board of await boards.startBoards(plans)) {
-        io.out(`${board.name}: ${board.started ? 'started' : 'already up'} at ${board.url}`);
-      }
-      if (options.detach === true) {
-        const outcome = await boards.detachBoardsPage(roots, port);
-        if (outcome.kind === 'already') {
-          io.out(`boards page: ${outcome.url} (already up)`);
-          return;
-        }
-        io.out(`boards page: ${outcome.url} (detached, pid ${outcome.pid})`);
-        io.out(`log: ${outcome.log}`);
-        io.out('stop everything with: planny boards --stop');
-        return;
-      }
-      const already = await boards.currentPageUrl(port);
-      if (already !== null) {
-        io.out(`boards page: ${already} (already up)`);
-        return;
-      }
-      let page;
-      try {
-        page = await boards.startBoardsPage({ plans, roots }, port);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
-        throw new Error(`port ${port} is in use by something else — pass --port <other>`);
-      }
-      io.out(`boards page: http://127.0.0.1:${page.port} (ctrl-c stops the page; the boards stay up)`);
-      // Keep the process alive until interrupted.
-      await new Promise<void>((resolve) => {
-        process.once('SIGINT', resolve);
-        process.once('SIGTERM', resolve);
-      });
-      await page.close();
-    });
 
   return program;
 }

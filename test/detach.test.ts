@@ -207,12 +207,12 @@ describe('serve --detach and --stop', () => {
     }
   }, 60_000);
 
-  it('boards: one command brings up every board and the page, one takes them down', async () => {
+  it('serve --all: one command brings up every board and the page, one takes them down', async () => {
     const roots = mkdtempSync(join(tmpdir(), 'planny-boards-'));
     const pagePort = await freePort();
     const page = `http://127.0.0.1:${pagePort}`;
     const boards = (...args: string[]) =>
-      cliIn(roots, 'boards', '--root', roots, '--port', String(pagePort), ...args);
+      cliIn(roots, 'serve', '--all', '--root', roots, '--port', String(pagePort), ...args);
     try {
       for (const name of ['alpha', 'deep/beta']) {
         mkdirSync(join(roots, name), { recursive: true });
@@ -282,6 +282,11 @@ describe('serve --detach and --stop', () => {
       expect(nothing.code).toBe(0);
       expect(nothing.stdout).toMatch(/not running/);
     } finally {
+      // Every board this test started is a detached process of its own, and
+      // only the page's pid reaches the suite's sweep. A failing assertion
+      // must not leave them running: they would hold their ports until the
+      // machine is rebooted, and the next run would find none free.
+      await boards('--stop').catch(() => {});
       rmSync(roots, { recursive: true, force: true });
     }
   }, 60_000);
@@ -356,7 +361,7 @@ describe('serve --detach and --stop', () => {
     await cli('init');
     const result = await cli('serve', '--detach', '--stop');
     expect(result.code).toBe(1);
-    expect(result.stderr).toMatch(/not both/i);
+    expect(result.stderr).toMatch(/pass one of --detach, --stop or --forward/i);
   }, 15_000);
 
   it('the detach log lives in this store\'s .planny, nowhere else', async () => {

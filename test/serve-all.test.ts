@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { currentPageUrl, forwardFlags, probeBoards, startBoardsPage } from '../src/boards.js';
+import { currentPageUrl, forwardFlags, probeBoards, startPage } from '../src/serve-all.js';
 import { discoverStores } from '../src/discover.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import { initRepo, openStore } from '../src/store.js';
@@ -26,7 +26,7 @@ beforeEach(async () => {
   alpha = plan('alpha');
   beta = plan('beta');
   alphaBoard = await startServer(openStore(alpha), 0);
-  page = await startBoardsPage({ plans: discoverStores([dir]), roots: [dir] }, 0);
+  page = await startPage({ plans: discoverStores([dir]), roots: [dir] }, 0);
   base = `http://127.0.0.1:${page.port}`;
 });
 
@@ -69,7 +69,7 @@ describe('the boards page', () => {
     // Walking a home directory can take a second, so a request never waits
     // for one: the page answers from the plans it knew, then looks again.
     await page.close();
-    page = await startBoardsPage({ plans: discoverStores([dir]), roots: [dir], rescanAfterMs: 0 }, 0);
+    page = await startPage({ plans: discoverStores([dir]), roots: [dir], rescanAfterMs: 0 }, 0);
     base = `http://127.0.0.1:${page.port}`;
     plan('gamma');
     expect(await (await fetch(base)).text()).not.toContain('gamma');
@@ -80,7 +80,7 @@ describe('the boards page', () => {
   it('escapes what it prints', async () => {
     await page.close();
     plan('a<b');
-    page = await startBoardsPage({ plans: discoverStores([dir]), roots: [dir] }, 0);
+    page = await startPage({ plans: discoverStores([dir]), roots: [dir] }, 0);
     base = `http://127.0.0.1:${page.port}`;
     const html = await (await fetch(base)).text();
     expect(html).toContain('a&lt;b');

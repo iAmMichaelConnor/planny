@@ -20,7 +20,7 @@ import { openStore } from './store.js';
 
 /**
  * One command for every board on this machine. Each plan keeps its own
- * board on its own port; `planny boards` starts the ones that are missing
+ * board on its own port; `planny serve --all` starts the ones that are missing
  * and serves the page that links to them all, so the operator keeps one
  * address and never a port.
  */
@@ -35,13 +35,19 @@ export interface Board {
   url: string | null;
 }
 
-/** Each plan by name, and where its board answers, if it does. */
+/**
+ * Each plan by name, and where its board answers, if it does. The plans are
+ * probed together: each probe waits up to a second for a board that is not
+ * there, and one after another that wait would be the page's load time.
+ */
 export async function probeBoards(plans: string[]): Promise<Board[]> {
-  const boards: Board[] = [];
-  for (const root of plans) {
-    boards.push({ name: basename(root), root, url: await currentServeUrl(openStore(root)) });
-  }
-  return boards;
+  return Promise.all(
+    plans.map(async (root) => ({
+      name: basename(root),
+      root,
+      url: await currentServeUrl(openStore(root)),
+    })),
+  );
 }
 
 /** Start a board for every plan that has none; a running one is left alone. */
@@ -76,7 +82,7 @@ export interface PageOptions {
 const RESCAN_AFTER_MS = 30_000;
 
 /** Serve the page: every plan by name, linking those that have a board. */
-export async function startBoardsPage(options: PageOptions, port: number): Promise<RunningServer> {
+export async function startPage(options: PageOptions, port: number): Promise<RunningServer> {
   // Walking a home directory can take a second, so a request never waits
   // for one: the page answers from the plans it knows, then walks again
   // once the last walk is old enough. A new plan shows on a later load.
@@ -130,7 +136,7 @@ function renderPage(boards: Board[]): string {
   const rows = boards.map((board) => {
     const path = `<span class="path">${esc(board.root)}</span>`;
     return board.url === null
-      ? `<li><span class="name">${esc(board.name)}</span> ${path}<br><span class="down">not running — run <code>planny boards</code> again</span></li>`
+      ? `<li><span class="name">${esc(board.name)}</span> ${path}<br><span class="down">not running — run <code>planny serve --all</code> again</span></li>`
       : `<li><a class="name" href="${esc(board.url)}">${esc(board.name)}</a> ${path}</li>`;
   });
   return `<!doctype html>
@@ -187,9 +193,9 @@ async function pageInfo(port: number): Promise<{ pid: number } | null> {
 }
 
 /** Run the page as its own detached process; see `detach` in server.ts. */
-export function detachBoardsPage(roots: string[], port: number): Promise<DetachOutcome> {
+export function detachPage(roots: string[], port: number): Promise<DetachOutcome> {
   return detach({
-    args: ['boards', '--port', String(port), ...roots.flatMap((root) => ['--root', root])],
+    args: ['serve', '--all', '--port', String(port), ...roots.flatMap((root) => ['--root', root])],
     cwd: process.cwd(),
     log: pageLogPath(),
     up: () => currentPageUrl(port),
@@ -197,7 +203,7 @@ export function detachBoardsPage(roots: string[], port: number): Promise<DetachO
 }
 
 /** Stop the page on this port. Nothing answering is a success. */
-export async function stopBoardsPage(port: number): Promise<StopOutcome> {
+export async function stopPage(port: number): Promise<StopOutcome> {
   const info = await pageInfo(port);
   if (info === null) return { kind: 'nothing' };
   const url = `http://127.0.0.1:${port}`;
