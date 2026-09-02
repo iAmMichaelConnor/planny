@@ -72,6 +72,10 @@ structure, so a re-parent never moves a file.
 - Ops validates input shapes at runtime (enums, id lists, bump targets) —
   the server passes JSON bodies through, so the funnel must not trust its
   compile-time types.
+- An open decision whose body has no Background, no Proposal (or Options,
+  or No proposal yet) and no Needed from you draws a warning from ops on
+  add, on a body write and on a conversion. It never blocks the write: the
+  writer is an agent, and the message is enough for it to rewrite the body.
 
 ## Commands
 

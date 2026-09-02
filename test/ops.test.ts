@@ -245,6 +245,73 @@ describe('cancelTask', () => {
   });
 });
 
+describe('the decision layout warning', () => {
+  const laidOut = '## Background\n\nWe need a host.\n\n## Proposal\n\nFly.io.\n\n## Needed from you\n\nyes or no?';
+
+  it('names every missing section when a decision body has none of them', () => {
+    const { warnings } = addTask(store, { name: 'Choose a host', type: 'decision', body: 'which one?' });
+    const said = warnings.join(' ');
+    expect(said).toMatch(/Background/);
+    expect(said).toMatch(/Proposal/);
+    expect(said).toMatch(/Needed from you/);
+    expect(said).toMatch(/decision-format/); // where the layout is written down
+  });
+
+  it('names only the section that is missing', () => {
+    const { warnings } = addTask(store, {
+      name: 'Choose a host',
+      type: 'decision',
+      body: '## Background\n\nWe need a host.\n\n## Needed from you\n\nyes or no?',
+    });
+    expect(warnings.join(' ')).toMatch(/Proposal/);
+    expect(warnings.join(' ')).not.toMatch(/Background/);
+  });
+
+  it('the warning does not block the write', () => {
+    const { task, warnings } = addTask(store, { name: 'Choose a host', type: 'decision' });
+    expect(warnings).not.toEqual([]);
+    expect(store.load(task.id).name).toBe('Choose a host'); // written all the same
+  });
+
+  it('a body written to the layout draws no warning', () => {
+    expect(addTask(store, { name: 'Choose a host', type: 'decision', body: laidOut }).warnings).toEqual([]);
+  });
+
+  it('Options stands in for Proposal, and bold headings count', () => {
+    const body = '**Background**\n\nWe need a host.\n\n## Options\n\nFly or Render.\n\n## Needed from you\n\nwhich?';
+    expect(addTask(store, { name: 'Choose a host', type: 'decision', body }).warnings).toEqual([]);
+  });
+
+  it('a plain task is never judged on the decision layout', () => {
+    expect(addTask(store, { name: 'Build the thing', body: 'no headings here' }).warnings).toEqual([]);
+  });
+
+  it('converting a task into a decision warns about its body', () => {
+    addTask(store, { name: 'Build the thing', body: 'no headings here' });
+    expect(updateTask(store, 't1', { type: 'decision' }).warnings.join(' ')).toMatch(/Background/);
+  });
+
+  it('a rewritten body is judged again', () => {
+    addTask(store, { name: 'Choose a host', type: 'decision', body: laidOut });
+    expect(updateTask(store, 't1', { body: 'never mind the layout' }).warnings.join(' ')).toMatch(
+      /Background/,
+    );
+  });
+
+  it('a move that leaves the body alone says nothing about it', () => {
+    addTask(store, { name: 'Choose a host', type: 'decision', body: 'which one?' });
+    expect(bumpTask(store, 't1', 'top').warnings).toEqual([]);
+    expect(updateTask(store, 't1', { kind: 'operator' }).warnings).toEqual([]);
+  });
+
+  it('a consequences note on an answered decision draws no layout warning', () => {
+    addTask(store, { name: 'Choose a host', type: 'decision', body: 'which one?' });
+    resolveDecision(store, 't1', 'Fly.io.');
+    // The question is answered; the layout can no longer help anyone.
+    expect(updateTask(store, 't1', { appendBody: 'Consequences: shipped.' }).warnings).toEqual([]);
+  });
+});
+
 describe('resolveDecision', () => {
   it('marks the decision done and appends the outcome', () => {
     addTask(store, { name: 'Choose db', type: 'decision', body: '**Background** ...' });

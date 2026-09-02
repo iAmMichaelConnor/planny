@@ -227,7 +227,9 @@ planny add "Choose the database" --type decision --kind operator \
 
 Write the body using the section layout in
 [references/decision-format.md](references/decision-format.md) — read it
-before writing your first decision. Blocked work gets `--blocked-by` pointing
+before writing your first decision. planny warns when the body has no
+Background, no Proposal and no Needed from you; the task is still
+written, so answer the warning by rewriting the body. Blocked work gets `--blocked-by` pointing
 at the decision, so the queue shows what each answer unlocks. After a
 resolution, dependants wait on the outcome task instead.
 

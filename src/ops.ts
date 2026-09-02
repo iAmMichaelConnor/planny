@@ -330,10 +330,43 @@ function createTask(m: Mutation, store: Store, input: AddInput, actor?: string):
   return task;
 }
 
+/**
+ * The operator must be able to answer a decision from the item alone. Three
+ * sections carry that: what the question is about, the answer you propose,
+ * and the question itself. The rest of the layout is optional by design, so
+ * only these three warn. A heading counts as a markdown heading or a bold
+ * line, because agents write both.
+ */
+const DECISION_SECTIONS: ReadonlyArray<{ label: string; heading: RegExp }> = [
+  { label: '## Background', heading: /^\s*(?:#{1,6}\s+|\*\*)background\b/im },
+  {
+    label: '## Proposal (or ## Options, or ## No proposal yet)',
+    heading: /^\s*(?:#{1,6}\s+|\*\*)(?:proposal|options|no proposal yet)\b/im,
+  },
+  { label: '## Needed from you', heading: /^\s*(?:#{1,6}\s+|\*\*)needed from you\b/im },
+];
+
+/**
+ * Warn about a decision body nobody can answer from. It never blocks the
+ * write: the writer is an agent, and the returned message is enough for it
+ * to think again and rewrite the body.
+ */
+function warnDecisionLayout(m: Mutation, task: Task): void {
+  if (task.type !== 'decision') return;
+  // An answered or closed question is a record now; its layout helps nobody.
+  if (!isActive(task) || task.resolvedAt !== undefined) return;
+  const missing = DECISION_SECTIONS.filter((s) => !s.heading.test(task.body)).map((s) => s.label);
+  if (missing.length === 0) return;
+  m.warn(
+    `${task.id}: the decision body has no ${missing.join(', no ')} — the operator answers from the item alone. The layout is in the planny skill (references/decision-format.md). Rewrite the body with \`planny update ${task.id} --desc-file <file>\`.`,
+  );
+}
+
 function doAddTask(store: Store, input: AddInput, actor?: string): OpResult {
   assertAddInput(input);
   const m = new Mutation(store);
   const task = createTask(m, store, input, actor);
+  warnDecisionLayout(m, task);
   m.commit();
   return m.result(task);
 }
@@ -400,6 +433,11 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: stri
   }
 
   m.touch(id);
+  // Only a write that could have changed the answerability of the question
+  // is judged: a bump or a re-parent says nothing about the body.
+  if (input.body !== undefined || input.appendBody !== undefined || input.type !== undefined) {
+    warnDecisionLayout(m, task);
+  }
   if (input.priority !== undefined) {
     m.bump(id, input.priority);
     m.repair(); // so the logged position is the task's final resting place
