@@ -942,31 +942,26 @@ Examples:
    */
   const chosenTarget = (
     named: string | true,
-    found: { target: string; port?: number } | null,
+    seen: { target: string; port?: number } | null,
   ): { target: string; port?: number } | null => {
     if (typeof named === 'string') return { target: named };
-    if (found === null) {
-      // Nothing to read, so hand over what this machine does know. An agent
-      // can offer these to the operator as candidates instead of guessing,
-      // and a person can usually recognize their own box in the list.
-      io.err(
-        'could not work out how you reach this machine, which is normal and not a fault: the address comes from an ssh session, and this command is not running in one. A local terminal, a tmux pane older than your session, a cron job and a container all look the same from here.',
-      );
-      io.err(
-        'replace <host> with the name you ssh to, or user@address; put -p <port> before the -L flags for a port that is not 22.',
-      );
-      io.err(
-        `this machine is called ${hostname()}, reachable at ${ownAddresses().join(', ') || 'no address but its own'}`,
-      );
-      return null;
+    // The host is not guessed. The address a session arrived on is what this
+    // side of a gateway sees, and a container or a cloud box almost always
+    // has one — so it names this machine here and something else, or nothing,
+    // from where the operator sits. A wrong host that looks right costs more
+    // than a blank one: ssh -N prints nothing either way, so a hanging
+    // connect and a working tunnel are indistinguishable.
+    io.err('replace <host> with the name you ssh to. These may help:');
+    io.err(`  this machine calls itself ${hostname()}`);
+    const addresses = ownAddresses();
+    if (addresses.length > 0) io.err(`  its own addresses are ${addresses.join(', ')}`);
+    if (seen !== null) {
+      io.err(`  your session arrived on ${seen.target}${seen.port === undefined ? '' : ` port ${seen.port}`}`);
     }
-    // Named, not stated: a tmux pane or a detached process can carry the
-    // environment of a session that has since gone, and would name a host
-    // that no longer reaches here.
     io.err(
-      `guessing host ${found.target} from this shell's ssh session — pass one to --forward if that is not how you reach this machine`,
+      '  none of these is necessarily reachable from your machine, and a private address may reach a different machine on your own network',
     );
-    return found;
+    return null;
   };
 
   /** Every address of this machine that something else could dial. */

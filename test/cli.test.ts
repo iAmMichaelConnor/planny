@@ -1165,7 +1165,39 @@ describe('serve --all: one command for every board on this machine', () => {
     expect(err.join(' ')).toContain(dir);
   });
 
-  it('says what belongs in the blank when it cannot fill it in', async () => {
+  it('never guesses the host: it offers candidates and leaves the blank', async () => {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'alpha'), { recursive: true });
+    await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
+    const saved = process.env.SSH_CONNECTION;
+    try {
+      // Even with a session to read, the host stays blank. The address a
+      // session arrived on is what this side of a gateway sees; from the
+      // operator's machine it may reach something else entirely.
+      process.env.SSH_CONNECTION = '10.0.0.2 5555 10.0.0.9 22';
+      process.env.USER = 'mike';
+      out = [];
+      err = [];
+      await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
+      expect(out.join('\n')).toMatch(/<host>$/);
+      const note = err.join(' ');
+      expect(note).toMatch(/replace <host> with the name you ssh to/);
+      expect(note).toContain('this machine calls itself');
+      expect(note).toContain('mike@10.0.0.9'); // offered, not used
+      expect(note).toMatch(/none of these is necessarily reachable/);
+      expect(note).toMatch(/different machine on your own network/);
+
+      // A named host is the only thing that fills the blank.
+      out = [];
+      await run('serve', '--all', '--forward', 'my-box', '--root', dir, '--port', '5890');
+      expect(out.join('\n')).toBe('ssh -N -L 5890:127.0.0.1:5890 my-box');
+    } finally {
+      if (saved === undefined) delete process.env.SSH_CONNECTION;
+      else process.env.SSH_CONNECTION = saved;
+    }
+  });
+
+  it('offers what it can when there is no session to read', async () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(join(dir, 'alpha'), { recursive: true });
     await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
@@ -1176,58 +1208,8 @@ describe('serve --all: one command for every board on this machine', () => {
       err = [];
       await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
       expect(out.join('\n')).toMatch(/<host>$/);
-      const note = err.join(' ');
-      // Naming the blank is not enough; say what goes in it.
-      expect(note).toMatch(/name you ssh to/);
-      expect(note).toMatch(/user@address/);
-      expect(note).toMatch(/-p /); // and where the port goes
-      // An agent reading this must be able to propose candidates rather
-      // than guess: give it what the machine knows about itself.
-      expect(note).toMatch(/this machine is called/);
-      expect(note).toMatch(/reachable at/);
-    } finally {
-      if (saved === undefined) delete process.env.SSH_CONNECTION;
-      else process.env.SSH_CONNECTION = saved;
-    }
-  });
-
-  it('calls the host it worked out a guess, so a stale one gets noticed', async () => {
-    const { mkdirSync } = await import('node:fs');
-    mkdirSync(join(dir, 'alpha'), { recursive: true });
-    await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
-    const saved = process.env.SSH_CONNECTION;
-    try {
-      process.env.SSH_CONNECTION = '10.0.0.2 5555 10.0.0.9 22';
-      process.env.USER = 'mike';
-      err = [];
-      await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
-      const note = err.join(' ');
-      expect(note).toContain('mike@10.0.0.9'); // names it, so a wrong one shows
-      expect(note).toMatch(/if that is not how you reach/);
-    } finally {
-      if (saved === undefined) delete process.env.SSH_CONNECTION;
-      else process.env.SSH_CONNECTION = saved;
-    }
-  });
-
-  it('fills the host in from the ssh session, and a named host wins', async () => {
-    const { mkdirSync } = await import('node:fs');
-    mkdirSync(join(dir, 'alpha'), { recursive: true });
-    await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
-    const saved = process.env.SSH_CONNECTION;
-    try {
-      process.env.SSH_CONNECTION = '10.0.0.2 5555 10.0.0.9 2222';
-      process.env.USER = 'mike';
-      out = [];
-      err = [];
-      await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
-      expect(out.join('\n')).toBe('ssh -N -p 2222 -L 5890:127.0.0.1:5890 mike@10.0.0.9');
-      // The note must not reach stdout, or it would break `$(...)`.
-      expect(err.join(' ')).toMatch(/guessing host/);
-
-      out = [];
-      await run('serve', '--all', '--forward', 'my-box', '--root', dir, '--port', '5890');
-      expect(out.join('\n')).toBe('ssh -N -L 5890:127.0.0.1:5890 my-box');
+      expect(err.join(' ')).toContain('this machine calls itself');
+      expect(err.join(' ')).not.toContain('your session arrived on');
     } finally {
       if (saved === undefined) delete process.env.SSH_CONNECTION;
       else process.env.SSH_CONNECTION = saved;
@@ -1244,9 +1226,6 @@ describe('serve --all: one command for every board on this machine', () => {
     // alpha has a board; beta has none and gets no flag.
     const board = await startServer(openStore(join(dir, 'alpha')), 0);
     try {
-      // The suite may itself be running inside an ssh session, so say plainly
-      // which case is under test rather than inheriting the machine's.
-      delete process.env.SSH_CONNECTION;
       expect(await run('serve', '--all', '--forward', '--root', dir, '--port', '5890')).toBe(0);
       expect(out.join('\n')).toBe(
         `ssh -N -L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port} <host>`,

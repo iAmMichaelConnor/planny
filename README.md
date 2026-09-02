@@ -193,13 +193,12 @@ Working over SSH takes two machines, which is the point of a forward. On
 the machine that serves the boards, `planny serve --all --forward` prints
 a whole ssh command; paste that line on the machine you sit at and every
 board is tunnelled at once. It carries `-N`, so that terminal only holds the
-tunnel open — leave it running, and interrupt it when you are done. Inside an ssh session it fills in the host
-itself, from the address your machine dialled to get here, so there is
-nothing to edit — pass one (`--forward my-box`) when you reach the machine
-by another name, such as an alias in your own ssh config. Outside one it
-says why it cannot (a local terminal, an old tmux pane, a cron job and a
-container all look alike from there), leaves `<host>` blank, and prints
-this machine's name and addresses to choose from. `planny serve
+tunnel open — leave it running, and interrupt it when you are done. It leaves `<host>` for you to fill in
+unless you name one (`--forward my-box`), and prints this machine's name,
+its addresses and the address your session arrived on as candidates. It
+does not choose between them: an address that works on the machine serving
+the boards may reach nothing from where you sit, or reach a different
+machine on your own network. `planny serve
 --forward` does the same for one plan. Do not wrap either in `ssh $(planny
 serve --forward) <host>`: the substitution runs where you paste it, and
 that machine has no plan on it.
