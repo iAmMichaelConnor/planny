@@ -208,23 +208,38 @@ export function serveLogPath(store: Store): string {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Where the port scan starts when the operator names no port. */
+export const BASE_PORT = 5891;
+
 /**
- * Launch `planny serve` as a child in its own OS session, so the board
+ * What a detached start needs: the planny command to run, where to run it,
+ * where its output goes, and how to tell it is up.
+ */
+export interface Launch {
+  args: string[];
+  cwd: string;
+  log: string;
+  /** The address once the server answers, or null while it does not. */
+  up(): Promise<string | null>;
+}
+
+/**
+ * Launch a planny command as a child in its own OS session, so the server
  * outlives the caller — agent harnesses reap session-scoped background
  * tasks, and a plain child dies with its parent's session. The child has
  * no terminal, so its output (the URL line, any later crash) goes to a
- * log file. Resolves only once the child answers for this store: a
- * 'started' outcome means a live board.
+ * log file. Resolves only once the child answers: a 'started' outcome
+ * means a live server.
  */
-export async function detachServer(store: Store, port: number): Promise<DetachOutcome> {
-  const existing = await currentServeUrl(store);
+export async function detach(launch: Launch): Promise<DetachOutcome> {
+  const existing = await launch.up();
   if (existing !== null) return { kind: 'already', url: existing };
-  const log = serveLogPath(store);
+  const { log } = launch;
   const fd = openSync(log, 'a');
   const child = spawn(
     process.execPath,
-    [fileURLToPath(new URL('./bin.js', import.meta.url)), 'serve', '--port', String(port)],
-    { cwd: store.root, detached: true, stdio: ['ignore', fd, fd] },
+    [fileURLToPath(new URL('./bin.js', import.meta.url)), ...launch.args],
+    { cwd: launch.cwd, detached: true, stdio: ['ignore', fd, fd] },
   );
   closeSync(fd);
   let exited = false;
@@ -234,17 +249,27 @@ export async function detachServer(store: Store, port: number): Promise<DetachOu
   child.unref();
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline && !exited) {
-    const url = await currentServeUrl(store);
+    const url = await launch.up();
     if (url !== null) return { kind: 'started', url, pid: child.pid ?? 0, log };
     await sleep(100);
   }
-  // A racing launcher can win the port for this store between our first
-  // probe and the spawn; the child then reports "already serving" and
-  // exits. That is success, not a failure to surface.
-  const raced = await currentServeUrl(store);
+  // A racing launcher can win the port between our first probe and the
+  // spawn; the child then reports "already serving" and exits. That is
+  // success, not a failure to surface.
+  const raced = await launch.up();
   if (raced !== null) return { kind: 'already', url: raced };
   if (!exited) child.kill('SIGTERM');
   throw new Error(`the detached server did not come up — from ${log}:\n${await logTail(log)}`);
+}
+
+/** Start this store's board as a detached process; see `detach`. */
+export function detachServer(store: Store, port: number): Promise<DetachOutcome> {
+  return detach({
+    args: ['serve', '--port', String(port)],
+    cwd: store.root,
+    log: serveLogPath(store),
+    up: () => currentServeUrl(store),
+  });
 }
 
 async function logTail(path: string): Promise<string> {
@@ -254,6 +279,20 @@ async function logTail(path: string): Promise<string> {
   } catch {
     return '(no log was written)';
   }
+}
+
+/**
+ * Send SIGTERM to the pid, then wait until `up` says the address no longer
+ * answers, so the caller can report the server as really down.
+ */
+export async function terminate(pid: number, url: string, up: () => Promise<boolean>): Promise<void> {
+  process.kill(pid, 'SIGTERM');
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if (!(await up())) return;
+    await sleep(100);
+  }
+  throw new Error(`sent SIGTERM to pid ${pid} but ${url} is still serving — stop it by hand`);
 }
 
 /**
@@ -281,24 +320,11 @@ export async function stopServer(store: Store): Promise<StopOutcome> {
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
     throw new Error(`the server at 127.0.0.1:${port} recorded no usable pid — stop it by hand`);
   }
-  process.kill(pid, 'SIGTERM');
-  const deadline = Date.now() + 3000;
-  while (Date.now() < deadline) {
-    if ((await servedStoreRoot(port)) !== store.root) {
-      // A foreground serve leaves no log; name it only when it exists.
-      const log = serveLogPath(store);
-      return {
-        kind: 'stopped',
-        url: `http://127.0.0.1:${port}`,
-        pid,
-        ...(existsSync(log) ? { log } : {}),
-      };
-    }
-    await sleep(100);
-  }
-  throw new Error(
-    `sent SIGTERM to pid ${pid} but 127.0.0.1:${port} is still serving — stop it by hand`,
-  );
+  const url = `http://127.0.0.1:${port}`;
+  await terminate(pid, url, async () => (await servedStoreRoot(port)) === store.root);
+  // A foreground serve leaves no log; name it only when it exists.
+  const log = serveLogPath(store);
+  return { kind: 'stopped', url, pid, ...(existsSync(log) ? { log } : {}) };
 }
 
 /**

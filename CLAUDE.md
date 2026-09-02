@@ -23,7 +23,16 @@ structure, so a re-parent never moves a file.
   - `render.ts` — markdown export, terminal tree, dependency forest.
   - `cli.ts` — commander wiring only; no logic.
   - `bin.ts` — the executable entry point; calls cli.
+  - `discover.ts` — find every `.planny` store under given roots, for
+    `planny boards`. Skips hidden and build directories, and a linked
+    worktree's checkout of a tracked plan, the same rule `store.findRoot`
+    follows.
   - `server.ts` — localhost API + static UI serving; calls ops/query only.
+    Also the detached start, probe and stop of a board, which `boards.ts`
+    loops over.
+  - `boards.ts` — `planny boards`: start a board for every plan found and
+    serve the page that links to them, one process on its own port (5890).
+    Its log is `planny-boards.log` in the OS temp dir.
 - `web/` — static localhost UI (no build step, no framework).
 - `test/` — vitest suites, one per module, plus CLI end-to-end, a
   real-process detach suite, and a jsdom UI walk.

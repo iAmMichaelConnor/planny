@@ -67,7 +67,9 @@ Rules that keep the store consistent:
   address at any time. The detached server outlives your session; a
   harness background task dies at session end, /clear, or compaction,
   and the operator's board with it — never use one for the board.
-  `planny serve --stop` ends it.
+  `planny serve --stop` ends it. An operator who works in several plans
+  can run `planny boards --detach` once: it starts a board for every
+  plan on the machine and prints one page that links to them all.
 - **Identify yourself.** Prefix every planny command:
   `PLANNY_SESSION=<your session id> PLANNY_PROJECT=<store dir name> planny …` — the
   one form that survives every shell and harness (an `export` dies in a
@@ -80,7 +82,9 @@ Rules that keep the store consistent:
   the worktree's own `.planny` checkout is ignored unless a
   `.planny/fork` marker makes the split deliberate.
 - The server binds 127.0.0.1 only; a remote operator needs their own
-  forward: `ssh -L 5891:127.0.0.1:5891 <host>`.
+  forward: `ssh -L 5891:127.0.0.1:5891 <host>`. For every board at once,
+  `planny boards --forward` prints the `-L` flags:
+  `ssh $(planny boards --forward) <host>`.
 - **Starting a task claims it.** `planny start` on another session's
   task refuses unless you pass `--take`, which records the takeover,
   but you should _rarely_ need `--take`.
@@ -106,6 +110,7 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "write the plan to a file" | `planny export --out plan.md [--status todo,in-progress]` |
 | "let's go through the decisions" | see "Working the decision queue" |
 | "open the board" | `planny serve --detach` (see "Serve the board at session start") |
+| "open all my boards", "where are my boards?" | `planny boards --detach` — one page that links every plan's board |
 | "is the store broken?", a command errors on a task file, a git merge or checkout touched `.planny` | `planny doctor` (add `--fix` to apply the safe repairs) |
 
 If you have a question only the operator can answer → instead, **add a decision task**

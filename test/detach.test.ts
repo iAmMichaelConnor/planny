@@ -83,8 +83,16 @@ async function runCli(...args: string[]): Promise<{ code: number; stdout: string
 
 /** Remember a detached pid from CLI output so afterEach can reap strays. */
 function trackPid(stdout: string): void {
-  const pid = /pid (\d+)/.exec(stdout);
-  if (pid) startedPids.push(Number(pid[1]));
+  for (const pid of stdout.matchAll(/pid (\d+)/g)) startedPids.push(Number(pid[1]));
+}
+
+/** A port nothing holds right now, for a page that must be found by number. */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const port = (probe.address() as { port: number }).port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
 }
 
 async function until(check: () => Promise<boolean>, ms = 4000): Promise<boolean> {
@@ -94,6 +102,15 @@ async function until(check: () => Promise<boolean>, ms = 4000): Promise<boolean>
     await new Promise((r) => setTimeout(r, 100));
   }
   return false;
+}
+
+async function pageAnswering(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/api/boards`, { signal: AbortSignal.timeout(500) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function answering(url: string): Promise<boolean> {
@@ -187,6 +204,85 @@ describe('serve --detach and --stop', () => {
       expect((await cli('serve', '--stop')).code).toBe(0);
     } finally {
       rmSync(second, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('boards: one command brings up every board and the page, one takes them down', async () => {
+    const roots = mkdtempSync(join(tmpdir(), 'planny-boards-'));
+    const pagePort = await freePort();
+    const page = `http://127.0.0.1:${pagePort}`;
+    const boards = (...args: string[]) =>
+      cliIn(roots, 'boards', '--root', roots, '--port', String(pagePort), ...args);
+    try {
+      for (const name of ['alpha', 'deep/beta']) {
+        mkdirSync(join(roots, name), { recursive: true });
+        await cliIn(join(roots, name), 'init');
+        await cliIn(join(roots, name), 'add', `task in ${name}`);
+      }
+      // A plan under node_modules must not be found.
+      mkdirSync(join(roots, 'node_modules', 'junk'), { recursive: true });
+      await cliIn(join(roots, 'node_modules', 'junk'), 'init');
+
+      // Runs from anywhere: roots itself holds no plan.
+      const up = await boards('--detach');
+      trackPid(up.stdout);
+      expect(up.code).toBe(0);
+      expect(up.stdout).toMatch(/alpha: started at http:\/\/127\.0\.0\.1:\d+/);
+      expect(up.stdout).toMatch(/beta: started at http:\/\/127\.0\.0\.1:\d+/);
+      expect(up.stdout).not.toContain('junk');
+      expect(up.stdout).toContain(`boards page: ${page} (detached, pid `);
+      expect(up.stdout).toMatch(/planny-boards\.log/); // says where output goes
+      expect(up.stdout).toMatch(/--stop/); // teaches how to end it
+
+      // The page links each plan to the board `planny url` names there, and
+      // each board serves only its own plan.
+      const html = await (await fetch(page)).text();
+      const urls: string[] = [];
+      for (const name of ['alpha', 'deep/beta']) {
+        const url = (await cliIn(join(roots, name), 'url')).stdout.trim();
+        expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+        expect(html).toContain(`href="${url}"`);
+        const state = (await (await fetch(`${url}/api/state`)).json()) as {
+          tasks: Array<{ name: string }>;
+        };
+        expect(state.tasks.map((t) => t.name)).toEqual([`task in ${name}`]);
+        urls.push(url);
+      }
+      expect(new Set(urls).size).toBe(2);
+
+      // A second run leaves everything alone and prints the same link.
+      const again = await boards('--detach');
+      expect(again.code).toBe(0);
+      expect(again.stdout).toMatch(/alpha: already up at/);
+      expect(again.stdout).toContain(`boards page: ${page} (already up)`);
+
+      // --forward names the page and both boards.
+      const forward = await boards('--forward');
+      expect(forward.code).toBe(0);
+      const flags = forward.stdout.trim();
+      expect(flags).toContain(`-L ${pagePort}:127.0.0.1:${pagePort}`);
+      for (const url of urls) {
+        const port = new URL(url).port;
+        expect(flags).toContain(`-L ${port}:127.0.0.1:${port}`);
+      }
+
+      // --stop takes the page and both boards down, and clears their records.
+      const down = await boards('--stop');
+      expect(down.code).toBe(0);
+      expect(down.stdout).toMatch(/stopped the boards page/);
+      expect(down.stdout).toMatch(/stopped alpha/);
+      expect(down.stdout).toMatch(/stopped beta/);
+      for (const url of urls) expect(await until(async () => !(await answering(url)))).toBe(true);
+      expect(await until(async () => !(await pageAnswering(page)))).toBe(true);
+      expect((await cliIn(join(roots, 'alpha'), 'url')).code).toBe(1);
+      expect(existsSync(join(roots, 'alpha', '.planny', 'serve.json'))).toBe(false);
+
+      // Stopping again is a success with nothing to do.
+      const nothing = await boards('--stop');
+      expect(nothing.code).toBe(0);
+      expect(nothing.stdout).toMatch(/not running/);
+    } finally {
+      rmSync(roots, { recursive: true, force: true });
     }
   }, 60_000);
 

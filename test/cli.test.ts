@@ -1150,3 +1150,37 @@ describe('mutations name the store they acted on', () => {
     expect(() => JSON.parse(allOut())).not.toThrow();
   });
 });
+
+describe('boards: one command for every board on this machine', () => {
+  it('refuses two of --detach, --stop and --forward at once', async () => {
+    expect(await run('boards', '--stop', '--detach')).toBe(1);
+    expect(err.join(' ')).toMatch(/one of --detach, --stop or --forward/);
+    expect(await run('boards', '--forward', '--stop')).toBe(1);
+    expect(err.join(' ')).toMatch(/one of --detach, --stop or --forward/);
+  });
+
+  it('says so when there is no plan to serve, before starting anything', async () => {
+    expect(await run('boards', '--root', dir)).toBe(1);
+    expect(err.join(' ')).toMatch(/no \.planny plans found under/);
+    expect(err.join(' ')).toContain(dir);
+  });
+
+  it('--forward prints the ssh flags for the page and every running board', async () => {
+    const { mkdirSync } = await import('node:fs');
+    const { startServer } = await import('../src/server.js');
+    for (const name of ['alpha', 'beta']) {
+      mkdirSync(join(dir, name), { recursive: true });
+      await runCli(['init'], { cwd: join(dir, name), out: () => {}, err: () => {} });
+    }
+    // alpha has a board; beta has none and gets no flag.
+    const board = await startServer(openStore(join(dir, 'alpha')), 0);
+    try {
+      expect(await run('boards', '--forward', '--root', dir, '--port', '5890')).toBe(0);
+      expect(out.join('\n')).toBe(
+        `-L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port}`,
+      );
+    } finally {
+      await board.close();
+    }
+  });
+});

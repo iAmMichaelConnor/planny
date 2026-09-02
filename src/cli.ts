@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { catchup, compactCatchup, compactTask } from './catchup.js';
@@ -34,8 +35,10 @@ import {
   type TaskType,
 } from './types.js';
 
-/** Where the port scan starts when the operator names no port. */
-const BASE_PORT = 5891;
+/** Collect a repeatable --root into a list. */
+function collectRoots(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
 
 export interface CliIo {
   cwd: string;
@@ -965,7 +968,7 @@ Examples:
     )
     .action(async (options) => {
       const store = open();
-      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts } =
+      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts, BASE_PORT } =
         await import('./server.js');
       if (options.detach === true && options.stop === true) {
         throw new Error('pass --detach or --stop, not both');
@@ -1073,6 +1076,111 @@ Examples:
         throw new Error('the UI is not being served for this store — run `planny serve`');
       }
       io.out(url);
+    });
+
+  program
+    .command('boards')
+    .description('start every board on this machine and serve the page that links them')
+    .option('--root <dir>', 'where to look for plans (repeatable; default: your home directory)', collectRoots, [])
+    .option('--port <port>', 'port for the boards page (default 5890)', (v: string) => Number(v))
+    .option('--detach', 'run the page as its own detached process and return')
+    .option('--stop', 'stop the page and every board')
+    .option('--forward', 'print the ssh -L flags for the page and every running board')
+    .addHelpText(
+      'after',
+      `
+Each plan keeps its own board on its own port, as \`planny serve\` starts
+it. This command finds every plan under your home directory (or under each
+--root you name), starts a board for each plan that has none, and serves
+one page that links to them all — one address to keep, never a port. A
+board that is already running is left alone. The page finds the boards
+again on every load, so it is never stale. It looks past node_modules,
+build directories, hidden directories, and a linked git worktree's checkout
+of a plan (that worktree shares the main one).
+
+--detach runs the page in its own OS session, like \`serve --detach\`; its
+output goes to planny-boards.log in the OS temp dir. --stop ends the page
+and every board it finds. --forward prints the \`ssh -L\` flags for the
+page and every running board, so a remote operator pastes one line:
+ssh $(planny boards --forward) <host>.
+
+A board started here runs the planny that ran this command. To run one
+plan's board from another build, stop it in that plan's directory and
+start it from that build; the page follows.
+
+Examples:
+  planny boards --detach           every board up, and one link to them all
+  planny boards --root ~/code      look under ~/code only
+  planny boards --forward          the -L flags for an ssh forward
+  planny boards --stop             take the page and every board down`,
+    )
+    .action(async (options) => {
+      const modes = ['detach', 'stop', 'forward'].filter((mode) => options[mode] === true);
+      if (modes.length > 1) throw new Error('pass one of --detach, --stop or --forward');
+      const boards = await import('./boards.js');
+      const { discoverStores } = await import('./discover.js');
+      const roots: string[] = options.root.length > 0 ? options.root : [homedir()];
+      const port: number = options.port === undefined ? boards.PAGE_PORT : options.port;
+      const plans = discoverStores(roots);
+      if (options.stop === true) {
+        const page = await boards.stopBoardsPage(port);
+        io.out(
+          page.kind === 'stopped'
+            ? `stopped the boards page ${page.url} (pid ${page.pid})`
+            : 'the boards page was not running',
+        );
+        for (const { name, outcome } of await boards.stopBoards(plans)) {
+          io.out(
+            outcome.kind === 'stopped'
+              ? `stopped ${name} ${outcome.url} (pid ${outcome.pid})`
+              : `${name}: no board was running${outcome.kind === 'stale' ? ' (cleared a stale record)' : ''}`,
+          );
+        }
+        return;
+      }
+      if (options.forward === true) {
+        const running = (await boards.probeBoards(plans)).filter((b) => b.url !== null);
+        io.out(boards.forwardFlags([port, ...running.map((b) => Number(new URL(b.url!).port))]));
+        return;
+      }
+      if (plans.length === 0) {
+        throw new Error(
+          `no .planny plans found under ${roots.join(', ')} — run \`planny init\` in a project, or pass --root <dir>`,
+        );
+      }
+      for (const board of await boards.startBoards(plans)) {
+        io.out(`${board.name}: ${board.started ? 'started' : 'already up'} at ${board.url}`);
+      }
+      if (options.detach === true) {
+        const outcome = await boards.detachBoardsPage(roots, port);
+        if (outcome.kind === 'already') {
+          io.out(`boards page: ${outcome.url} (already up)`);
+          return;
+        }
+        io.out(`boards page: ${outcome.url} (detached, pid ${outcome.pid})`);
+        io.out(`log: ${outcome.log}`);
+        io.out('stop everything with: planny boards --stop');
+        return;
+      }
+      const already = await boards.currentPageUrl(port);
+      if (already !== null) {
+        io.out(`boards page: ${already} (already up)`);
+        return;
+      }
+      let page;
+      try {
+        page = await boards.startBoardsPage({ plans, roots }, port);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+        throw new Error(`port ${port} is in use by something else — pass --port <other>`);
+      }
+      io.out(`boards page: http://127.0.0.1:${page.port} (ctrl-c stops the page; the boards stay up)`);
+      // Keep the process alive until interrupted.
+      await new Promise<void>((resolve) => {
+        process.once('SIGINT', resolve);
+        process.once('SIGTERM', resolve);
+      });
+      await page.close();
     });
 
   return program;
