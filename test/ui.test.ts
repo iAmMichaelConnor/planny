@@ -1245,6 +1245,7 @@ describe('what changed since you last looked', () => {
 });
 
 describe('filtering by when something happened', () => {
+  const $ = (sel: string) => document.querySelector(sel);
   beforeEach(bootApp);
 
   const cards = () =>
@@ -1257,6 +1258,11 @@ describe('filtering by when something happened', () => {
     fromInput.value = from;
     toInput.value = to;
     fromInput.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const setTime = (side: 'from' | 'to', value: string) => {
+    const input = document.querySelector(`#time-${side}`) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   };
   const setEvent = (value: string) => {
     const select = document.querySelector('#date-event') as HTMLSelectElement;
@@ -1339,6 +1345,68 @@ describe('filtering by when something happened', () => {
     expect(header.textContent).toMatch(/\b1\b/);
   });
 
+  it('a time narrows the start of the window inside the day', async () => {
+    await history();
+    setWindow('2026-08-21', '2026-08-21');
+    expect(cards()).toEqual(['t3']); // renamed at 09:00 that day
+    setTime('from', '10:00');
+    expect(cards()).toEqual([]);
+    setTime('from', '08:00');
+    expect(cards()).toEqual(['t3']);
+  });
+
+  it('a time narrows the end of the window, and includes the minute named', async () => {
+    await history();
+    setWindow('2026-08-21', '2026-08-21');
+    setTime('to', '08:00');
+    expect(cards()).toEqual([]);
+    setTime('to', '09:00'); // the entry sits at 09:00:00, so 09:00 must catch it
+    expect(cards()).toEqual(['t3']);
+  });
+
+  it('a bare date still means the whole day, start to end', async () => {
+    await history();
+    setWindow('2026-08-21', '2026-08-21');
+    expect(cards()).toEqual(['t3']);
+  });
+
+  it('ignores a time with no date beside it', async () => {
+    await history();
+    setTime('from', '10:00');
+    expect(cards()).toHaveLength(4);
+  });
+
+  it('says the window it settled on, so the rule is never a guess', async () => {
+    await history();
+    const label = () => $('#date-resolved')!.textContent!;
+    expect(label()).toBe(''); // nothing to say until a window is set
+    setWindow('2026-08-21', '2026-08-21');
+    // The clock format follows the reader's locale, so match either shape.
+    expect(label()).toMatch(/(00:00|12:00)/); // the day opens at midnight
+    expect(label()).toMatch(/(23:59|11:59)/); // and closes at its last minute
+    const wholeDay = label();
+    setTime('to', '14:30');
+    expect(label()).not.toBe(wholeDay);
+    expect(label()).toMatch(/(14:30|2:30)/);
+  });
+
+  it('clear empties the times as well as the dates', async () => {
+    await history();
+    setWindow('2026-08-21', '2026-08-21');
+    setTime('from', '10:00');
+    (document.querySelector('#date-clear') as HTMLElement).click();
+    expect((document.querySelector('#time-from') as HTMLInputElement).value).toBe('');
+    expect(cards()).toHaveLength(4);
+  });
+
+  it('a preset means whole days, so it drops any times', async () => {
+    await history();
+    setTime('from', '10:00');
+    setWindow('2026-08-21', '2026-08-21');
+    (document.querySelector('[data-days="7"]') as HTMLElement).click();
+    expect((document.querySelector('#time-from') as HTMLInputElement).value).toBe('');
+  });
+
   it('a preset sets the window, and clear puts it back', async () => {
     await history();
     (document.querySelector('[data-days="7"]') as HTMLElement).click();
@@ -1380,7 +1448,7 @@ describe('dragging a card to a new priority', () => {
     for (const [i, id] of ['t1', 't2', 't3'].entries()) stubRect(card(id), i * 40);
   }
 
-  it('marks active cards draggable and finished ones not', async () => {
+  it('marks every card draggable except a cancelled one', async () => {
     await serveTasks([
       task('t1', { position: 1 }),
       task('t2', { status: 'in-progress', position: 2 }),
@@ -1388,8 +1456,9 @@ describe('dragging a card to a new priority', () => {
       task('t4', { status: 'done' }),
       task('t5', { status: 'cancelled' }),
     ]);
-    for (const id of ['t1', 't2', 't3']) expect(card(id).draggable, id).toBe(true);
-    for (const id of ['t4', 't5']) expect(card(id).draggable, id).toBe(false);
+    for (const id of ['t1', 't2', 't3', 't4']) expect(card(id).draggable, id).toBe(true);
+    // Cancelling asks about replacements, so it is never a drag.
+    expect(card('t5').draggable).toBe(false);
   });
 
   it('drops above a card and asks for that card\'s position', async () => {
@@ -1445,8 +1514,7 @@ describe('dragging a card to a new priority', () => {
     expect(document.querySelector('.drop-above, .drop-below')).toBeNull();
   });
 
-  it('refuses a drop into another column: that would be a status change', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
+  it('a drop on another column changes the status and takes the place', async () => {
     await serveTasks([
       task('t1', { position: 1 }),
       task('t2', { status: 'in-progress', position: 2 }),
@@ -1454,11 +1522,120 @@ describe('dragging a card to a new priority', () => {
     stubRect(card('t1'), 0);
     stubRect(card('t2'), 0);
     drag('dragstart', card('t1'));
-    const over = drag('dragover', card('t2'), 5);
-    expect(over.defaultPrevented).toBe(false); // no drop target, so no line drawn
-    expect(card('t2').classList.contains('drop-above')).toBe(false);
+    drag('dragover', card('t2'), 5);
     drag('drop', card('t2'), 5);
-    expect(fetchCalls.some((c) => c.path.includes('/bump'))).toBe(false);
+    await new Promise((r) => setTimeout(r, 5));
+    const posted = fetchCalls.filter((c) => c.init?.body).map((c) => [c.path, JSON.parse(c.init!.body as string)]);
+    expect(posted).toContainEqual(['/api/tasks/t1/status', { status: 'in-progress' }]);
+    expect(posted).toContainEqual(['/api/tasks/t1/bump', { target: 1 }]);
+  });
+
+  it('one undo takes back both halves of a cross-column drop', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'in-progress', position: 2 }),
+    ]);
+    stubRect(card('t1'), 0);
+    stubRect(card('t2'), 0);
+    drag('dragstart', card('t1'));
+    drag('dragover', card('t2'), 5);
+    drag('drop', card('t2'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    (document.querySelector('#toasts .toast-action') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    const posted = fetchCalls.filter((c) => c.init?.body).map((c) => [c.path, JSON.parse(c.init!.body as string)]);
+    expect(posted.filter(([path]) => path === '/api/tasks/t1/status')).toContainEqual([
+      '/api/tasks/t1/status',
+      { status: 'todo' },
+    ]);
+    expect(posted.filter(([path]) => path === '/api/tasks/t1/bump')).toContainEqual([
+      '/api/tasks/t1/bump',
+      { target: 1 },
+    ]);
+  });
+
+  it('a drop on an empty column changes the status and leaves the rank alone', async () => {
+    await serveTasks([task('t1', { position: 1 }), task('t2', { position: 2 })]);
+    // With nothing in progress the column is empty, so there is no card to
+    // anchor a position to.
+    const column = [...document.querySelectorAll('#board-columns .column')].find(
+      (c) => (c as HTMLElement).dataset.status === 'in-progress',
+    )!;
+    drag('dragstart', card('t2'));
+    drag('dragover', column, 5);
+    drag('drop', column, 5);
+    await new Promise((r) => setTimeout(r, 5));
+    const posted = fetchCalls.filter((c) => c.init?.body).map((c) => c.path);
+    expect(posted).toContain('/api/tasks/t2/status');
+    expect(posted).not.toContain('/api/tasks/t2/bump');
+  });
+
+  it('a drop on Done sets the status and asks for no position', async () => {
+    await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'done' })]);
+    stubRect(card('t2'), 0);
+    drag('dragstart', card('t1'));
+    drag('dragover', card('t2'), 5);
+    drag('drop', card('t2'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    const posted = fetchCalls.filter((c) => c.init?.body).map((c) => [c.path, JSON.parse(c.init!.body as string)]);
+    expect(posted).toContainEqual(['/api/tasks/t1/status', { status: 'done' }]);
+    expect(posted.some(([path]) => path === '/api/tasks/t1/bump')).toBe(false);
+  });
+
+  it('refuses a drop on Cancelled: cancelling asks about replacements', async () => {
+    await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'cancelled' })]);
+    stubRect(card('t2'), 0);
+    drag('dragstart', card('t1'));
+    const over = drag('dragover', card('t2'), 5);
+    expect(over.defaultPrevented).toBe(false);
+    drag('drop', card('t2'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
+  });
+
+  it('a drop on Parked asks for the wake note, and a refusal moves nothing', async () => {
+    vi.stubGlobal('prompt', vi.fn(() => null));
+    await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'parked', position: 2 })]);
+    stubRect(card('t2'), 0);
+    drag('dragstart', card('t1'));
+    drag('drop', card('t2'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
+
+    vi.stubGlobal('prompt', vi.fn(() => 'the API ships'));
+    drag('dragstart', card('t1'));
+    drag('drop', card('t2'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    const posted = fetchCalls.filter((c) => c.init?.body).map((c) => [c.path, JSON.parse(c.init!.body as string)]);
+    expect(posted).toContainEqual([
+      '/api/tasks/t1/status',
+      { status: 'parked', parkedUntil: 'the API ships' },
+    ]);
+  });
+
+  it('does nothing when a card is dropped inside its own unranked column', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'done' }),
+      task('t3', { status: 'done' }),
+    ]);
+    stubRect(card('t3'), 0);
+    drag('dragstart', card('t2'));
+    drag('drop', card('t3'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls.some((c) => c.path.includes('/api/tasks/t2/'))).toBe(false);
+  });
+
+  it('a finished card can be dragged back into the working columns', async () => {
+    await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'done' })]);
+    expect(card('t2').draggable).toBe(true);
+    stubRect(card('t1'), 0);
+    drag('dragstart', card('t2'));
+    drag('drop', card('t1'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    const posted = fetchCalls.filter((c) => c.init?.body).map((c) => [c.path, JSON.parse(c.init!.body as string)]);
+    expect(posted).toContainEqual(['/api/tasks/t2/status', { status: 'todo' }]);
+    expect(posted).toContainEqual(['/api/tasks/t2/bump', { target: 1 }]);
   });
 
   it('does nothing when a card lands back where it started', async () => {

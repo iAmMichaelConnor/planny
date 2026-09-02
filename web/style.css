@@ -196,6 +196,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   padding: 3px 6px; color: inherit; font: inherit; font-size: 12px;
 }
 .date-filter.active input[type="date"] { border-color: var(--accent); }
+.date-filter input[type="time"] { width: 5.6em; }
+#date-resolved { font-size: 12px; white-space: nowrap; }
 .card .name { font-weight: 550; }
 .card.st-in-progress { border-left-color: var(--st-in-progress); }
 .card.st-parked { border-left-color: var(--st-parked); }
@@ -217,6 +219,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 /* Where the card would land: a line on the side it would join. */
 .card.drop-above { box-shadow: inset 0 3px 0 0 var(--accent); }
 .card.drop-below { box-shadow: inset 0 -3px 0 0 var(--accent); }
+/* A whole column lit up: the card would join it, keeping the rank it has. */
+.column.drop-into { outline: 2px dashed var(--accent); outline-offset: -4px; }
 .card .badges { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
 .badge {
   font-size: 11px;

@@ -24,7 +24,7 @@ const state = {
   boardFilters: { kinds: new Set(), types: new Set(), statuses: readColumnPreference() },
   // One window for both views: "what happened this week" is a question about
   // the plan, not about the view you happen to be in.
-  dateFilter: { event: 'any', from: '', to: '' },
+  dateFilter: { event: 'any', from: '', fromTime: '', to: '', toTime: '' },
   // "New to you": everything the store changed after this moment, less the
   // tasks already opened. Per browser, so two people watching one board keep
   // their own reading.
@@ -79,13 +79,17 @@ function guard(question) {
  * invariant put them there. And an undo can be clamped like any move, in
  * which case ops says so in its warning.
  */
-async function act(label, request, inverse) {
-  const result = await api(request.path, 'POST', request.body);
-  if (!result) return; // the request failed and said so; nothing to take back
+async function act(label, requests, inverses) {
+  for (const request of [requests].flat()) {
+    const result = await api(request.path, 'POST', request.body);
+    if (!result) return; // the request failed and said so; nothing to take back
+  }
   agentTipOnce();
   toast(label, 'undo', {
     label: 'undo',
-    run: () => void api(inverse.path, 'POST', inverse.body),
+    run: async () => {
+      for (const inverse of [inverses].flat()) await api(inverse.path, 'POST', inverse.body);
+    },
   });
 }
 
@@ -418,29 +422,60 @@ function eventTimes(task, kind) {
   }
 }
 
+/**
+ * The two ends of the window, as millisecond stamps in the reader's own time
+ * zone. A bare date means the whole of that day: the start end opens at
+ * midnight, the finish end closes at the last instant of the day. A time
+ * narrows its own end to that minute, and the finish end still includes the
+ * whole minute named, so "to 14:30" catches something logged at 14:30:12.
+ * A time with no date beside it bounds nothing — there is no day to put it in.
+ */
+function windowBounds() {
+  const { from, fromTime, to, toTime } = state.dateFilter;
+  return {
+    start: from === '' ? -Infinity : new Date(`${from}T${fromTime || '00:00'}:00.000`).getTime(),
+    end: to === '' ? Infinity : new Date(`${to}T${toTime || '23:59'}:59.999`).getTime(),
+  };
+}
+
 /** True when the task passes the window. An empty end is no bound at all. */
 function inDateWindow(task) {
   const { event, from, to } = state.dateFilter;
   if (from === '' && to === '') return true;
-  // The window is whole days in the reader's own time zone, end included.
-  const start = from === '' ? -Infinity : new Date(`${from}T00:00:00`).getTime();
-  const end = to === '' ? Infinity : new Date(`${to}T23:59:59.999`).getTime();
+  const { start, end } = windowBounds();
   return eventTimes(task, event).some((at) => {
     const when = Date.parse(at);
     return !Number.isNaN(when) && when >= start && when <= end;
   });
 }
 
+/** The window as the reader will read it back, so the rule is never a guess. */
+function windowLabel() {
+  const { from, to } = state.dateFilter;
+  if (from === '' && to === '') return '';
+  const { start, end } = windowBounds();
+  const say = (ms) =>
+    new Date(ms).toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  return `${from === '' ? 'anything before' : say(start)} → ${to === '' ? 'now' : say(end)}`;
+}
+
 function dateFilterHtml() {
-  const { event, from, to } = state.dateFilter;
+  const { event, from, fromTime, to, toTime } = state.dateFilter;
   const options = DATE_EVENTS.map(
     ([value, label]) => `<option value="${value}"${value === event ? ' selected' : ''}>${label}</option>`,
   ).join('');
   const active = from !== '' || to !== '';
+  const resolved = windowLabel();
   return `<span class="chip-group date-filter${active ? ' active' : ''}">
     <select id="date-event" title="which kind of thing must have happened in the window">${options}</select>
-    <label>from <input type="date" id="date-from" value="${esc(from)}"></label>
-    <label>to <input type="date" id="date-to" value="${esc(to)}"></label>
+    <label>from <input type="date" id="date-from" value="${esc(from)}"><input type="time" id="time-from" value="${esc(fromTime)}" title="optional; the day starts at midnight without it"></label>
+    <label>to <input type="date" id="date-to" value="${esc(to)}"><input type="time" id="time-to" value="${esc(toTime)}" title="optional; the whole day counts without it"></label>
+    <span id="date-resolved" class="muted">${esc(resolved)}</span>
     ${[['1', 'today'], ['7', '7 days'], ['30', '30 days']]
       .map(([days, label]) => `<button class="chip" data-days="${days}">${label}</button>`)
       .join('')}
@@ -612,9 +647,9 @@ function cardHtml(task, position) {
   const pos = position !== undefined
     ? `<span class="pos" title="priority position among active tasks">#${position}</span>`
     : '';
-  // Only ranked work can be dragged: done and cancelled tasks hold no
-  // position to move them to.
-  const drag = isActiveStatus(task.status) ? ' draggable="true"' : '';
+  // Anything but a cancelled card can be picked up: cancelling asks about
+  // replacements, so it belongs in the drawer, never in a drag.
+  const drag = task.status === 'cancelled' ? '' : ' draggable="true"';
   return `<div class="${classes.join(' ')}" data-id="${task.id}"${drag}>
     <span class="id">${task.id}</span><span class="name">${linkifyIds(esc(task.name))}</span>
     <div class="badges">${badges(task)}</div>
@@ -674,7 +709,7 @@ function renderBoard() {
       const empty = status === 'in-progress'
         ? '<p class="muted col-tip">Nothing in progress. Ask your AI to work the plan — it has the planny skill. Try: &ldquo;do more tasks&rdquo;.</p>'
         : '<p class="muted">—</p>';
-      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title} <span class="colcount">${countOf(status)}</span>${ordered}</h2>${cards || empty}</div>`;
+      return `<div class="column" data-status="${status}"><h2><span class="status-dot ${status}"></span>${title} <span class="colcount">${countOf(status)}</span>${ordered}</h2>${cards || empty}</div>`;
     })
     .join('');
 }
@@ -1589,22 +1624,24 @@ function wireHoverLines(container, itemClass, edgeFactory) {
 wireHoverLines($('#tree-list'), 'tree-row', treeEdge);
 wireHoverLines($('#board-columns'), 'card', boardEdge);
 
-// ---------- dragging a card to a new priority ----------
+// ---------- dragging a card ----------
 
 /**
- * Reordering by hand, inside one column. A drop across columns would mean a
- * status change as well as a move, so it is refused: the status buttons do
- * that, one act at a time.
+ * One gesture, two meanings. Dropped inside its own column a card takes a new
+ * priority; dropped on another it takes that column's status, and the place it
+ * landed in if that column is ranked. Both halves go through the same routes
+ * the buttons use, so every rule holds: the dependency clamp on the move (and
+ * its warning when it bites), the wake note on a park.
  *
- * The move goes through the same bump the buttons use, so the dependency
- * rules hold. A drop that dependencies will not allow lands at the nearest
- * legal position, and ops explains the difference in a warning.
+ * Cancelling is never a drag. It rewires the tasks that waited on the
+ * cancelled one onto its replacements, and that question belongs in the
+ * drawer where it can be answered.
  */
 let dragged = null;
 
 function clearDropMarks() {
-  for (const el of document.querySelectorAll('.drop-above, .drop-below')) {
-    el.classList.remove('drop-above', 'drop-below');
+  for (const el of document.querySelectorAll('.drop-above, .drop-below, .drop-into')) {
+    el.classList.remove('drop-above', 'drop-below', 'drop-into');
   }
 }
 
@@ -1614,15 +1651,38 @@ function dropsAbove(el, clientY) {
   return clientY < rect.top + rect.height / 2;
 }
 
-/** The card being hovered, when it can accept the card being dragged. */
+/**
+ * Where the dragged card would land: the column under the pointer, and the
+ * card it would sit against when there is one. Null when the drop would mean
+ * nothing — no column, a cancelled column, or a shuffle inside a column that
+ * holds no order.
+ */
 function dropTarget(event) {
   if (dragged === null) return null;
-  const el = event.target.closest?.('.card[data-id]');
-  if (!el) return null;
-  const over = state.byId.get(el.dataset.id);
   const moving = state.byId.get(dragged);
-  if (!over || !moving || over.status !== moving.status) return null;
-  return { el, over, moving };
+  const column = event.target.closest?.('.column[data-status]');
+  if (!moving || !column) return null;
+  const status = column.dataset.status;
+  if (status === 'cancelled') return null;
+  if (status === moving.status && !isActiveStatus(status)) return null;
+  const el = event.target.closest?.('.card[data-id]');
+  const over = el === null || el === undefined ? null : state.byId.get(el.dataset.id);
+  return { column, status, el: over ? el : null, over: over ?? null, moving };
+}
+
+/** The 1-based position a drop asks for, or null when it names none. */
+function droppedPosition(target, clientY) {
+  if (!isActiveStatus(target.status)) return null;
+  // Without a card to sit against there is no place to name; the rank stays.
+  if (target.over === null) return null;
+  // bump counts among the other active tasks, so lift the moving card out
+  // of the order before reading an index from it.
+  const others = activeTasks()
+    .filter((t) => t.id !== target.moving.id)
+    .sort((a, b) => a.position - b.position);
+  const index = others.findIndex((t) => t.id === target.over.id);
+  if (index === -1) return null;
+  return dropsAbove(target.el, clientY) ? index + 1 : index + 2;
 }
 
 $('#board-columns').addEventListener('dragstart', (event) => {
@@ -1643,29 +1703,47 @@ $('#board-columns').addEventListener('dragover', (event) => {
   event.preventDefault(); // this is a place the card may land
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   clearDropMarks();
-  target.el.classList.add(dropsAbove(target.el, event.clientY) ? 'drop-above' : 'drop-below');
+  if (target.el === null) target.column.classList.add('drop-into');
+  else target.el.classList.add(dropsAbove(target.el, event.clientY) ? 'drop-above' : 'drop-below');
 });
 
 $('#board-columns').addEventListener('drop', (event) => {
   const target = dropTarget(event);
   clearDropMarks();
+  dragged = null;
   if (target === null) return;
   event.preventDefault();
-  const { over, moving } = target;
-  const before = dropsAbove(target.el, event.clientY);
-  const id = moving.id;
-  dragged = null;
-  // bump takes a 1-based position among the other active tasks, so count
-  // the order with the moving card already lifted out of it.
-  const others = activeTasks()
-    .filter((t) => t.id !== id)
-    .sort((a, b) => a.position - b.position);
-  const index = others.findIndex((t) => t.id === over.id);
-  if (index === -1) return;
-  const position = before ? index + 1 : index + 2;
-  if (position === moving.position) return; // it landed where it started
-  moveTask(moving, position);
+  const { moving, status } = target;
+  const position = droppedPosition(target, event.clientY);
+  if (status === moving.status) {
+    if (position === null || position === moving.position) return; // landed where it started
+    moveTask(moving, position);
+    return;
+  }
+  moveTaskToColumn(moving, status, position);
 });
+
+/**
+ * A card dropped on another column: the status changes, and the place too
+ * when the new column is ranked and the drop named one. One undo takes back
+ * both halves, restoring the status first so the task is ranked again before
+ * its old position is asked for.
+ */
+function moveTaskToColumn(task, status, position) {
+  const extra = {};
+  if (status === 'parked') {
+    const note = prompt(`Park ${task.id}. What should bring it back? (optional)`);
+    if (note === null) return; // the reader called the whole drop off
+    if (note.trim() !== '') extra.parkedUntil = note.trim();
+  }
+  const requests = [post(`/api/tasks/${task.id}/status`, { status, ...extra })];
+  if (position !== null) requests.push(post(`/api/tasks/${task.id}/bump`, { target: position }));
+  const inverses = [inverseStatus(task)];
+  // A task with no rank — one dragged out of Done — has no position to
+  // restore, and bump refuses a target of 0.
+  if (task.position > 0) inverses.push(inverseBump(task));
+  act(`${task.id} → ${status}`, requests, inverses);
+}
 
 $('#board-columns').addEventListener('dragend', () => {
   dragged = null;
@@ -1675,7 +1753,9 @@ $('#board-columns').addEventListener('dragend', () => {
 
 // The nest-by select is rebuilt with the tree filters, so delegate.
 document.addEventListener('change', (event) => {
-  const el = event.target.closest?.('#tree-order, #date-event, #date-from, #date-to');
+  const el = event.target.closest?.(
+    '#tree-order, #date-event, #date-from, #date-to, #time-from, #time-to',
+  );
   if (!el) return;
   if (el.id === 'tree-order') {
     state.treeOrder = el.value;
@@ -1687,7 +1767,9 @@ document.addEventListener('change', (event) => {
   state.dateFilter = {
     event: $('#date-event').value,
     from: $('#date-from').value,
+    fromTime: $('#time-from').value,
     to: $('#date-to').value,
+    toTime: $('#time-to').value,
   };
   render();
 });
@@ -1698,12 +1780,19 @@ document.addEventListener('click', (event) => {
     const days = Number(preset.dataset.days);
     const from = new Date();
     from.setDate(from.getDate() - (days - 1));
-    state.dateFilter = { ...state.dateFilter, from: isoDay(from), to: isoDay(new Date()) };
+    // A preset means whole days, so any typed time goes with it.
+    state.dateFilter = {
+      ...state.dateFilter,
+      from: isoDay(from),
+      fromTime: '',
+      to: isoDay(new Date()),
+      toTime: '',
+    };
     render();
     return;
   }
   if (event.target.closest?.('#date-clear')) {
-    state.dateFilter = { ...state.dateFilter, from: '', to: '' };
+    state.dateFilter = { ...state.dateFilter, from: '', fromTime: '', to: '', toTime: '' };
     render();
   }
 });
