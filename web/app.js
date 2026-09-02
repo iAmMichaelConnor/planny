@@ -1164,6 +1164,7 @@ function renderDecisions() {
     return `<div class="decision-card${blocked ? ' blocked' : ''}${expanded ? '' : ' collapsed'}" data-action="toggle-decision" data-id="${task.id}">
       <h3><span class="disclose muted" aria-hidden="true">${expanded ? '▾' : '▸'}</span><span class="id muted">${task.id}</span> ${linkifyIds(esc(task.name))}</h3>
       <div class="badges">${badges(task)}</div>
+      ${askedLine(task)}
       ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
       ${actions}${priority}` : ''}
     </div>`;
@@ -1471,6 +1472,18 @@ function parkTask(id) {
  * build step and cannot import the CLI's renderer, so this pair mirrors
  * describeHistory in src/render.ts; keep the two in step.
  */
+/**
+ * How old the question is: when it was asked, and when it was last
+ * reworded. Writing a task stamps `updated` a moment after `created`, so
+ * only an edit a minute or more later counts as a revision.
+ */
+function askedLine(task) {
+  const revised = Date.parse(task.updated) - Date.parse(task.created) > 60000
+    ? ` · revised${stamp(task.updated)}`
+    : '';
+  return `<p class="decision-when muted">asked${stamp(task.created)}${revised}</p>`;
+}
+
 function stamp(at) {
   const when = new Date(at);
   const text = Number.isNaN(when.getTime())

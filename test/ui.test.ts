@@ -3248,3 +3248,51 @@ describe('tree dependency order', () => {
     expect(treeRow('t2')).not.toBeNull();
   });
 });
+
+describe('how old a question is', () => {
+  async function serveDecision(overrides: Record<string, unknown>): Promise<Element> {
+    servedState = {
+      ...sampleState,
+      tasks: [task('t4', { name: 'Choose hosting', type: 'decision', ...overrides })],
+      decisions: [{ id: 't4', blocked: false }],
+    };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    clickTab('decisions');
+    return document.querySelector('#view-decisions .decision-card[data-id="t4"] .decision-when')!;
+  }
+
+  it('a decision card says when the question was asked', async () => {
+    const when = await serveDecision({ created: '2026-08-20T09:30:00.000Z' });
+    expect(when).not.toBeNull();
+    expect(when.textContent).toMatch(/asked/i);
+    expect(when.querySelector('time')!.getAttribute('datetime')).toBe('2026-08-20T09:30:00.000Z');
+  });
+
+  it('a question reworded since it was asked says when it was revised', async () => {
+    const when = await serveDecision({
+      created: '2026-08-20T09:30:00.000Z',
+      updated: '2026-08-28T14:00:00.000Z',
+    });
+    expect(when.textContent).toMatch(/revised/i);
+    const stamps = when.querySelectorAll('time');
+    expect(stamps[1].getAttribute('datetime')).toBe('2026-08-28T14:00:00.000Z');
+  });
+
+  it('an untouched question says nothing about a revision', async () => {
+    // Writing a task stamps `updated` a moment after `created`; that gap is
+    // the same act, not a revision.
+    const when = await serveDecision({
+      created: '2026-08-20T09:30:00.000Z',
+      updated: '2026-08-20T09:30:00.480Z',
+    });
+    expect(when.textContent).not.toMatch(/revised/i);
+  });
+
+  it('the card carries the age while it is still collapsed', async () => {
+    const when = await serveDecision({ created: '2026-08-20T09:30:00.000Z' });
+    const card = document.querySelector('#view-decisions .decision-card[data-id="t4"]')!;
+    expect(card.classList.contains('collapsed')).toBe(true);
+    expect(card.contains(when)).toBe(true);
+  });
+});

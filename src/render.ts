@@ -26,6 +26,21 @@ function escapeMd(name: string): string {
   return name.replace(/[\\`*_[\]<>]/g, (c) => `\\${c}`);
 }
 
+/**
+ * Writing a task stamps `updated` a moment after `created`. Only an edit a
+ * minute or more later is a revision by anyone's reckoning.
+ */
+const REVISION_GAP_MS = 60_000;
+
+/** When a question was asked, and when it was last reworded. */
+export function askedLine(task: Task): string {
+  const revised =
+    Date.parse(task.updated) - Date.parse(task.created) > REVISION_GAP_MS
+      ? ` · revised ${task.updated.slice(0, 10)}`
+      : '';
+  return `asked ${task.created.slice(0, 10)}${revised}`;
+}
+
 export function taskLabel(task: Task, graph: Graph, showBlockers = true, mdSafe = false): string {
   const name = mdSafe ? escapeMd(task.name) : task.name;
   const parts = [`${STATUS_MARK[task.status]} ${task.id} ${name}`];

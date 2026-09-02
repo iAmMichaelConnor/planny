@@ -17,6 +17,7 @@ import {
 import { activePosition, type BumpTarget } from './priority.js';
 import { listTasks, nextDecisions, nextTasks, progress, resolvedDecisions } from './query.js';
 import {
+  askedLine,
   renderDependencyForest,
   renderExport,
   renderProgressLine,
@@ -761,7 +762,12 @@ Examples:
         return;
       }
       const graph = buildGraph(store.loadAll());
-      io.out(items.map((item, i) => `${i + 1}. ${taskLabel(item.task, graph)}`).join('\n'));
+      // Each question carries its age: a stale one reads as stale.
+      io.out(
+        items
+          .map((item, i) => `${i + 1}. ${taskLabel(item.task, graph)}\n   ${askedLine(item.task)}`)
+          .join('\n'),
+      );
     });
 
   program

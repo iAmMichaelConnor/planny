@@ -468,6 +468,30 @@ describe('decisions', () => {
     expect(allOut()).toContain('done');
   });
 
+  it('an open decision says when it was asked, and when it was reworded', async () => {
+    await run('init');
+    await run('add', 'Pick a database', '--type', 'decision');
+    const store = openStore(dir);
+    const asked = store.load('t1').created.slice(0, 10);
+    out = [];
+    await run('decisions');
+    expect(allOut()).toContain(`asked ${asked}`);
+    // Freshly written, so the stamps are the same act, not a revision.
+    expect(allOut()).not.toContain('revised');
+    // A real edit, backdated so the gap cannot be mistaken for the write.
+    const path = store.path('t1');
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8')
+        .replace(/^created: .*$/m, 'created: 2026-08-20T09:30:00.000Z')
+        .replace(/^updated: .*$/m, 'updated: 2026-08-28T14:00:00.000Z'),
+    );
+    out = [];
+    await run('decisions');
+    expect(allOut()).toContain('asked 2026-08-20');
+    expect(allOut()).toContain('revised 2026-08-28');
+  });
+
   it('resolve rejects a plain task', async () => {
     await seedTrio();
     expect(await run('resolve', 't1', '--response', 'x')).toBe(1);
