@@ -172,15 +172,13 @@ agent could pick it up with no other context:
   (`next` reads dependencies, not descriptions — "do this after t7" in
   prose does not hold).
 - **One owner and one definition of done per task.** A task that two
-  people close, on two different tests of "done", hides one of them. Split
-  it instead. Here is one split, offered as a suggestion — take it if your
-  work runs this way. One agent writes the code and another merges it. The
-  parent task is done when the change is merged, and belongs to whoever
-  merges. The child task is done when every test passes on the branch, and
-  belongs to whoever writes the code. Each owner closes their own task and
-  leaves the other alone. The board then shows an open parent over a done
-  child: the code is written and waits to be merged. Other splits work as
-  well. Only the rule above holds in every project.
+  people close, on two tests of "done", hides one of them. Split it.
+  *Suggestion:* one agent writes the code and another merges it. The parent
+  is done when the change is merged, and belongs to whoever merges. The
+  child is done when every test passes on the branch, and belongs to
+  whoever writes the code. Each owner closes their own task. The board then
+  shows an open parent over a done child: the code is written and waits to
+  be merged.
 - **Decisions** use the section layout in
   [references/decision-format.md](references/decision-format.md).
 - **Take ids from command output — never predict them.** Another writer
