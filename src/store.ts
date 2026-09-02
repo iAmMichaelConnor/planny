@@ -41,7 +41,7 @@ export function initRepo(dir: string): void {
   // hand-edited ignore file is the operator's; leave it alone.
   const ignore = join(dir, PLANNY_DIR, '.gitignore');
   if (!existsSync(ignore)) {
-    writeFileSync(ignore, 'serve.json\nserve.log\nlock\nlast-seen.json\n');
+    writeFileSync(ignore, 'serve.json\nserve.log\nserve-port\nlock\nlast-seen.json\n');
   }
 }
 

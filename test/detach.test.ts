@@ -50,6 +50,23 @@ afterEach(() => {
 });
 
 async function cli(...args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return cliIn(dir, ...args);
+}
+
+async function cliIn(
+  cwd: string,
+  ...args: string[]
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const saved = dir;
+  dir = cwd;
+  try {
+    return await runCli(...args);
+  } finally {
+    dir = saved;
+  }
+}
+
+async function runCli(...args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
     // TMPDIR points the CLI (and the detached server it spawns) at the
     // per-test dir, so serve logs never leak into the machine's temp dir.
@@ -113,6 +130,40 @@ describe('serve --detach and --stop', () => {
     expect(existsSync(join(dir, '.planny', 'serve.json'))).toBe(false);
     expect((await cli('url')).code).toBe(1);
   }, 30_000);
+
+  it('two stores get two addresses without anyone choosing a port', async () => {
+    const second = mkdtempSync(join(tmpdir(), 'planny-detach-b-'));
+    try {
+      await cli('init');
+      const a = await cli('serve', '--detach');
+      trackPid(a.stdout);
+      expect(a.code).toBe(0);
+      const portA = Number(/127\.0\.0\.1:(\d+)/.exec(a.stdout)![1]);
+
+      await cliIn(second, 'init');
+      const b = await cliIn(second, 'serve', '--detach');
+      trackPid(b.stdout);
+      expect(b.code).toBe(0);
+      const portB = Number(/127\.0\.0\.1:(\d+)/.exec(b.stdout)![1]);
+
+      expect(portB).not.toBe(portA);
+      expect(await answering(`http://127.0.0.1:${portA}`)).toBe(true);
+      expect(await answering(`http://127.0.0.1:${portB}`)).toBe(true);
+
+      // Each store remembers its own address across a stop and a restart.
+      expect(readFileSync(join(second, '.planny', 'serve-port'), 'utf8').trim()).toBe(String(portB));
+      expect((await cliIn(second, 'serve', '--stop')).code).toBe(0);
+      expect(readFileSync(join(second, '.planny', 'serve-port'), 'utf8').trim()).toBe(String(portB));
+      const again = await cliIn(second, 'serve', '--detach');
+      trackPid(again.stdout);
+      expect(again.stdout).toContain(`127.0.0.1:${portB}`);
+
+      expect((await cliIn(second, 'serve', '--stop')).code).toBe(0);
+      expect((await cli('serve', '--stop')).code).toBe(0);
+    } finally {
+      rmSync(second, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it('a second detach is a success no-op that prints the same address', async () => {
     await cli('init');

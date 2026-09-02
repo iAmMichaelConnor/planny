@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addTask, setStatus } from '../src/ops.js';
-import { currentServeUrl, startServer, type RunningServer } from '../src/server.js';
+import { currentServeUrl, pickPorts, startServer, type RunningServer } from '../src/server.js';
 import { initRepo, openStore, type Store } from '../src/store.js';
 
 let dir: string;
@@ -40,6 +40,64 @@ async function patch(path: string, body: unknown): Promise<Response> {
     body: JSON.stringify(body),
   });
 }
+
+describe('choosing a port', () => {
+  /** A port nothing holds right now — the machine running the tests may hold any. */
+  async function freePort(): Promise<number> {
+    const probe = createHttpServer(() => {});
+    await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+    const port = (probe.address() as { port: number }).port;
+    await new Promise((r) => probe.close(r));
+    return port;
+  }
+
+  it('takes the base port when nothing holds it', async () => {
+    const base = await freePort();
+    expect((await pickPorts(store, base))[0]).toBe(base);
+  });
+
+  it('steps past a port another process holds', async () => {
+    const blocker = createHttpServer(() => {});
+    await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', r));
+    const held = (blocker.address() as { port: number }).port;
+    try {
+      const picked = await pickPorts(store, held);
+      expect(picked).not.toContain(held);
+      expect(picked[0]).toBeGreaterThan(held);
+    } finally {
+      await new Promise((r) => blocker.close(r));
+    }
+  });
+
+  it('prefers the port this store used last, so the address stays put', async () => {
+    const remembered = await freePort();
+    const base = await freePort();
+    writeFileSync(join(dir, '.planny', 'serve-port'), `${remembered}\n`);
+    expect((await pickPorts(store, base))[0]).toBe(remembered);
+  });
+
+  it('ignores a remembered port that is not a port', async () => {
+    const base = await freePort();
+    writeFileSync(join(dir, '.planny', 'serve-port'), 'not a port');
+    expect((await pickPorts(store, base))[0]).toBe(base);
+  });
+
+  it('gives up with a clear message when the whole range is busy', async () => {
+    const base = await freePort();
+    await expect(pickPorts(store, base, () => Promise.resolve(true))).rejects.toThrow(
+      /--port/,
+    );
+  });
+
+  it('remembers the port it bound, and keeps remembering after a clean stop', async () => {
+    const remembered = () => readFileSync(join(dir, '.planny', 'serve-port'), 'utf8').trim();
+    expect(remembered()).toBe(String(server.port));
+    const second = await startServer(store, 0);
+    expect(remembered()).toBe(String(second.port));
+    await second.close();
+    expect(remembered()).toBe(String(second.port)); // a stop must not forget it
+  });
+});
 
 describe('static ui', () => {
   it('serves the app shell at /', async () => {

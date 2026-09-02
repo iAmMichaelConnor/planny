@@ -58,7 +58,7 @@ describe('init and add', () => {
     expect(await run('init')).toBe(0);
     const ignorePath = join(dir, '.planny', '.gitignore');
     const content = readFileSync(ignorePath, 'utf8');
-    for (const name of ['serve.json', 'serve.log', 'lock', 'last-seen.json']) {
+    for (const name of ['serve.json', 'serve.log', 'serve-port', 'lock', 'last-seen.json']) {
       expect(content).toContain(name);
     }
     writeFileSync(ignorePath, 'custom\n');
@@ -294,6 +294,16 @@ describe('ordering', () => {
     await run('list');
     const text = allOut();
     expect(text.indexOf('first task')).toBeLessThan(text.indexOf('second task'));
+  });
+});
+
+describe('help for a body that quotes commands', () => {
+  it('add --help warns that the shell eats backticks in -d', async () => {
+    await run('init');
+    out = [];
+    await run('add', '--help');
+    expect(allOut()).toMatch(/backticks/);
+    expect(allOut()).toMatch(/--desc-file/);
   });
 });
 

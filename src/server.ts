@@ -91,6 +91,7 @@ export async function startServer(store: Store, port: number): Promise<RunningSe
     serveRecordPath(store),
     `${JSON.stringify({ port: boundPort, pid: process.pid, started: new Date().toISOString() })}\n`,
   );
+  await writeFile(servePortPath(store), `${boundPort}\n`);
   return {
     port: boundPort,
     close: async () => {
@@ -108,6 +109,71 @@ export async function startServer(store: Store, port: number): Promise<RunningSe
 
 function serveRecordPath(store: Store): string {
   return join(store.root, '.planny', 'serve.json');
+}
+
+/**
+ * The port this store last served on. Unlike serve.json — which says "a
+ * server is up right now" and goes away when it stops — this outlives every
+ * stop, so the board keeps the same address across restarts and a bookmark
+ * keeps working.
+ */
+function servePortPath(store: Store): string {
+  return join(store.root, '.planny', 'serve-port');
+}
+
+/** How many ports above the base to try before giving up. */
+const PORT_SCAN = 20;
+
+function isPort(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value < 65536;
+}
+
+async function rememberedPort(store: Store): Promise<number | undefined> {
+  try {
+    const port = Number((await readFile(servePortPath(store), 'utf8')).trim());
+    return isPort(port) ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Ports to try, best first: the one this store used last, then the base and
+ * its neighbours, skipping anything already listening. Two stores on one
+ * machine settle on two addresses without the operator choosing either.
+ */
+export async function pickPorts(
+  store: Store,
+  base: number,
+  busy: (port: number) => Promise<boolean> = inUse,
+): Promise<number[]> {
+  const remembered = await rememberedPort(store);
+  const candidates = [
+    ...(remembered === undefined ? [] : [remembered]),
+    ...Array.from({ length: PORT_SCAN }, (_, i) => base + i),
+  ];
+  const free: number[] = [];
+  for (const port of candidates) {
+    if (free.includes(port)) continue;
+    if (await busy(port)) continue;
+    free.push(port);
+  }
+  if (free.length === 0) {
+    throw new Error(
+      `every port from ${base} to ${base + PORT_SCAN - 1} is in use — pass --port <free port>`,
+    );
+  }
+  return free;
+}
+
+/** True while something answers on this port — planny or not. */
+async function inUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.once('error', () => resolve(true));
+    probe.once('listening', () => probe.close(() => resolve(false)));
+    probe.listen(port, '127.0.0.1');
+  });
 }
 
 /** Which store root a planny server on this port serves, if any. */

@@ -61,7 +61,9 @@ Rules that keep the store consistent:
   about to write. Convert any such list you find into planny tasks the
   same way. The document keeps the analysis and cites the task ids.
 - **Serve the board at session start.** Run `planny serve --detach` and
-  tell the operator the URL it prints. `planny url` re-prints the
+  tell the operator the URL it prints. Never pass `--port`: the command
+  takes the port this store used last, or the first free one, so two
+  stores on one machine never collide. `planny url` re-prints the
   address at any time. The detached server outlives your session; a
   harness background task dies at session end, /clear, or compaction,
   and the operator's board with it — never use one for the board.
@@ -130,6 +132,21 @@ agent could pick it up with no other context:
   and give pointers — file paths, commands, the test to run. Include any
   constraint the name cannot carry. The reader must not need the
   conversation that produced the task.
+- **A body that quotes a command needs `--desc-file`.** Inside a
+  double-quoted `-d "…"`, the shell runs whatever sits between backticks
+  and inside `$(…)` before planny ever sees it. The command really runs,
+  and the body keeps an empty space where the text should be. Write such
+  bodies to a file with a quoted heredoc delimiter, then pass the file:
+
+  ```bash
+  cat > /tmp/body.md <<'EOF'
+  Run `npm test` and check $HOME is set.
+  EOF
+  planny add "Check the test run" --desc-file /tmp/body.md
+  ```
+
+  Single quotes around `-d` are safe too, but then the body can hold no
+  single quote of its own. Prefer the file.
 - **Fields at creation, not later**: `--kind` (ai or operator), `--model`
   when particular model strengths suit the work, `--parent` to place it in
   the hierarchy, `--blocked-by` / `--blocks` for real orderings,

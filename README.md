@@ -231,7 +231,7 @@ planny url                             # where that UI is being served
 | `resolve <id> --response …\|--accept\|--response-file f\|--reject` | record the answer, mark done, create the outcome task (`--reject`: close as decided-no, create nothing) |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
-| `serve [--port] [--detach] [--stop] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); `--detach` outlives the launching (agent) session, `--stop` ends the detached server, `--clean-logs` deletes this store's dead old log |
+| `serve [--port] [--detach] [--stop] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); with no `--port` it takes the port this store used last, else the first free one from 5891, so two stores never collide; `--detach` outlives the launching (agent) session, `--stop` ends the detached server, `--clean-logs` deletes this store's dead old log |
 | `url` | print the address where the UI serves this store; exits 1 when it is not up |
 
 Every command's `--help` carries examples; mistyped commands get a

@@ -34,6 +34,9 @@ import {
   type TaskType,
 } from './types.js';
 
+/** Where the port scan starts when the operator names no port. */
+const BASE_PORT = 5891;
+
 export interface CliIo {
   cwd: string;
   out: (text: string) => void;
@@ -250,7 +253,12 @@ Examples:
   planny add "Ship v1" --child t3,t4            adopt existing tasks as children
   planny add "Deploy" --blocked-by t2 --parent t1
   planny add "Pick a vendor" --type decision --kind operator --blocks t5
-  planny add "Long brief" --desc-file brief.md  (- reads stdin)`,
+  planny add "Long brief" --desc-file brief.md  (- reads stdin)
+
+A body that quotes a command belongs in a file. Your shell runs whatever
+sits between backticks, or inside $(...), in a double-quoted -d before
+planny sees it: the command really runs and the body loses the text. Write
+the body with a quoted heredoc delimiter and pass --desc-file.`,
     )
     .action((name, options) => {
       const store = open();
@@ -899,7 +907,7 @@ Examples:
   program
     .command('serve')
     .description('start the localhost control site')
-    .option('--port <port>', 'port to listen on', (v: string) => Number(v), 5891)
+    .option('--port <port>', 'port to listen on (default: the first free port from 5891)', (v: string) => Number(v))
     .option('--detach', 'launch the server as its own detached process and return')
     .option('--stop', 'stop the detached server for this store')
     .option('--clean-logs', "delete this store's serve log once it is old and its server is gone")
@@ -930,9 +938,8 @@ Examples:
     )
     .action(async (options) => {
       const store = open();
-      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs } = await import(
-        './server.js'
-      );
+      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts } =
+        await import('./server.js');
       if (options.detach === true && options.stop === true) {
         throw new Error('pass --detach or --stop, not both');
       }
@@ -967,8 +974,13 @@ Examples:
         );
         return;
       }
+      // No --port: take the port this store used last, else the first free
+      // one from the base. Two stores on one machine then settle on two
+      // addresses without the operator choosing either.
+      const chosen: number[] =
+        options.port === undefined ? await pickPorts(store, BASE_PORT) : [options.port as number];
       if (options.detach === true) {
-        const outcome = await detachServer(store, options.port);
+        const outcome = await detachServer(store, chosen[0]!);
         if (outcome.kind === 'already') {
           io.out(`already serving this store at ${outcome.url}`);
           return;
@@ -979,23 +991,30 @@ Examples:
         return;
       }
       let running;
-      try {
-        running = await startServer(store, options.port);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
-        // The skill tells agents to serve at session start, so a taken
-        // port is routine: find out who holds it before complaining.
-        const holder = await servedStoreRoot(options.port);
-        if (holder === store.root) {
-          io.out(`already serving this store at http://127.0.0.1:${options.port}`);
-          return;
+      for (const [index, port] of chosen.entries()) {
+        try {
+          running = await startServer(store, port);
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+          // The skill tells agents to serve at session start, so a taken
+          // port is routine: find out who holds it before complaining.
+          const holder = await servedStoreRoot(port);
+          if (holder === store.root) {
+            io.out(`already serving this store at http://127.0.0.1:${port}`);
+            return;
+          }
+          // A port picked for us was free a moment ago and is not now: a
+          // racing launcher took it, so try the next one.
+          if (index < chosen.length - 1) continue;
+          throw new Error(
+            holder !== undefined
+              ? `port ${port} is serving a different store (${holder}) — pass --port <other>`
+              : `port ${port} is in use by something else — pass --port <other>`,
+          );
         }
-        throw new Error(
-          holder !== undefined
-            ? `port ${options.port} is serving a different store (${holder}) — pass --port <other>`
-            : `port ${options.port} is in use by something else — pass --port <other>`,
-        );
       }
+      if (running === undefined) throw new Error('no port was free — pass --port <free port>');
       io.out(`planny ui: http://127.0.0.1:${running.port} (ctrl-c to stop)`);
       // Keep the process alive until interrupted.
       await new Promise<void>((resolve) => {

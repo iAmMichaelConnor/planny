@@ -52,6 +52,8 @@ structure, so a re-parent never moves a file.
   same lock), `.planny/lock` (the lock module itself),
   `.planny/serve.json` (written by the server while it listens; `planny url`
   probes before trusting it, so a crash leaving it behind is harmless),
+  `.planny/serve-port` (the port this store last served on, written on every
+  bind and never deleted, so the board keeps one address across restarts),
   `.planny/serve.log` (the detached server's output; `serve --clean-logs`
   deletes it once the server is gone and the file is old), and
   `.planny/last-seen.json` (the rewind tripwire, advanced by every
