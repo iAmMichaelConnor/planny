@@ -1211,6 +1211,19 @@ describe('working the board from the keyboard', () => {
     );
   });
 
+  it('walking the search results raises no error', () => {
+    const box = document.querySelector('#search') as HTMLInputElement;
+    box.value = 'e';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    const raised: string[] = [];
+    const catchError = (event: Event) => raised.push((event as ErrorEvent).message);
+    window.addEventListener('error', catchError);
+    key('ArrowDown', box);
+    key('ArrowDown', box);
+    window.removeEventListener('error', catchError);
+    expect(raised).toEqual([]);
+  });
+
   it('Escape shuts the search panel first, then the drawer', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
     const box = document.querySelector('#search') as HTMLInputElement;

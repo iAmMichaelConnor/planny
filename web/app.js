@@ -2266,7 +2266,7 @@ function moveSearchCursor(step) {
   searchCursor = Math.min(Math.max(searchCursor + step, 0), count - 1);
   const hits = panel.querySelectorAll('.search-hit');
   hits.forEach((hit, i) => hit.classList.toggle('active', i === searchCursor));
-  hits[searchCursor].scrollIntoView({ block: 'nearest' });
+  hits[searchCursor].scrollIntoView?.({ block: 'nearest' });
 }
 
 function renderSearchResults(query) {
