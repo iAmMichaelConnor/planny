@@ -287,6 +287,35 @@ touched), `lock`, and `last-seen.json` (the rewind tripwire: the
 newest state this machine has written — delete it to acknowledge a
 deliberate rewind).
 
+## Troubleshooting
+
+Store trouble almost always comes from git or from hand edits.
+`planny doctor` is the diagnostic for all of it: every finding carries
+its own fix, and `--fix` applies the repairs that have one right
+answer.
+
+- **"the store looks older than what this machine last wrote"** — on
+  stderr, from any command. A git checkout or restore handed planny an
+  older snapshot of the plan. Run `planny doctor`: its `store-rewound`
+  finding prints the recovery commands — find the newer snapshot with
+  `git log --all --oneline -- .planny`, bring it back with
+  `git checkout <commit> -- .planny`, or delete
+  `.planny/last-seen.json` to accept the rewind.
+- **"unresolved git merge conflict"** — you merged branches whose
+  stores had diverged. Resolve the merge; the reliable way is to keep
+  one side's `.planny` whole and re-apply the other side's changes
+  through the CLI. Then run `planny doctor --fix` for the leftovers.
+- **A command refuses a task file** — unreadable, or "frontmatter says
+  id … but the filename says …". The file was edited or copied by
+  hand. `planny doctor` lists every broken file; repair it by hand or
+  restore it from git, then rerun doctor.
+- **Dangling references, duplicate ranks, or order violations after a
+  merge** — a clean textual merge can union two valid stores into an
+  invalid one. `planny doctor --fix` repairs these; cycles it only
+  names, for you to break with `planny update`.
+- **Garbled `cursors.json` or `last-seen.json`** — `planny doctor
+  --fix` resets them; both rebuild themselves afterwards.
+
 ## Contributing
 
 Install from source:
