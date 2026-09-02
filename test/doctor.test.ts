@@ -85,6 +85,29 @@ describe('diagnose', () => {
     expect(byCode(findings, 'unreadable-file')).toHaveLength(0);
   });
 
+  it('reports a store that sits behind its last-seen mark, and does not fix it', () => {
+    save(makeTask('t1'));
+    save(makeTask('t2'));
+    // A checkout rewound the plan: t2 is gone but the mark remembers it.
+    rmSync(store.path('t2'));
+    const findings = byCode(diagnose(store), 'store-rewound');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.severity).toBe('warning');
+    expect(findings[0]!.fixable).toBe(false);
+    // The message must be a recipe, not a shrug: how to find the newer
+    // snapshot, how to bring it back, and how to accept the rewind.
+    expect(findings[0]!.message).toMatch(/git log --all --oneline -- \.planny/);
+    expect(findings[0]!.message).toMatch(/git checkout <commit> -- \.planny/);
+    expect(findings[0]!.message).toMatch(/delete last-seen\.json/);
+    // The skill carries no rule for this, so the message itself must
+    // say the choice is the operator's, not an agent's.
+    expect(findings[0]!.message).toMatch(/operator/);
+    expect(findings[0]!.message).toMatch(/agent/);
+    // Accepting a rewind is the operator's act; fix must leave it alone.
+    fixStore(store);
+    expect(byCode(diagnose(store), 'store-rewound')).toHaveLength(1);
+  });
+
   it('flags an unreadable last-seen file as fixable, and fix deletes it', () => {
     save(makeTask('t1'));
     const lastSeenFile = join(dir, '.planny', 'last-seen.json');

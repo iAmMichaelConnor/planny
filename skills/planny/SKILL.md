@@ -325,9 +325,10 @@ Reading the plan — the exact query for each question:
   (blockers above what they block), `planny progress [--parent X]`
   (completion).
 - The file behind a task: `planny path X`.
-`planny doctor [--fix] [--json]` checks a store that may have been edited by
-hand (dangling ids, cycles, duplicate ranks, stale statuses) and repairs the
-problems that have one right answer; it exits 1 while errors remain.
+`planny doctor [--fix] [--json]` checks a store that may have been edited
+by hand or broken by a git merge or checkout (dangling ids, cycles,
+duplicate ranks, stale statuses, unresolved merge conflicts) and repairs
+the problems that have one right answer; it exits 1 while errors remain.
 
 This file covers the common paths, not every flag. The full reference is
 `planny <command> --help`: every command documents its options and carries

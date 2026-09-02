@@ -267,7 +267,7 @@ merging branches whose stores diverged is not supported (both sides mint
 the same next id for different tasks, among subtler damage — `planny
 doctor` names an unresolved merge when it sees one), and planny warns on
 stderr when a checkout or restore hands it a store older than what this
-machine last wrote. Two design choices worth knowing:
+machine last wrote — `planny doctor` then prints the recovery steps. Two design choices worth knowing:
 
 - **Flat directory, not a tree.** Hierarchy is a field, not a directory
   structure, so re-parenting never moves a file and ids and paths stay

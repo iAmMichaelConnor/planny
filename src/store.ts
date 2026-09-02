@@ -88,11 +88,25 @@ function advanceLastSeen(root: string, task: Task): void {
   writeFileSync(lastSeenPath(root), `${JSON.stringify(next)}\n`);
 }
 
+/**
+ * Hand-edits legitimately reuse stamps a moment old; a real rewind (a
+ * checkout, a restore) jumps much further back. The slack keeps the
+ * tripwire quiet for the first and loud for the second.
+ */
+const REWIND_SLACK_MS = 5_000;
+
+export function behindMark(newest: string, mark: string): boolean {
+  const newestMs = Date.parse(newest);
+  const markMs = Date.parse(mark);
+  if (Number.isNaN(newestMs) || Number.isNaN(markMs)) return newest < mark;
+  return newestMs < markMs - REWIND_SLACK_MS;
+}
+
 function warnRewound(root: string, detail: string): void {
   if (warnedRewinds.has(root)) return;
   warnedRewinds.add(root);
   console.error(
-    `planny: the store at ${root} looks older than what this machine last wrote (${detail}) — a git checkout or restore may have rewound the plan; restore it, or delete ${lastSeenPath(root)} if the rewind was deliberate`,
+    `planny: the store at ${root} looks older than what this machine last wrote (${detail}) — a git checkout or restore may have rewound the plan; run \`planny doctor\` for what to do`,
   );
 }
 
@@ -202,7 +216,7 @@ export function openStore(startDir: string): Store {
     const seen = readLastSeen(root);
     if (seen !== null && tasks.length > 0) {
       const newest = tasks.reduce((acc, t) => (t.updated > acc ? t.updated : acc), '');
-      if (newest < seen.updated) {
+      if (behindMark(newest, seen.updated)) {
         warnRewound(root, `newest update ${newest}, but ${seen.updated} was written here`);
       }
     }
