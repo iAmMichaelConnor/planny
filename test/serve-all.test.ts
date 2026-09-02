@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { currentPageUrl, forwardCommand, probeBoards, startPage } from '../src/serve-all.js';
+import { currentPageUrl, forwardCommand, sshTarget, probeBoards, startPage } from '../src/serve-all.js';
 import { discoverStores } from '../src/discover.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import { initRepo, openStore } from '../src/store.js';
@@ -110,6 +110,37 @@ describe('the boards page', () => {
   });
 });
 
+describe('the ssh target this machine can work out', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('reads the address the client dialled, and who they are', () => {
+    process.env.SSH_CONNECTION = '173.26.0.1 60664 173.26.1.11 22';
+    process.env.USER = 'mike';
+    expect(sshTarget()).toEqual({ target: 'mike@173.26.1.11' });
+  });
+
+  it('carries the port when it is not the usual one', () => {
+    process.env.SSH_CONNECTION = '173.26.0.1 60664 173.26.1.11 2222';
+    process.env.USER = 'mike';
+    expect(sshTarget()).toEqual({ target: 'mike@173.26.1.11', port: 2222 });
+  });
+
+  it('knows nothing outside an ssh session', () => {
+    delete process.env.SSH_CONNECTION;
+    expect(sshTarget()).toBeNull();
+  });
+
+  it('ignores a value it cannot read', () => {
+    for (const value of ['', 'nonsense', '1.2.3.4 5', 'a b c d']) {
+      process.env.SSH_CONNECTION = value;
+      expect(sshTarget(), value).toBeNull();
+    }
+  });
+});
+
 describe('the ssh forward', () => {
   it('prints a whole command, not a fragment to compose', () => {
     // The flags are made on the machine that serves and used on the machine
@@ -120,7 +151,19 @@ describe('the ssh forward', () => {
     );
   });
 
-  it('leaves the host for the operator, who is the only one who knows it', () => {
+  it('leaves the host for the operator when the machine cannot work it out', () => {
     expect(forwardCommand([5891])).toMatch(/<host>$/);
+  });
+
+  it('fills the host in when it knows one, so nothing needs editing', () => {
+    expect(forwardCommand([5891], { target: 'mike@173.26.1.11' })).toBe(
+      'ssh -L 5891:127.0.0.1:5891 mike@173.26.1.11',
+    );
+  });
+
+  it('puts an unusual port before the forwards, where ssh wants it', () => {
+    expect(forwardCommand([5891], { target: 'mike@173.26.1.11', port: 2222 })).toBe(
+      'ssh -p 2222 -L 5891:127.0.0.1:5891 mike@173.26.1.11',
+    );
   });
 });

@@ -935,6 +935,25 @@ Examples:
     });
 
   /**
+   * The host to put at the end of the forward: what the operator named, else
+   * the address their own machine dialled to get here. The note goes to
+   * stderr, so the command on stdout stays exactly a command — a pipe, a
+   * `$(...)` or a paste all keep working.
+   */
+  const chosenTarget = (
+    named: string | true,
+    found: { target: string; port?: number } | null,
+  ): { target: string; port?: number } | null => {
+    if (typeof named === 'string') return { target: named };
+    if (found === null) {
+      io.err('no ssh session to read a host from — fill in <host> yourself');
+      return null;
+    }
+    io.err(`host ${found.target} read from this ssh session; pass one to --forward to override`);
+    return found;
+  };
+
+  /**
    * `serve --all`: a board for every plan on this machine, and one page that
    * links to them. Each board is the ordinary per-plan one, started the
    * ordinary way, so nothing here knows more about a plan than `serve` does.
@@ -967,9 +986,10 @@ Examples:
       }
       return;
     }
-    if (options.forward === true) {
+    if (options.forward !== undefined && options.forward !== false) {
       const running = (await all.probeBoards(plans)).filter((b) => b.url !== null);
-      io.out(all.forwardCommand([port, ...running.map((b) => Number(new URL(b.url!).port))]));
+      const ports = [port, ...running.map((b) => Number(new URL(b.url!).port))];
+      io.out(all.forwardCommand(ports, chosenTarget(options.forward, all.sshTarget())));
       return;
     }
     if (plans.length === 0) {
@@ -1020,7 +1040,7 @@ Examples:
     .option('--port <port>', 'port to listen on (with --all, the page\'s port; default: the first free port from 5891)', (v: string) => Number(v))
     .option('--detach', 'launch the server as its own detached process and return')
     .option('--stop', 'stop the detached server for this store')
-    .option('--forward', 'print the ssh -L flags for what this command serves')
+    .option('--forward [host]', 'print the ssh command that tunnels what this command serves')
     .option('--clean-logs', "delete this store's serve log once it is old and its server is gone")
     .option(
       '--older-than <days>',
@@ -1044,10 +1064,14 @@ left in the OS temp dir.
 
 --forward prints the ssh command that tunnels what this command serves.
 Two machines are involved: run --forward on the machine that serves the
-boards, then paste the line it prints into a terminal on the machine you
-sit at, with <host> replaced by the name you ssh to. Do not wrap it in
-\`ssh $(planny serve --forward)\`: that substitution runs where you paste
-it, which is the machine with no plan on it.
+boards, then paste the line it prints on the machine you sit at. Inside an
+ssh session it fills in the host itself, from the address your machine
+dialled to get here, so the line needs no editing; pass a host
+(--forward my-box) when you reach this machine by another name, such as an
+alias in your own ssh config. Outside one it leaves <host> for you. The
+command goes to stdout on its own, so a pipe or a paste both work. Do not
+wrap it in \`ssh $(planny serve --forward)\`: that substitution runs where
+you paste it, which is the machine with no plan on it.
 
 --all works on every plan on this machine instead of this one. It finds
 them under your home directory, or under each --root you name, starts a
@@ -1064,14 +1088,23 @@ Examples:
   planny serve --detach            board that outlives this session
   planny serve --stop              stop it (the log stays)
   planny serve --forward           the ssh line to tunnel this board
+  planny serve --all --forward my-box  name the host yourself
   planny serve --all --detach      every plan's board, and one link to them all
   planny serve --all --root ~/code look under ~/code only
   planny serve --all --stop        take the page and every board down
   planny serve --clean-logs        delete dead serve logs older than 7 days`,
     )
     .action(async (options) => {
-      const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts, BASE_PORT } =
-        await import('./server.js');
+      const {
+        startServer,
+        servedStoreRoot,
+        detachServer,
+        stopServer,
+        cleanLogs,
+        pickPorts,
+        currentServeUrl,
+        BASE_PORT,
+      } = await import('./server.js');
       const modes = ['detach', 'stop', 'forward'].filter((mode) => options[mode] === true);
       if (modes.length > 1) throw new Error('pass one of --detach, --stop or --forward');
       if (options.cleanLogs === true && modes.length > 0) {
@@ -1091,13 +1124,13 @@ Examples:
         return;
       }
       const store = open();
-      if (options.forward === true) {
-        const { forwardCommand } = await import('./serve-all.js');
-        const url = await (await import('./server.js')).currentServeUrl(store);
+      if (options.forward !== undefined && options.forward !== false) {
+        const { forwardCommand, sshTarget } = await import('./serve-all.js');
+        const url = await currentServeUrl(store);
         if (url === null) {
           throw new Error('no board is running for this store — start one with `planny serve --detach`');
         }
-        io.out(forwardCommand([Number(new URL(url).port)]));
+        io.out(forwardCommand([Number(new URL(url).port)], chosenTarget(options.forward, sshTarget())));
         return;
       }
       if (options.cleanLogs === true) {

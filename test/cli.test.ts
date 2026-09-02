@@ -1165,6 +1165,30 @@ describe('serve --all: one command for every board on this machine', () => {
     expect(err.join(' ')).toContain(dir);
   });
 
+  it('fills the host in from the ssh session, and a named host wins', async () => {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'alpha'), { recursive: true });
+    await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
+    const saved = process.env.SSH_CONNECTION;
+    try {
+      process.env.SSH_CONNECTION = '10.0.0.2 5555 10.0.0.9 2222';
+      process.env.USER = 'mike';
+      out = [];
+      err = [];
+      await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
+      expect(out.join('\n')).toBe('ssh -p 2222 -L 5890:127.0.0.1:5890 mike@10.0.0.9');
+      // The note must not reach stdout, or it would break `$(...)`.
+      expect(err.join(' ')).toMatch(/read from this ssh session/);
+
+      out = [];
+      await run('serve', '--all', '--forward', 'my-box', '--root', dir, '--port', '5890');
+      expect(out.join('\n')).toBe('ssh -L 5890:127.0.0.1:5890 my-box');
+    } finally {
+      if (saved === undefined) delete process.env.SSH_CONNECTION;
+      else process.env.SSH_CONNECTION = saved;
+    }
+  });
+
   it('--forward prints a whole ssh line for the page and every running board', async () => {
     const { mkdirSync } = await import('node:fs');
     const { startServer } = await import('../src/server.js');
@@ -1175,6 +1199,9 @@ describe('serve --all: one command for every board on this machine', () => {
     // alpha has a board; beta has none and gets no flag.
     const board = await startServer(openStore(join(dir, 'alpha')), 0);
     try {
+      // The suite may itself be running inside an ssh session, so say plainly
+      // which case is under test rather than inheriting the machine's.
+      delete process.env.SSH_CONNECTION;
       expect(await run('serve', '--all', '--forward', '--root', dir, '--port', '5890')).toBe(0);
       expect(out.join('\n')).toBe(
         `ssh -L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port} <host>`,

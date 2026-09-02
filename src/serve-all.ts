@@ -212,6 +212,40 @@ export async function stopPage(port: number): Promise<StopOutcome> {
   return { kind: 'stopped', url, pid: info.pid, ...(existsSync(log) ? { log } : {}) };
 }
 
+/** Where the operator's machine reaches this one, when it can be worked out. */
+export interface SshTarget {
+  /** user@address, in the form ssh takes. */
+  target: string;
+  /** The port they connected on, when it is not the usual 22. */
+  port?: number;
+}
+
+/**
+ * The address the operator's machine used to reach this one.
+ *
+ * An ssh session carries SSH_CONNECTION: "client-address client-port
+ * server-address server-port". The server address is the one the client
+ * dialled, so the client can certainly reach it — it just did. With the
+ * user this session logged in as, that is a target they can paste.
+ *
+ * The machine's own hostname is not used: here it happens to be right, but
+ * on a cloud box it is usually something like ip-10-0-0-5, which means
+ * nothing to the client. And a session reached through a jump host may
+ * report an address the client cannot dial, which is why an explicit host
+ * always wins over this.
+ */
+export function sshTarget(): SshTarget | null {
+  const parts = (process.env.SSH_CONNECTION ?? '').trim().split(/\s+/);
+  if (parts.length !== 4) return null;
+  const [, , address, port] = parts as [string, string, string, string];
+  if (address === '' || !/^\d+$/.test(port)) return null;
+  const user = process.env.USER ?? process.env.LOGNAME;
+  return {
+    target: user === undefined || user === '' ? address : `${user}@${address}`,
+    ...(Number(port) === 22 ? {} : { port: Number(port) }),
+  };
+}
+
 /**
  * The command that tunnels these ports, ready to paste.
  *
@@ -220,10 +254,12 @@ export async function stopPage(port: number): Promise<StopOutcome> {
  * is opened there, on the machine the operator sits at. So this prints a whole
  * command rather than a fragment — a fragment invites
  * `ssh $(planny serve --forward) <host>`, whose substitution runs on the
- * laptop, where planny is not installed and no plan exists. The host is left
- * as a placeholder because only the operator knows what they call this
- * machine.
+ * laptop, where planny is not installed and no plan exists.
+ *
+ * Without a target the host is left blank for the operator to fill in.
  */
-export function forwardCommand(ports: number[]): string {
-  return `ssh ${ports.map((port) => `-L ${port}:127.0.0.1:${port}`).join(' ')} <host>`;
+export function forwardCommand(ports: number[], where: SshTarget | null = null): string {
+  const port = where?.port === undefined ? '' : `-p ${where.port} `;
+  const flags = ports.map((p) => `-L ${p}:127.0.0.1:${p}`).join(' ');
+  return `ssh ${port}${flags} ${where?.target ?? '<host>'}`;
 }

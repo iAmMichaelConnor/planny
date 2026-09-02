@@ -83,8 +83,9 @@ Rules that keep the store consistent:
   `.planny/fork` marker makes the split deliberate.
 - The server binds 127.0.0.1 only, so a remote operator needs a forward
   from their own machine. Run `planny serve --forward` here (or
-  `--all --forward` for every board), and give the operator the line it
-  prints: they paste it on their own machine with `<host>` replaced. Never
+  `--all --forward` for every board) and give them the line it prints, to
+  paste on their own machine. In an ssh session it fills in the host
+  itself; if it prints `<host>`, ask the operator what they ssh to. Never
   hand them `ssh $(planny serve --forward) <host>` — the substitution would
   run on their machine, which has no plan on it.
 - **Starting a task claims it.** `planny start` on another session's
