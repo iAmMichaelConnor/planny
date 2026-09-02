@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { currentPageUrl, forwardFlags, probeBoards, startPage } from '../src/serve-all.js';
+import { currentPageUrl, forwardCommand, probeBoards, startPage } from '../src/serve-all.js';
 import { discoverStores } from '../src/discover.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import { initRepo, openStore } from '../src/store.js';
@@ -111,7 +111,16 @@ describe('the boards page', () => {
 });
 
 describe('the ssh forward', () => {
-  it('prints one -L flag per port, ready to paste', () => {
-    expect(forwardFlags([5890, 5891])).toBe('-L 5890:127.0.0.1:5890 -L 5891:127.0.0.1:5891');
+  it('prints a whole command, not a fragment to compose', () => {
+    // The flags are made on the machine that serves and used on the machine
+    // the operator sits at. A bare fragment invites `ssh $(planny …) host`,
+    // which runs planny on the laptop, where there is no plan to find.
+    expect(forwardCommand([5890, 5891])).toBe(
+      'ssh -L 5890:127.0.0.1:5890 -L 5891:127.0.0.1:5891 <host>',
+    );
+  });
+
+  it('leaves the host for the operator, who is the only one who knows it', () => {
+    expect(forwardCommand([5891])).toMatch(/<host>$/);
   });
 });

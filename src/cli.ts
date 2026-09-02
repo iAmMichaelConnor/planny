@@ -969,7 +969,7 @@ Examples:
     }
     if (options.forward === true) {
       const running = (await all.probeBoards(plans)).filter((b) => b.url !== null);
-      io.out(all.forwardFlags([port, ...running.map((b) => Number(new URL(b.url!).port))]));
+      io.out(all.forwardCommand([port, ...running.map((b) => Number(new URL(b.url!).port))]));
       return;
     }
     if (plans.length === 0) {
@@ -1042,8 +1042,12 @@ deletes this store's log once its server is gone and it is older than
 also sweeps dead planny-serve-<port>.log files that planny 0.1.9 and older
 left in the OS temp dir.
 
---forward prints the \`ssh -L\` flags for what this command serves, so a
-remote operator pastes one line: ssh $(planny serve --forward) <host>.
+--forward prints the ssh command that tunnels what this command serves.
+Two machines are involved: run --forward on the machine that serves the
+boards, then paste the line it prints into a terminal on the machine you
+sit at, with <host> replaced by the name you ssh to. Do not wrap it in
+\`ssh $(planny serve --forward)\`: that substitution runs where you paste
+it, which is the machine with no plan on it.
 
 --all works on every plan on this machine instead of this one. It finds
 them under your home directory, or under each --root you name, starts a
@@ -1059,7 +1063,7 @@ so it takes no --all.
 Examples:
   planny serve --detach            board that outlives this session
   planny serve --stop              stop it (the log stays)
-  planny serve --forward           the -L flags for an ssh forward
+  planny serve --forward           the ssh line to tunnel this board
   planny serve --all --detach      every plan's board, and one link to them all
   planny serve --all --root ~/code look under ~/code only
   planny serve --all --stop        take the page and every board down
@@ -1088,12 +1092,12 @@ Examples:
       }
       const store = open();
       if (options.forward === true) {
-        const { forwardFlags } = await import('./serve-all.js');
+        const { forwardCommand } = await import('./serve-all.js');
         const url = await (await import('./server.js')).currentServeUrl(store);
         if (url === null) {
           throw new Error('no board is running for this store — start one with `planny serve --detach`');
         }
-        io.out(forwardFlags([Number(new URL(url).port)]));
+        io.out(forwardCommand([Number(new URL(url).port)]));
         return;
       }
       if (options.cleanLogs === true) {

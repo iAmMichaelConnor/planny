@@ -1165,7 +1165,7 @@ describe('serve --all: one command for every board on this machine', () => {
     expect(err.join(' ')).toContain(dir);
   });
 
-  it('--forward prints the ssh flags for the page and every running board', async () => {
+  it('--forward prints a whole ssh line for the page and every running board', async () => {
     const { mkdirSync } = await import('node:fs');
     const { startServer } = await import('../src/server.js');
     for (const name of ['alpha', 'beta']) {
@@ -1177,7 +1177,7 @@ describe('serve --all: one command for every board on this machine', () => {
     try {
       expect(await run('serve', '--all', '--forward', '--root', dir, '--port', '5890')).toBe(0);
       expect(out.join('\n')).toBe(
-        `-L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port}`,
+        `ssh -L 5890:127.0.0.1:5890 -L ${board.port}:127.0.0.1:${board.port} <host>`,
       );
     } finally {
       await board.close();

@@ -81,10 +81,12 @@ Rules that keep the store consistent:
 - **In a linked git worktree, planny uses the main worktree's plan** —
   the worktree's own `.planny` checkout is ignored unless a
   `.planny/fork` marker makes the split deliberate.
-- The server binds 127.0.0.1 only; a remote operator needs their own
-  forward: `ssh -L 5891:127.0.0.1:5891 <host>`. For every board at once,
-  `planny serve --all --forward` prints the `-L` flags:
-  `ssh $(planny serve --all --forward) <host>`.
+- The server binds 127.0.0.1 only, so a remote operator needs a forward
+  from their own machine. Run `planny serve --forward` here (or
+  `--all --forward` for every board), and give the operator the line it
+  prints: they paste it on their own machine with `<host>` replaced. Never
+  hand them `ssh $(planny serve --forward) <host>` — the substitution would
+  run on their machine, which has no plan on it.
 - **Starting a task claims it.** `planny start` on another session's
   task refuses unless you pass `--take`, which records the takeover,
   but you should _rarely_ need `--take`.

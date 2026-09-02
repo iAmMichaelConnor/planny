@@ -212,7 +212,18 @@ export async function stopPage(port: number): Promise<StopOutcome> {
   return { kind: 'stopped', url, pid: info.pid, ...(existsSync(log) ? { log } : {}) };
 }
 
-/** The ssh -L flags that forward these ports from a remote machine. */
-export function forwardFlags(ports: number[]): string {
-  return ports.map((port) => `-L ${port}:127.0.0.1:${port}`).join(' ');
+/**
+ * The command that tunnels these ports, ready to paste.
+ *
+ * Two machines are involved, and that is the whole point of a forward: the
+ * ports are known here, on the machine that serves the boards, and the tunnel
+ * is opened there, on the machine the operator sits at. So this prints a whole
+ * command rather than a fragment — a fragment invites
+ * `ssh $(planny serve --forward) <host>`, whose substitution runs on the
+ * laptop, where planny is not installed and no plan exists. The host is left
+ * as a placeholder because only the operator knows what they call this
+ * machine.
+ */
+export function forwardCommand(ports: number[]): string {
+  return `ssh ${ports.map((port) => `-L ${port}:127.0.0.1:${port}`).join(' ')} <host>`;
 }
