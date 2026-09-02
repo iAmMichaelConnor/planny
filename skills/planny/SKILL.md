@@ -142,12 +142,11 @@ agent could pick it up with no other context:
   STE prose. Say what the task is, why it exists, and give pointers — file
   paths, commands, the test to run. Include any constraint the name cannot
   carry. The reader must not need the conversation that produced the task.
-- **Definition of done**: one line in every body saying what the owner must
-  see before they close the task. Write it as evidence, never as a feeling:
-  "every test green on the branch, rebased on the tip", "merged onto the
-  feature branch and the gate green", "the review came back with no
-  blocking finding", "the operator answered". A task whose body cannot say
-  what done looks like is two tasks, or a question.
+- **Definition of done**: say what the owner must see before they close the
+  task. Write evidence, not a feeling. One line is enough: "every test
+  passes on the branch", "the change is merged into main", "the review
+  returned no blocking finding", "the operator answered". A task whose body
+  cannot say what done looks like is usually two tasks, or a question.
 - **A body that quotes a command needs `--desc-file`.** Inside a
   double-quoted `-d "…"`, the shell runs whatever sits between backticks
   and inside `$(…)` before planny ever sees it. The command really runs,
@@ -172,16 +171,16 @@ agent could pick it up with no other context:
   tasks, one owner each. Encode order as dependencies, never as prose
   (`next` reads dependencies, not descriptions — "do this after t7" in
   prose does not hold).
-- **Two owners, two tasks, two definitions of done.** When one agent
-  builds and another lands the work, that is the common case: open a
-  parent whose definition of done is "merged", owned by whoever merges,
-  and a child whose definition of done is "all green", owned by whoever
-  builds. The builder closes the child when the branch is rebased and
-  every gate passes, and writes the hand-off in its body. The lander
-  closes the parent on the merge, and appends the merge commit. Neither
-  closes the other's task. The board then shows "green, waiting to land"
-  as an open parent over a done child, instead of hiding two meanings of
-  done inside one task.
+- **One owner and one definition of done per task.** A task that two
+  people close, on two different tests of "done", hides one of them. Split
+  it instead. Here is one split, offered as a suggestion — take it if your
+  work runs this way. One agent writes the code and another merges it. The
+  parent task is done when the change is merged, and belongs to whoever
+  merges. The child task is done when every test passes on the branch, and
+  belongs to whoever writes the code. Each owner closes their own task and
+  leaves the other alone. The board then shows an open parent over a done
+  child: the code is written and waits to be merged. Other splits work as
+  well. Only the rule above holds in every project.
 - **Decisions** use the section layout in
   [references/decision-format.md](references/decision-format.md).
 - **Take ids from command output — never predict them.** Another writer
@@ -215,12 +214,11 @@ operator's original words in the body; they are the request of record.
    share an ancestor belong together — give them to the same agent.
 2. `planny start <id>` before you begin; `planny show <id> --json` for the
    full body, relationships and file path.
-3. `planny done <id>` the moment the task's own definition of done is met,
-   and you have seen the evidence — stale statuses are the problem this tool
-   exists to solve, and a done recorded before the evidence exists is worse
-   than a stale one: it costs a reopen. Heed warnings: finishing a task that
-   is still blocked, or that has active children, usually means a missed
-   update.
+3. `planny done <id>` the moment the task's definition of done is met and
+   you have seen the evidence — stale statuses are the problem this tool
+   exists to solve. A done recorded before the evidence exists costs a
+   reopen. Heed warnings: finishing a task that is still blocked, or that
+   has active children, usually means a missed update.
 4. Requirements changed? `planny update` the task, or `planny cancel
    --replaced-by` and add the successor tasks. Never leave a task describing
    work nobody intends to do.
