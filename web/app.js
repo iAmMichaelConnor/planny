@@ -51,6 +51,48 @@ function markDirty() {
 }
 
 /**
+ * Carry what the reader has typed across a rebuild. The board refreshes on
+ * its event stream, on a returning tab, and after any change another writer
+ * makes through the CLI — and a rebuild must never take words out of a box
+ * someone is still filling in. Capture before the rebuild, restore after:
+ * the restored input event re-arms whatever buttons the box controls, so the
+ * form comes back exactly as it was left.
+ *
+ * `onlyFocused` says where the value lives. A box the store knows nothing
+ * about — a decision answer, a half-written response — must always be
+ * carried, or the words are gone. A box the state fills in — the date window
+ * — is carried only while the reader is in it: everywhere else the rebuild
+ * is the authority, so clearing or presetting the window still wins.
+ */
+function keepTyped(root, selector, { onlyFocused = false } = {}) {
+  const key = (el) => `${el.dataset.role || el.id}:${el.dataset.id || ''}`;
+  const selectable = (el) => el.tagName === 'TEXTAREA' || el.type === 'text';
+  const typed = new Map();
+  let focused = null;
+  let caret = 0;
+  for (const el of root.querySelectorAll(selector)) {
+    if (el.value !== '') typed.set(key(el), el.value);
+    if (document.activeElement === el) {
+      focused = key(el);
+      if (selectable(el)) caret = el.selectionStart ?? el.value.length;
+    }
+  }
+  return () => {
+    for (const el of root.querySelectorAll(selector)) {
+      const value = onlyFocused && key(el) !== focused ? undefined : typed.get(key(el));
+      if (value !== undefined && el.value !== value) {
+        el.value = value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (key(el) !== focused) continue;
+      el.focus();
+      // A number box has no text selection to put back.
+      if (selectable(el)) el.setSelectionRange(caret, caret);
+    }
+  };
+}
+
+/**
  * Guardrail for a change that cannot be taken back. Reserved for cancelling
  * and rejecting: both rewire or close other work, so neither has an inverse
  * a single request can post. Everything else acts at once and offers an undo
@@ -763,11 +805,13 @@ function renderBoard() {
   const countOf = (status) =>
     state.data.tasks.filter((t) => t.status === status && visible(t)).length;
   const shown = boardStatuses();
+  const restoreTyped = keepTyped($('#board-filters'), TYPED_IN_FILTERS, { onlyFocused: true });
   $('#board-filters').innerHTML =
     `<span class="chip-group">${statusChips('board', shown, countOf)}</span>` +
     `<span class="chip-group">${kindChips('board', f.kinds)}</span>` +
     `<span class="chip-group">${typeChips('board', f.types)}</span>` +
     dateFilterHtml();
+  restoreTyped();
 
   $('#board-columns').innerHTML = BOARD_COLUMNS
     .filter(([status]) => shown.has(status))
@@ -791,6 +835,7 @@ function renderTree() {
   clearHoverLines(); // the rebuild wipes the overlay; drop the stale row cache too
   const filters = state.treeFilters;
   const order = state.treeOrder; // 'parents' | 'deps'
+  const restoreTyped = keepTyped($('#tree-filters'), TYPED_IN_FILTERS, { onlyFocused: true });
   $('#tree-filters').innerHTML =
     `<span class="chip-group">${statusChips('tree', filters.statuses)}</span>` +
     `<span class="chip-group">${kindChips('tree', filters.kinds)}</span>` +
@@ -801,6 +846,7 @@ function renderTree() {
       <option value="parents"${order === 'parents' ? ' selected' : ''}>parent → child</option>
       <option value="deps"${order === 'deps' ? ' selected' : ''}>blocker → blocked</option>
     </select></label>`;
+  restoreTyped();
 
   const matches = (t) =>
     filters.statuses.has(t.status) &&
@@ -1073,16 +1119,15 @@ function renderDeps() {
   svg.innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.65"/></marker></defs>${edges.join('')}${nodes.join('')}`;
 }
 
+/** Every box a reader types into on the decisions tab. */
+const TYPED_IN_DECISIONS = 'textarea[data-role="response"], input[data-role="pos-input"]';
+
+/** The date window's boxes: they hold a part-typed value the state has not taken yet. */
+const TYPED_IN_FILTERS = '#date-from, #date-to, #time-from, #time-to';
+
 function renderDecisions() {
   const view = $('#view-decisions');
-  // A background refresh must not eat a half-typed response: carry drafts
-  // (and focus) across the rebuild.
-  const drafts = new Map();
-  let focusedId = null;
-  for (const textarea of view.querySelectorAll('textarea[data-role="response"]')) {
-    if (textarea.value !== '') drafts.set(textarea.dataset.id, textarea.value);
-    if (document.activeElement === textarea) focusedId = textarea.dataset.id;
-  }
+  const restoreTyped = keepTyped(view, TYPED_IN_DECISIONS);
   const all = state.data.decisions
     .map(({ id, blocked }) => ({ task: state.byId.get(id), blocked }))
     .filter((d) => d.task);
@@ -1167,18 +1212,7 @@ function renderDecisions() {
   view.innerHTML =
     loggedHtml + (openHtml.join('') || '<p class="muted">No open decisions.</p>') + parkedHtml + pastHtml;
 
-  for (const [id, value] of drafts) {
-    const textarea = view.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
-    if (textarea) textarea.value = value;
-    syncDecisionButtons(id); // a kept draft keeps its buttons armed
-  }
-  if (focusedId !== null) {
-    const textarea = view.querySelector(`textarea[data-role="response"][data-id="${focusedId}"]`);
-    if (textarea) {
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    }
-  }
+  restoreTyped();
   applySelection(); // this rebuild is sometimes called outside render()
 }
 
@@ -1343,6 +1377,13 @@ function renderDrawer() {
          <button data-bump="bottom"${positionValue > 0 && positionValue === active.length ? ' disabled title="already at the bottom"' : ' title="move to the bottom of the priority order"'}>▼ bottom</button>
        </div>`;
 
+  // The resolve box is not part of the edit form, so it never marks the
+  // form dirty and never blocks this rebuild. Carry it instead — but only
+  // across a rebuild of the same task; another task starts with an empty box.
+  const restoreTyped = state.selected === state.renderedDrawerId
+    ? keepTyped($('#drawer-body'), '#f-resolution')
+    : () => {};
+
   $('#drawer-body').innerHTML = `
     <label>name</label><input id="f-name" value="${esc(task.name)}">
     <label>description (markdown)
@@ -1396,6 +1437,7 @@ function renderDrawer() {
     ${relSection}`;
 
   wireDrawer(task, isNew);
+  restoreTyped(); // after wiring, so the restored input event finds its listeners
   state.renderedDrawerId = state.selected;
   state.drawerDirty = false;
   if (opening) {

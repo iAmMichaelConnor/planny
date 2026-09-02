@@ -731,6 +731,119 @@ describe('ui smoke', () => {
     expect(document.activeElement).toBe(draft());
   });
 
+  it('a background refresh keeps a half-typed decision answer in the drawer', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const box = () => document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    box().value = 'leaning towards Fly';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    box().focus();
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(box().value).toBe('leaning towards Fly');
+    expect(document.activeElement).toBe(box());
+    // Save stays disarmed: the resolve box is not part of the edit form, and
+    // saving from it would write a body that predates the outcome.
+    expect((document.querySelector('#save-btn') as HTMLButtonElement).disabled).toBe(true);
+    // The buttons the box arms stay armed across the rebuild.
+    expect((document.querySelector('#resolve-btn') as HTMLButtonElement).disabled).toBe(false);
+    expect((document.querySelector('#accept-btn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a change another writer makes through the CLI keeps the answer too", async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const box = () => document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    box().value = 'leaning towards Fly';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    FakeEventSource.instances[0]!.onmessage!({ data: 'changed' }); // an agent ran the CLI
+    await new Promise((r) => setTimeout(r, 5));
+    expect(box().value).toBe('leaning towards Fly');
+  });
+
+  it('another decision starts with an empty answer box', async () => {
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    const box = () => document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    box().value = 'leaning towards Fly';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('#drawer-close') as HTMLElement).click();
+    (document.querySelector('.card[data-id="t6"]') as HTMLElement).click(); // another decision
+    expect(document.querySelector('#f-resolution')).toBeNull(); // t6 is answered already
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    expect(box().value).toBe(''); // reopening starts fresh, not on the old draft
+  });
+
+  it('switching straight to another open decision does not carry the answer over', async () => {
+    servedState = {
+      ...sampleState,
+      decisions: [
+        { id: 't4', blocked: false },
+        { id: 't7', blocked: false },
+      ],
+      tasks: [...sampleState.tasks, task('t7', { name: 'Choose a queue', type: 'decision' })],
+    };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    const box = () => document.querySelector('#f-resolution') as HTMLTextAreaElement;
+    (document.querySelector('.card[data-id="t4"]') as HTMLElement).click();
+    box().value = 'leaning towards Fly';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('.card[data-id="t7"]') as HTMLElement).click();
+    expect(document.querySelector('#drawer-title')!.textContent).toContain('t7');
+    expect(box().value).toBe('');
+  });
+
+  it('a draft stays with the decision it was typed on', async () => {
+    servedState = {
+      ...sampleState,
+      decisions: [
+        { id: 't4', blocked: false },
+        { id: 't7', blocked: false },
+      ],
+      tasks: [...sampleState.tasks, task('t7', { name: 'Choose a queue', type: 'decision' })],
+    };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    clickTab('decisions');
+    expandDecision('t4');
+    expandDecision('t7');
+    const draft = (id: string) =>
+      document.querySelector(
+        `textarea[data-role="response"][data-id="${id}"]`,
+      ) as HTMLTextAreaElement;
+    draft('t4').value = 'Fly.io';
+    draft('t4').dispatchEvent(new Event('input', { bubbles: true }));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(draft('t4').value).toBe('Fly.io');
+    expect(draft('t7').value).toBe('');
+  });
+
+  it('a background refresh keeps a half-typed date window, and the focus', async () => {
+    clickTab('tree');
+    const from = () => document.querySelector('#tree-filters #date-from') as HTMLInputElement;
+    from().value = '2026-09-01';
+    from().focus();
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(from().value).toBe('2026-09-01');
+    expect(document.activeElement).toBe(from());
+  });
+
+  it('a background refresh keeps a typed position in a decision tile', async () => {
+    clickTab('decisions');
+    expandDecision('t4');
+    const box = () =>
+      document.querySelector('input[data-role="pos-input"][data-id="t4"]') as HTMLInputElement;
+    box().value = '2';
+    box().dispatchEvent(new Event('input', { bubbles: true }));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(box().value).toBe('2');
+    expect(
+      (document.querySelector('button[data-action="set-pos"][data-id="t4"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   it('progress sits next to the path on the sub-row, not pushed apart', () => {
     const label = document.querySelector('#store-label') as HTMLElement;
     expect(label.nextElementSibling!.id).toBe('progress-wrap');
