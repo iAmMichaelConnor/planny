@@ -14,6 +14,7 @@
   /* One status palette for every view; the referenced tokens flip in dark mode. */
   --st-todo: var(--todo);
   --st-in-progress: var(--accent);
+  --st-parked: var(--warn);
   --st-done: var(--ok);
   --st-cancelled: var(--line);
 }
@@ -188,6 +189,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .column h2 .colsub { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--muted); }
 .card .name { font-weight: 550; }
 .card.st-in-progress { border-left-color: var(--st-in-progress); }
+.card.st-parked { border-left-color: var(--st-parked); }
 .card.st-done { border-left-color: var(--st-done); }
 .card.st-cancelled { border-left-color: var(--st-cancelled); }
 .card.blocked-card { opacity: 0.75; }
@@ -236,6 +238,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
   vertical-align: middle;
 }
 .status-dot.in-progress { background: var(--st-in-progress); }
+.status-dot.parked { background: var(--st-parked); }
 .status-dot.done { background: var(--st-done); }
 .status-dot.cancelled { background: var(--st-cancelled); }
 .column h2 .status-dot { margin-right: 6px; }
@@ -254,6 +257,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .dep-node .statusbar { stroke: none; }
 .dep-node .statusbar.todo { fill: var(--st-todo); }
 .dep-node .statusbar.in-progress { fill: var(--st-in-progress); }
+.dep-node .statusbar.parked { fill: var(--st-parked); }
 .dep-node .statusbar.done { fill: var(--st-done); }
 .dep-node .statusbar.cancelled { fill: var(--st-cancelled); }
 .dep-node:hover rect { stroke: var(--accent); }
@@ -305,9 +309,11 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .decision-logged code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 .decision-logged button { flex: none; }
 
-.skipped-list { opacity: 0.75; margin-bottom: 16px; }
-.skipped-list h4 { margin: 0 0 6px; font-weight: 500; }
-.skipped-row { padding: 4px 0; display: flex; align-items: center; gap: 8px; }
+.parked-list { opacity: 0.75; margin-bottom: 16px; }
+.parked-list h4 { margin: 0 0 6px; font-weight: 500; }
+.parked-row { padding: 4px 0; display: flex; align-items: center; gap: 8px; }
+.parked-row .parked-why { font-size: 12px; }
+.parked-note { margin-top: 10px; }
 
 /* Drawer */
 #drawer {

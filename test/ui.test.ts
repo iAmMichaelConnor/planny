@@ -296,7 +296,8 @@ describe('ui smoke', () => {
     const bar = document.querySelector('.dep-node[data-id="t1"] .statusbar') as SVGRectElement;
     expect(bar).not.toBeNull();
     expect(bar.classList.contains('todo')).toBe(true);
-    expect(document.querySelectorAll('#view-deps .legend .status-dot').length).toBe(4);
+    // one dot per status: todo, in-progress, parked, done, cancelled
+    expect(document.querySelectorAll('#view-deps .legend .status-dot').length).toBe(5);
 
     card('t1').click();
     expect(document.querySelector('#drawer-title .status-dot')).not.toBeNull();
@@ -304,7 +305,7 @@ describe('ui smoke', () => {
 
   it('filters the dependency graph by status chips', () => {
     clickTab('deps');
-    expect(document.querySelectorAll('#deps-status .chip').length).toBe(4);
+    expect(document.querySelectorAll('#deps-status .chip').length).toBe(5);
     expect(document.querySelectorAll('#deps-svg .dep-node').length).toBe(2);
     (document.querySelector('#deps-status .chip[data-status="todo"]') as HTMLElement).click();
     // t1 and t3 are both todo, so nothing with an edge remains.
@@ -461,8 +462,10 @@ describe('ui smoke', () => {
     expect(tile().classList.contains('collapsed')).toBe(false);
 
     // A button inside the tile acts without also toggling it.
-    (document.querySelector('button[data-action="skip"][data-id="t4"]') as HTMLElement).click();
-    expect(document.querySelector('#view-decisions .skipped-row')).not.toBeNull();
+    vi.stubGlobal('prompt', vi.fn(() => ''));
+    (document.querySelector('button[data-action="park"][data-id="t4"]') as HTMLElement).click();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t4/status')).toBe(true);
+    expect(tile().classList.contains('collapsed')).toBe(false);
   });
 
   it('a bump that stopped short says so, so the button never looks dead', async () => {
@@ -538,14 +541,14 @@ describe('ui smoke', () => {
     expect(setBtn().disabled).toBe(true); // back to the original: disabled again
   });
 
-  it('skip explains it deletes nothing, and cancel closes the decision', () => {
+  it('park explains the question stays open, and cancel closes the decision', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
     clickTab('decisions');
     expandDecision('t4');
     const tile = () =>
       document.querySelector('#view-decisions .decision-card[data-id="t4"]') as HTMLElement;
-    const skip = tile().querySelector('button[data-action="skip"]') as HTMLElement;
-    expect(skip.title).toMatch(/nothing is deleted/i);
+    const park = tile().querySelector('button[data-action="park"]') as HTMLElement;
+    expect(park.title).toMatch(/stays open/i);
 
     (tile().querySelector('button[data-action="cancel-decision"]') as HTMLElement).click();
     const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status');
@@ -576,22 +579,13 @@ describe('ui smoke', () => {
     expect(JSON.parse(patch!.init!.body as string).name).toBe('Renamed');
   });
 
-  it('a skipped decision moves to a visible skipped list and can come back', () => {
+  it('parking a decision writes the status, so the choice survives a reload', () => {
+    vi.stubGlobal('prompt', vi.fn(() => ''));
     clickTab('decisions');
     expandDecision('t4');
-    (document.querySelector('button[data-action="skip"][data-id="t4"]') as HTMLElement).click();
-    const view = document.querySelector('#view-decisions')!;
-    expect(view.textContent).toContain('Skipped for now');
-    expect(view.textContent).toContain('Choose hosting'); // still visible, not vanished
-    expect(document.querySelector('textarea[data-role="response"][data-id="t4"]')).toBeNull();
-
-    (document.querySelector('button[data-action="unskip"][data-id="t4"]') as HTMLElement).click();
-    expect(document.querySelector('textarea[data-role="response"][data-id="t4"]')).not.toBeNull();
-    expect(view.textContent).not.toContain('Skipped for now');
-    // Skipping is a view preference: nothing was written to the store.
-    expect(fetchCalls.some((c) => c.path.includes('/resolve') || c.path.includes('/status'))).toBe(
-      false,
-    );
+    (document.querySelector('button[data-action="park"][data-id="t4"]') as HTMLElement).click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status');
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ status: 'parked' });
   });
 
   it('accepting a decision posts a resolve', () => {
@@ -1041,6 +1035,170 @@ const chainTasks = [
   task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
+
+describe('parked work on the board', () => {
+  beforeEach(bootApp);
+
+  it('gives parked cards their own column, before To do', async () => {
+    await serveTasks([
+      task('t1', { name: 'Live one', position: 1 }),
+      task('t2', { name: 'Napping', status: 'parked', parkedUntil: 'the API ships', position: 2 }),
+    ]);
+    const titles = [...document.querySelectorAll('#board-columns .column h2')].map((h) =>
+      h.textContent!.trim(),
+    );
+    expect(titles[0]).toMatch(/^Parked/);
+    expect(titles[1]).toMatch(/^To do/);
+    const parkedColumn = document.querySelectorAll('#board-columns .column')[0]!;
+    expect(parkedColumn.querySelector('.card[data-id="t2"]')).not.toBeNull();
+  });
+
+  it('hides the parked column when nothing is parked', async () => {
+    await serveTasks([task('t1', { name: 'Live one', position: 1 })]);
+    const titles = [...document.querySelectorAll('#board-columns .column h2')].map((h) =>
+      h.textContent!.trim(),
+    );
+    expect(titles.some((t) => t.startsWith('Parked'))).toBe(false);
+  });
+
+  it('offers a parked status filter chip in the tree', async () => {
+    await serveTasks([task('t1', { status: 'parked', position: 1 })]);
+    clickTab('tree');
+    expect(document.querySelector('.chip[data-scope="tree"][data-status="parked"]')).not.toBeNull();
+    expect(document.querySelector('#tree-list [data-id="t1"]')).not.toBeNull();
+  });
+
+  it('counts parked work in the priority total, as the server does', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'parked', position: 2 }),
+      task('t3', { status: 'done' }),
+    ]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(document.querySelector('#drawer-body')!.textContent).toMatch(/of 2 open tasks/);
+  });
+
+  it('shows the wake note in the drawer, and hides it on live work', async () => {
+    await serveTasks([
+      task('t1', { status: 'parked', parkedUntil: 'the payments API ships', position: 1 }),
+      task('t2', { position: 2 }),
+    ]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(document.querySelector('#drawer-body')!.textContent).toContain(
+      'the payments API ships',
+    );
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    expect(document.querySelector('#drawer-body')!.textContent).not.toContain('parked until');
+  });
+
+  it('parks from the drawer, asking for the wake note', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('prompt', vi.fn(() => 'the payments API ships'));
+    await serveTasks([task('t1', { position: 1 })]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    (document.querySelector('#drawer-body button[data-status="parked"]') as HTMLElement).click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/status' && c.init?.body);
+    expect(JSON.parse(call!.init!.body as string)).toMatchObject({
+      status: 'parked',
+      parkedUntil: 'the payments API ships',
+    });
+  });
+
+  it('parks with no note when the operator leaves the box empty', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('prompt', vi.fn(() => ''));
+    await serveTasks([task('t1', { position: 1 })]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    (document.querySelector('#drawer-body button[data-status="parked"]') as HTMLElement).click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/status' && c.init?.body);
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ status: 'parked' });
+  });
+
+  it('parks nothing when the operator cancels the box', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('prompt', vi.fn(() => null));
+    await serveTasks([task('t1', { position: 1 })]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    (document.querySelector('#drawer-body button[data-status="parked"]') as HTMLElement).click();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
+  });
+
+  it('wakes a parked task straight from its card', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await serveTasks([task('t1', { status: 'parked', position: 1 })]);
+    const wake = document.querySelector(
+      '.card[data-id="t1"] button[data-action="unpark"]',
+    ) as HTMLElement;
+    expect(wake).not.toBeNull();
+    wake.click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t1/status' && c.init?.body);
+    expect(JSON.parse(call!.init!.body as string)).toMatchObject({ status: 'todo' });
+  });
+
+  it('keeps the priority number on a parked card: the rank is not lost', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'parked', position: 2 }),
+    ]);
+    const card = document.querySelector('.card[data-id="t2"]')!;
+    expect(card.querySelector('.pos')!.textContent).toBe('#2');
+    expect(card.querySelector('button[data-action="top"]')).not.toBeNull();
+  });
+
+  it('a parked blocker still reads as a blocker on the card', async () => {
+    await serveTasks([
+      task('t1', { status: 'parked', position: 1 }),
+      task('t2', { blockedBy: ['t1'], blocked: true, position: 2 }),
+    ]);
+    const card = document.querySelector('.card[data-id="t2"]')!;
+    expect(card.querySelector('.badge.blocked')!.textContent).toContain('t1');
+  });
+});
+
+describe('parking a decision', () => {
+  beforeEach(bootApp);
+
+  it('parks the decision instead of hiding it in this browser only', async () => {
+    vi.stubGlobal('prompt', vi.fn(() => 'after the demo'));
+    clickTab('decisions');
+    expandDecision('t4');
+    const btn = document.querySelector(
+      'button[data-action="park"][data-id="t4"]',
+    ) as HTMLElement;
+    expect(btn.textContent).toMatch(/park for now/i);
+    btn.click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status' && c.init?.body);
+    expect(JSON.parse(call!.init!.body as string)).toMatchObject({
+      status: 'parked',
+      parkedUntil: 'after the demo',
+    });
+  });
+
+  it('lists parked decisions with a way to bring one back', async () => {
+    servedState = {
+      ...sampleState,
+      tasks: [
+        task('t4', {
+          name: 'Choose hosting',
+          type: 'decision',
+          status: 'parked',
+          parkedUntil: 'after the demo',
+        }),
+        task('t7', { name: 'Live question', type: 'decision' }),
+      ],
+      decisions: [{ id: 't7', blocked: false }],
+    };
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 5));
+    clickTab('decisions');
+    const parked = document.querySelector('#view-decisions .parked-list')!;
+    expect(parked.textContent).toContain('t4');
+    expect(parked.textContent).toContain('after the demo');
+    (parked.querySelector('button[data-action="unpark"][data-id="t4"]') as HTMLElement).click();
+    const call = fetchCalls.find((c) => c.path === '/api/tasks/t4/status' && c.init?.body);
+    expect(JSON.parse(call!.init!.body as string)).toMatchObject({ status: 'todo' });
+  });
+});
 
 describe('meaningless buttons are disabled', () => {
   it('the quick top button is dead on the top card, live below', () => {

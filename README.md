@@ -216,16 +216,17 @@ planny url                             # where that UI is being served
 | `add <name>` | add a task: `-d`/`--desc-file`, `--type task\|decision`, `--kind`, `--model`, `--parent`, `--child`, `--blocked-by`, `--blocks`, `--priority top\|bottom\|N`; `--start` claims it in the same command |
 | `update <id>` | change any field or relationship (`--add-blocked-by`, `--clear-parent`, `--append-desc`, …) |
 | `start <id> [--take]` | mark in progress and claim it; `--take` takes over another session's claim |
-| `done` / `todo <id>` | finish / reopen |
+| `done` / `todo <id>` | finish / reopen (also wakes a parked task) |
+| `park <id> [--until "<note>"]` | park a task: real work, but not for now. It keeps its priority place and still blocks; only `next` and `decisions` pass it over |
 | `cancel <id> [--replaced-by ids]` | cancel; dependants are rewired onto the replacements |
 | `bump <id> top\|bottom\|N` | move in the priority order, clamped by dependencies |
 | `show <id> [--json]` | one task in full: fields, body, relationships, history, file path |
 | `list [filters] [--json]` | flat priority-ordered list; filter by status, kind, type, model, parent (`--recursive`), blocked, `--changed-since <t>` |
-| `next [n] [--kind] [--under id] [--json]` | unblocked leaf tasks to work on now, with ancestor paths, unlocks and holders |
+| `next [n] [--kind] [--under id] [--include-parked] [--json]` | unblocked leaf tasks to work on now, with ancestor paths, unlocks and holders |
 | `tree` / `deps` | hierarchy view / dependency view in the terminal |
 | `progress [--parent id]` | completion percentage (excludes cancelled) |
 | `export [--out plan.md]` | the plan as one markdown document |
-| `decisions [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
+| `decisions [--include-parked] [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
 | `catchup [--as id] [--peek] [--compact]` | everything changed since this consumer last asked, then advance its stored cursor; `--compact` trims to ids, names, statuses and stamps |
 | `resolve <id> --response …\|--accept\|--response-file f\|--reject` | record the answer, mark done, create the outcome task (`--reject`: close as decided-no, create nothing) |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |

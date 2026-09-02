@@ -8,19 +8,18 @@ const state = {
   view: 'board',
   selected: null, // task id shown in the drawer, or '__new__'
   collapsed: new Set(),
-  skippedDecisions: new Set(),
   justResolved: new Map(), // id → when the operator resolved it in this page (notes expire)
   expandedDecisions: new Set(), // open-decision tiles start collapsed
 
   depsMode: readPreference('planny-deps-mode', 'blocks'),
   treeOrder: readPreference('planny-tree-order', 'parents'), // 'parents' | 'deps'
   treeFilters: {
-    statuses: new Set(['todo', 'in-progress']),
+    statuses: new Set(['todo', 'in-progress', 'parked']),
     kinds: new Set(), // empty set = no filter
     types: new Set(),
     showDeps: true,
   },
-  depsStatuses: new Set(['todo', 'in-progress']),
+  depsStatuses: new Set(['todo', 'in-progress', 'parked']),
   boardFilters: { kinds: new Set(), types: new Set() },
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
@@ -167,8 +166,17 @@ function childrenOf(id) {
   return state.data.tasks.filter((t) => t.parent === id);
 }
 
+/**
+ * Mirrors ACTIVE_STATUSES in src/types.ts. Parked work is active: it keeps a
+ * priority position and still blocks. The server counts positions this way,
+ * so the board must agree or every "#3 of 12" disagrees with the store.
+ */
+function isActiveStatus(status) {
+  return status === 'todo' || status === 'in-progress' || status === 'parked';
+}
+
 function activeTasks() {
-  return state.data.tasks.filter((t) => t.status === 'todo' || t.status === 'in-progress');
+  return state.data.tasks.filter((t) => isActiveStatus(t.status));
 }
 
 function ancestorsOf(id) {
@@ -210,7 +218,7 @@ function badges(task) {
   if (task.blocked) {
     const blockers = task.blockedBy.filter((id) => {
       const b = state.byId.get(id);
-      return b && (b.status === 'todo' || b.status === 'in-progress');
+      return b && isActiveStatus(b.status);
     });
     const links = blockers
       .map((id) => `<span class="chip-link" data-goto-task="${esc(id)}">${esc(id)}</span>`)
@@ -222,7 +230,7 @@ function badges(task) {
 
 // ---------- filter chips ----------
 
-const ALL_STATUSES = ['todo', 'in-progress', 'done', 'cancelled'];
+const ALL_STATUSES = ['todo', 'in-progress', 'parked', 'done', 'cancelled'];
 
 function chip(scope, attr, value, label, active) {
   return `<button class="chip${active ? ' active' : ''}" data-scope="${scope}" data-${attr}="${esc(value)}">${label}</button>`;
@@ -329,7 +337,10 @@ function cardHtml(task, position) {
   const quick = [];
   if (task.status === 'todo') quick.push(`<button data-action="start" data-id="${task.id}">start</button>`);
   if (task.status === 'in-progress') quick.push(`<button data-action="finish" data-id="${task.id}">done</button>`);
-  if (task.status === 'todo' || task.status === 'in-progress') {
+  if (task.status === 'parked') {
+    quick.push(`<button data-action="unpark" data-id="${task.id}" title="wake this task">wake</button>`);
+  }
+  if (isActiveStatus(task.status)) {
     quick.push(
       `<button data-action="top" data-id="${task.id}"${task.position === 1 ? ' disabled title="already at the top"' : ' title="bump to top"'}>▲ top</button>`,
     );
@@ -360,15 +371,19 @@ function renderBoard() {
     (f.kinds.size === 0 || f.kinds.has(t.kind)) && (f.types.size === 0 || f.types.has(t.type));
 
   const columns = [
+    ['parked', 'Parked'],
     ['todo', 'To do'],
     ['in-progress', 'In progress'],
     ['done', 'Done'],
     ['cancelled', 'Cancelled'],
   ];
+  // Parked and Cancelled are empty in most stores; an empty column there is
+  // noise, so each appears only once the store has one.
+  const onDemand = new Set(['parked', 'cancelled']);
   $('#board-columns').innerHTML = columns
-    .filter(([status]) => status !== 'cancelled' || state.data.tasks.some((t) => t.status === status))
+    .filter(([status]) => !onDemand.has(status) || state.data.tasks.some((t) => t.status === status))
     .map(([status, title]) => {
-      const ordered = status === 'todo' || status === 'in-progress'
+      const ordered = isActiveStatus(status)
         ? ' <span class="colsub">priority order ↓</span>'
         : '';
       const cards = state.data.tasks
@@ -484,7 +499,7 @@ function activeBlockersOf(id) {
   const task = state.byId.get(id);
   return (task ? task.blockedBy : []).filter((b) => {
     const blocker = state.byId.get(b);
-    return blocker && (blocker.status === 'todo' || blocker.status === 'in-progress');
+    return blocker && isActiveStatus(blocker.status);
   });
 }
 
@@ -680,8 +695,10 @@ function renderDecisions() {
   const all = state.data.decisions
     .map(({ id, blocked }) => ({ task: state.byId.get(id), blocked }))
     .filter((d) => d.task);
-  const items = all.filter((d) => !state.skippedDecisions.has(d.task.id));
-  const skipped = all.filter((d) => state.skippedDecisions.has(d.task.id));
+  // The server's decision queue already passes parked questions over; the
+  // board lists them separately so a parked question is never forgotten.
+  const items = all;
+  const parked = state.data.tasks.filter((t) => t.type === 'decision' && t.status === 'parked');
   const past = state.data.tasks.filter((t) => t.type === 'decision' && t.status === 'done');
 
   const openHtml = items.map(({ task, blocked }) => {
@@ -693,7 +710,7 @@ function renderDecisions() {
             <button class="primary" data-action="respond" data-id="${task.id}" disabled title="records the typed text as the decision">Submit</button>
             <button data-action="accept" data-id="${task.id}" title="records the written proposal as the decision — clear the box to use it">Accept proposal</button>
             <button data-action="reject" data-id="${task.id}" title="close as decided-no: the rejection is recorded and no task is created from it">Reject…</button>
-            <button data-action="skip" data-id="${task.id}" title="Hide this decision in this tab until the page reloads. It stays open for everyone and nothing is deleted or written to the store.">Skip for now</button>
+            <button data-action="park" data-id="${task.id}" title="Park this question: it leaves the queue and keeps its priority place. It stays open, and the board lists it below with a way to bring it back.">Park for now</button>
             <button data-action="cancel-decision" data-id="${task.id}" title="Mark the decision cancelled: the question no longer needs an answer. The task keeps its file — nothing is deleted.">Cancel decision</button>
           </div>
         </div>`;
@@ -722,14 +739,15 @@ function renderDecisions() {
        </details>`
     : '';
 
-  const skippedHtml = skipped.length > 0
-    ? `<div class="skipped-list">
-        <h4 class="muted">Skipped for now (still open)</h4>
-        ${skipped
+  const parkedHtml = parked.length > 0
+    ? `<div class="parked-list">
+        <h4 class="muted">Parked (still open)</h4>
+        ${parked
           .map(
-            ({ task }) => `<div class="skipped-row">
+            (task) => `<div class="parked-row">
               <span class="id muted">${task.id}</span> ${linkifyIds(esc(task.name))}
-              <button class="mini" data-action="unskip" data-id="${task.id}">bring back</button>
+              ${task.parkedUntil ? `<span class="muted parked-why">until ${linkifyIds(esc(task.parkedUntil))}</span>` : ''}
+              <button class="mini" data-action="unpark" data-id="${task.id}">bring back</button>
             </div>`,
           )
           .join('')}
@@ -756,7 +774,7 @@ function renderDecisions() {
     .join('');
 
   view.innerHTML =
-    loggedHtml + (openHtml.join('') || '<p class="muted">No open decisions.</p>') + skippedHtml + pastHtml;
+    loggedHtml + (openHtml.join('') || '<p class="muted">No open decisions.</p>') + parkedHtml + pastHtml;
 
   for (const [id, value] of drafts) {
     const textarea = view.querySelector(`textarea[data-role="response"][data-id="${id}"]`);
@@ -852,6 +870,12 @@ function renderDrawer() {
       ? [`started by ${esc(startedEntry.by || '(unattributed)')} at ${esc(startedEntry.at)}`]
       : []),
   ];
+  const parkedNote = !isNew && task.status === 'parked'
+    ? `<div class="parked-note"><label>parked until</label><div>${
+        task.parkedUntil ? linkifyIds(esc(task.parkedUntil)) : '<span class="muted">no reason recorded</span>'
+      }</div></div>`
+    : '';
+
   const relSection = isNew ? '' : `
     <div class="drawer-section">
       ${activity.length > 0 ? `<label>activity</label><div>${activity.join(' · ')}</div>` : ''}
@@ -865,14 +889,14 @@ function renderDrawer() {
   const statusButtons = isNew ? '' : `
     <label>status</label>
     <div class="status-buttons">
-      ${['todo', 'in-progress', 'done'].map((s) => `<button data-status="${s}" class="${task.status === s ? 'current' : ''}"${task.status === s ? ' disabled title="the current status"' : ''}>${s}</button>`).join('')}
+      ${['todo', 'in-progress', 'parked', 'done'].map((s) => `<button data-status="${s}" class="${task.status === s ? 'current' : ''}"${task.status === s ? ' disabled title="the current status"' : ''}${s === 'parked' ? ' title="real work, but not for now: it keeps its priority place and leaves the queue"' : ''}>${s}</button>`).join('')}
       <button data-status="cancelled" class="${task.status === 'cancelled' ? 'current' : ''}"${task.status === 'cancelled' ? ' disabled title="the current status"' : ''}>cancel…</button>
     </div>
     <div id="cancel-extra" class="hidden">
       ${(() => {
         const waiting = task.blocking.filter((wid) => {
           const w = state.byId.get(wid);
-          return w && (w.status === 'todo' || w.status === 'in-progress');
+          return w && isActiveStatus(w.status);
         });
         return waiting.length > 0
           ? `<p class="cancel-waiting">These tasks wait on ${task.id}: ${linkifyIds(esc(waiting.join(', ')))}.
@@ -884,7 +908,7 @@ function renderDrawer() {
       <button id="confirm-cancel" style="margin-top:6px">Confirm cancel</button>
     </div>`;
 
-  const resolveSection = !isNew && task.type === 'decision' && (task.status === 'todo' || task.status === 'in-progress')
+  const resolveSection = !isNew && task.type === 'decision' && isActiveStatus(task.status)
     ? `<div class="drawer-section">
         <label>resolve this decision</label>
         <textarea id="f-resolution" placeholder="The decision, free-form…"></textarea>
@@ -964,11 +988,24 @@ function renderDrawer() {
     <div style="margin-top:14px"><button class="primary" id="save-btn"${isNew ? '' : ' disabled title="type a change first"'}>${isNew ? 'Create task' : 'Save changes'}</button>
       <span id="unsaved-note" class="muted" hidden>changes not saved</span></div>
     ${statusButtons}
+    ${parkedNote}
     ${relSection}`;
 
   wireDrawer(task, isNew);
   state.renderedDrawerId = state.selected;
   state.drawerDirty = false;
+}
+
+/**
+ * Park a task, asking for the note that should wake it. Cancel abandons the
+ * park; an empty answer parks with no note ("not for now" needs no reason).
+ */
+function parkTask(id) {
+  const note = prompt(`Park ${id}. What should bring it back? (optional)`);
+  if (note === null) return;
+  const body = { status: 'parked' };
+  if (note.trim() !== '') body.parkedUntil = note.trim();
+  api(`/api/tasks/${id}/status`, 'POST', body);
 }
 
 function parseIdList(value) {
@@ -1127,6 +1164,10 @@ function wireDrawer(task, isNew) {
       btn.onclick = () => {
         if (btn.dataset.status === 'cancelled') {
           $('#cancel-extra').classList.toggle('hidden');
+          return;
+        }
+        if (btn.dataset.status === 'parked') {
+          parkTask(task.id);
           return;
         }
         if (!guard(`Mark ${task.id} ${btn.dataset.status}?`)) return;
@@ -1323,14 +1364,14 @@ document.addEventListener('click', (event) => {
       renderDecisions();
       return;
     }
-    if (action === 'skip') {
-      state.skippedDecisions.add(id);
-      renderDecisions();
+    if (action === 'park') {
+      parkTask(id);
       return;
     }
-    if (action === 'unskip') {
-      state.skippedDecisions.delete(id);
-      renderDecisions();
+    if (action === 'unpark') {
+      if (guard(`Bring ${id} back to the queue?`)) {
+        api(`/api/tasks/${id}/status`, 'POST', { status: 'todo' });
+      }
       return;
     }
     if (action === 'accept') {
@@ -1544,9 +1585,8 @@ $('#search').addEventListener('keydown', (event) => {
   hideSearchResults();
   state.selected = id;
   const openDecision =
-    task.type === 'decision' && (task.status === 'todo' || task.status === 'in-progress');
+    task.type === 'decision' && isActiveStatus(task.status);
   if (state.view === 'decisions' && openDecision) {
-    state.skippedDecisions.delete(id); // a skipped tile comes back when searched
     state.expandedDecisions.add(id);
     renderDecisions();
   }

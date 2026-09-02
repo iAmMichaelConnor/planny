@@ -93,6 +93,7 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "break X into pieces" | `planny add "<piece>" --parent <X>` per piece |
 | "X is done" / "start X" / "reopen X" | `planny done <X>` / `planny start <X>` / `planny todo <X>` |
 | "drop X" / "X is replaced by Y" | `planny cancel <X> [--replaced-by <Y>]` |
+| "park X", "not now", "X waits for Y to happen" | `planny park <X> --until "<what brings it back>"` — it leaves the queue, keeps its place |
 | "do X first", "deprioritize X" | `planny bump <X> top` / `bottom` / `<position>` |
 | "X can't happen until Y" | `planny update <X> --add-blocked-by <Y>` |
 | "change X …" (any field) | `planny update <X> --name/--desc/--kind/--model/--parent/--priority …` |
@@ -297,8 +298,12 @@ the order; don't fight it by renumbering.
 
 ## Reference
 
-Statuses: `todo`, `in-progress`, `done`, `cancelled` (cancelled tasks keep
-their file; `--replaced-by` rewires dependants onto the successors).
+Statuses: `todo`, `in-progress`, `parked`, `done`, `cancelled` (cancelled
+tasks keep their file; `--replaced-by` rewires dependants onto the
+successors). A parked task is real work, but not for now: it keeps its
+priority place and still blocks whatever waits on it, and only `next` and
+`decisions` pass it over. `--include-parked` shows it again; `planny todo`
+wakes it.
 Kinds: `ai`, `operator` by convention (free-form for new kinds); `--model`
 records a preferred model, advisory only — when you hand out the task,
 pick another model if that one is unavailable.
