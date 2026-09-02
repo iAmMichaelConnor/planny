@@ -190,46 +190,6 @@ describe('serve --detach and --stop', () => {
     }
   }, 60_000);
 
-  it('serves every plan it finds, and stops from any of them', async () => {
-    const roots = mkdtempSync(join(tmpdir(), 'planny-all-'));
-    try {
-      for (const name of ['alpha', 'deep/beta']) {
-        mkdirSync(join(roots, name), { recursive: true });
-        await cliIn(join(roots, name), 'init');
-        await cliIn(join(roots, name), 'add', `task in ${name}`);
-      }
-      // A plan under node_modules must not be found.
-      mkdirSync(join(roots, 'node_modules', 'junk'), { recursive: true });
-      await cliIn(join(roots, 'node_modules', 'junk'), 'init');
-
-      const started = await cliIn(join(roots, 'alpha'), 'serve', '--all', '--root', roots, '--detach');
-      trackPid(started.stdout);
-      expect(started.code).toBe(0);
-      const url = /http:\/\/127\.0\.0\.1:\d+/.exec(started.stdout)![0];
-
-      const projects = (await (await fetch(`${url}/api/projects`)).json()) as {
-        projects: Array<{ key: string; name: string }>;
-      };
-      expect(projects.projects.map((p) => p.name).sort()).toEqual(['alpha', 'beta']);
-
-      // Each store finds the shared board, and each holds only its own tasks.
-      for (const [name, key] of [['alpha', 'alpha'], ['deep/beta', 'beta']] as const) {
-        expect((await cliIn(join(roots, name), 'url')).stdout.trim()).toBe(url);
-        const state = (await (await fetch(`${url}/api/projects/${key}/state`)).json()) as {
-          tasks: Array<{ name: string }>;
-        };
-        expect(state.tasks.map((t) => t.name)).toEqual([`task in ${name}`]);
-      }
-
-      // Stopping from the second plan ends the shared server, not just its record.
-      const stopped = await cliIn(join(roots, 'deep/beta'), 'serve', '--stop');
-      expect(stopped.stdout).toMatch(/stopped/);
-      expect(await until(async () => !(await answering(url)))).toBe(true);
-    } finally {
-      rmSync(roots, { recursive: true, force: true });
-    }
-  }, 60_000);
-
   it('a second detach is a success no-op that prints the same address', async () => {
     await cli('init');
     const first = await cli('serve', '--detach', '--port', '0');

@@ -232,7 +232,7 @@ planny url                             # where that UI is being served
 | `decide` | work the open decisions one by one, in a terminal: accept, submit an answer, reject, park, cancel, next, quit — the choices the board offers |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
-| `serve [--port] [--all [--root d]] [--detach] [--stop] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); with no `--port` it takes the port this store used last, else the first free one from 5891, so two stores never collide; `--all` holds every plan on this machine in one board, picked by name in the top-left (plans stay entirely separate); `--detach` outlives the launching (agent) session, `--stop` ends the detached server, `--clean-logs` deletes this store's dead old log |
+| `serve [--port] [--detach] [--stop] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); with no `--port` it takes the port this store used last, else the first free one from 5891, so two stores never collide; `--detach` outlives the launching (agent) session, `--stop` ends the detached server, `--clean-logs` deletes this store's dead old log |
 | `url` | print the address where the UI serves this store; exits 1 when it is not up |
 
 Every command's `--help` carries examples; mistyped commands get a

@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { closeSync, existsSync, openSync, watch } from 'node:fs';
 import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -50,67 +49,16 @@ class HttpError extends Error {
   }
 }
 
-/** One plan the server holds: its store, and the name and key it answers to. */
-export interface ServedProject {
-  key: string;
-  name: string;
-  store: Store;
-}
-
-/**
- * Name the stores for the API. One store keeps the plain basename; two
- * projects of the same name are told apart by a slice of the path's hash, so
- * a key is readable and still unique.
- */
-export function asProjects(stores: Store[]): ServedProject[] {
-  const counts = new Map<string, number>();
-  for (const store of stores) {
-    const label = basename(store.root);
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  return stores.map((store) => {
-    const label = basename(store.root);
-    const safe = label.replace(/[^A-Za-z0-9._-]/g, '-');
-    return {
-      store,
-      name: label,
-      key:
-        (counts.get(label) ?? 0) === 1
-          ? safe
-          : `${safe}-${createHash('sha256').update(store.root).digest('hex').slice(0, 6)}`,
-    };
-  });
-}
-
-export async function startServer(
-  stores: Store | Store[],
-  port: number,
-): Promise<RunningServer> {
-  // One store or many: the rest of the server sees a list either way, and
-  // the first is the one the unprefixed routes answer for.
-  const projects = asProjects(Array.isArray(stores) ? stores : [stores]);
-  const byKey = new Map(projects.map((project) => [project.key, project]));
-
-  // Live updates: watch every store's task files and tell every open page
-  // which project changed, so a page showing another one need not re-fetch.
+export async function startServer(store: Store, port: number): Promise<RunningServer> {
+  // Live updates: watch the task files and tell every open page to re-fetch.
   const clients = new Set<ServerResponse>();
-  const debounce = new Map<string, NodeJS.Timeout>();
-  const watchers = projects.map((project) =>
-    watch(project.store.tasksDir, { persistent: false }, () => {
-      clearTimeout(debounce.get(project.key));
-      debounce.set(
-        project.key,
-        setTimeout(() => {
-          for (const client of clients) client.write(`data: ${project.key}\n\n`);
-        }, 80),
-      );
-    }),
-  );
-  const stopWatching = (): void => {
-    for (const timer of debounce.values()) clearTimeout(timer);
-    debounce.clear();
-    for (const watcher of watchers) watcher.close();
-  };
+  let debounce: NodeJS.Timeout | undefined;
+  const watcher = watch(store.tasksDir, { persistent: false }, () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      for (const client of clients) client.write('data: changed\n\n');
+    }, 80);
+  });
 
   const server = createServer((req, res) => {
     if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/api/events') {
@@ -123,69 +71,40 @@ export async function startServer(
       req.on('close', () => clients.delete(res));
       return;
     }
-    route(projects, byKey, req, res).catch((error: unknown) => {
+    handle(store, req, res).catch((error: unknown) => {
       const status = error instanceof HttpError ? error.status : 400;
       sendJson(res, status, { error: (error as Error).message });
     });
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', (error) => {
-      stopWatching();
+      clearTimeout(debounce);
+      watcher.close();
       reject(error);
     });
     server.listen(port, '127.0.0.1', resolve);
   });
   const boundPort = (server.address() as AddressInfo).port;
-  // Record the address in every store served, so `planny url` answers from
-  // any of them. A crash leaves the record behind; readers must probe before
-  // trusting it.
-  const record = `${JSON.stringify({ port: boundPort, pid: process.pid, started: new Date().toISOString() })}\n`;
-  for (const { store } of projects) {
-    await writeFile(serveRecordPath(store), record);
-    await writeFile(servePortPath(store), `${boundPort}\n`);
-  }
+  // Record where this store is served so `planny url` can answer later.
+  // A crash leaves the record behind; readers must probe before trusting it.
+  await writeFile(
+    serveRecordPath(store),
+    `${JSON.stringify({ port: boundPort, pid: process.pid, started: new Date().toISOString() })}\n`,
+  );
+  await writeFile(servePortPath(store), `${boundPort}\n`);
   return {
     port: boundPort,
     close: async () => {
-      stopWatching();
+      clearTimeout(debounce);
+      watcher.close();
       for (const client of clients) client.end();
       clients.clear();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
-      for (const { store } of projects) await rm(serveRecordPath(store), { force: true });
+      await rm(serveRecordPath(store), { force: true });
     },
   };
-}
-
-/**
- * Strip the project prefix, if there is one, and run the request against that
- * project's store. Everything below this point sees one store and a path it
- * already understands, so the routes are written once.
- */
-async function route(
-  projects: ServedProject[],
-  byKey: Map<string, ServedProject>,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  const url = new URL(req.url ?? '/', 'http://localhost');
-  if (req.method === 'GET' && url.pathname === '/api/projects') {
-    sendJson(res, 200, {
-      projects: projects.map(({ key, name, store }) => ({ key, name, root: store.root })),
-    });
-    return;
-  }
-  const scoped = /^\/api\/projects\/([^/]+)(\/.*)$/.exec(url.pathname);
-  if (scoped !== null) {
-    const project = byKey.get(scoped[1]!);
-    if (project === undefined) {
-      throw new HttpError(404, `no project "${scoped[1]}" is served here`);
-    }
-    await handle(project.store, projects, `/api${scoped[2]}`, req, res);
-    return;
-  }
-  await handle(projects[0]!.store, projects, url.pathname, req, res);
 }
 
 function serveRecordPath(store: Store): string {
@@ -257,29 +176,18 @@ async function inUse(port: number): Promise<boolean> {
   });
 }
 
-/** Every store root a planny server on this port serves. Empty when none. */
-export async function servedStoreRoots(port: number): Promise<string[]> {
+/** Which store root a planny server on this port serves, if any. */
+export async function servedStoreRoot(port: number): Promise<string | undefined> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/state`, {
       signal: AbortSignal.timeout(1000),
     });
-    if (!res.ok) return [];
-    const state = (await res.json()) as { store?: { root?: string }; roots?: unknown };
-    if (Array.isArray(state.roots)) return state.roots.filter((r): r is string => typeof r === 'string');
-    return typeof state.store?.root === 'string' ? [state.store.root] : [];
+    if (!res.ok) return undefined;
+    const state = (await res.json()) as { store?: { root?: string } };
+    return typeof state.store?.root === 'string' ? state.store.root : undefined;
   } catch {
-    return [];
+    return undefined;
   }
-}
-
-/** The first store root a planny server on this port serves, if any. */
-export async function servedStoreRoot(port: number): Promise<string | undefined> {
-  return (await servedStoreRoots(port))[0];
-}
-
-/** True while the server on this port holds this store, first or not. */
-async function serves(port: number, store: Store): Promise<boolean> {
-  return (await servedStoreRoots(port)).includes(store.root);
 }
 
 export type DetachOutcome =
@@ -308,29 +216,16 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * log file. Resolves only once the child answers for this store: a
  * 'started' outcome means a live board.
  */
-export async function detachServer(
-  store: Store,
-  port: number,
-  options: { all?: boolean; roots?: string[] } = {},
-): Promise<DetachOutcome> {
+export async function detachServer(store: Store, port: number): Promise<DetachOutcome> {
   const existing = await currentServeUrl(store);
   if (existing !== null) return { kind: 'already', url: existing };
   const log = serveLogPath(store);
   const fd = openSync(log, 'a');
-  // The child runs the same command the caller asked for, minus --detach.
-  const args = [
-    fileURLToPath(new URL('./bin.js', import.meta.url)),
-    'serve',
-    '--port',
-    String(port),
-    ...(options.all === true ? ['--all'] : []),
-    ...(options.roots ?? []).flatMap((root) => ['--root', root]),
-  ];
-  const child = spawn(process.execPath, args, {
-    cwd: store.root,
-    detached: true,
-    stdio: ['ignore', fd, fd],
-  });
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('./bin.js', import.meta.url)), 'serve', '--port', String(port)],
+    { cwd: store.root, detached: true, stdio: ['ignore', fd, fd] },
+  );
   closeSync(fd);
   let exited = false;
   child.once('exit', () => {
@@ -379,8 +274,7 @@ export async function stopServer(store: Store): Promise<StopOutcome> {
     await rm(serveRecordPath(store), { force: true });
     return { kind: 'stale' };
   }
-  // A shared server holds several plans, and this store may be any of them.
-  if (!(await serves(port, store))) {
+  if ((await servedStoreRoot(port)) !== store.root) {
     await rm(serveRecordPath(store), { force: true });
     return { kind: 'stale' };
   }
@@ -390,7 +284,7 @@ export async function stopServer(store: Store): Promise<StopOutcome> {
   process.kill(pid, 'SIGTERM');
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
-    if (!(await serves(port, store))) {
+    if ((await servedStoreRoot(port)) !== store.root) {
       // A foreground serve leaves no log; name it only when it exists.
       const log = serveLogPath(store);
       return {
@@ -465,16 +359,13 @@ export async function currentServeUrl(store: Store): Promise<string | null> {
     return null;
   }
   if (typeof recorded !== 'number' || !Number.isInteger(recorded) || recorded <= 0) return null;
-  return (await serves(recorded, store)) ? `http://127.0.0.1:${recorded}` : null;
+  const root = await servedStoreRoot(recorded);
+  return root === store.root ? `http://127.0.0.1:${recorded}` : null;
 }
 
-async function handle(
-  store: Store,
-  projects: ServedProject[],
-  path: string,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
+async function handle(store: Store, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const path = url.pathname;
 
   if (req.method === 'GET' && path in STATIC_FILES) {
     const asset = STATIC_FILES[path]!;
@@ -487,7 +378,7 @@ async function handle(
   }
 
   if (req.method === 'GET' && path === '/api/state') {
-    sendJson(res, 200, { ...buildState(store), roots: projects.map((p) => p.store.root) });
+    sendJson(res, 200, buildState(store));
     return;
   }
 

@@ -63,10 +63,7 @@ Rules that keep the store consistent:
 - **Serve the board at session start.** Run `planny serve --detach` and
   tell the operator the URL it prints. Never pass `--port`: the command
   takes the port this store used last, or the first free one, so two
-  stores on one machine never collide. An operator tired of many
-  addresses can run `planny serve --all --detach` once and pick the
-  project in the board; `planny url` still answers from inside any plan
-  it holds. `planny url` re-prints the
+  stores on one machine never collide. `planny url` re-prints the
   address at any time. The detached server outlives your session; a
   harness background task dies at session end, /clear, or compaction,
   and the operator's board with it — never use one for the board.

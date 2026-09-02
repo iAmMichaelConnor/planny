@@ -23,12 +23,7 @@ structure, so a re-parent never moves a file.
   - `render.ts` — markdown export, terminal tree, dependency forest.
   - `cli.ts` — commander wiring only; no logic.
   - `bin.ts` — the executable entry point; calls cli.
-  - `discover.ts` — find every `.planny` store under given roots, for
-    `serve --all`. Skips build directories and a linked worktree's checkout
-    of a tracked plan, the same rule `store.findRoot` follows.
   - `server.ts` — localhost API + static UI serving; calls ops/query only.
-    Holds one plan or many: `/api/…` answers for the first, and
-    `/api/projects/<key>/…` for any of them, through the same handlers.
 - `web/` — static localhost UI (no build step, no framework).
 - `test/` — vitest suites, one per module, plus CLI end-to-end, a
   real-process detach suite, and a jsdom UI walk.

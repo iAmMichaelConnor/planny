@@ -625,28 +625,6 @@ describe('error clarity and help', () => {
   });
 });
 
-describe('serve --all leaves running boards alone', () => {
-  it('refuses when only some of the plans it found are already served', async () => {
-    const { mkdirSync } = await import('node:fs');
-    const { startServer } = await import('../src/server.js');
-    for (const name of ['alpha', 'beta']) {
-      mkdirSync(join(dir, name), { recursive: true });
-      await runCli(['init'], { cwd: join(dir, name), out: () => {}, err: () => {} });
-    }
-    // beta already has a board of its own; alpha has none.
-    const dedicated = await startServer(openStore(join(dir, 'beta')), 0);
-    try {
-      err = [];
-      expect(await run('serve', '--all', '--root', dir)).toBe(1);
-      expect(err.join(' ')).toMatch(/already have a board of their own/);
-      expect(err.join(' ')).toContain('beta');
-      expect(err.join(' ')).toMatch(/planny serve --stop/);
-    } finally {
-      await dedicated.close();
-    }
-  }, 20_000);
-});
-
 describe('the help and the README agree', () => {
   /** Every command the binary offers, less commander's own `help`. */
   async function commands(): Promise<string[]> {
