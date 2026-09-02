@@ -23,10 +23,10 @@ function project(...parts: string[]): string {
 }
 
 describe('discoverStores', () => {
-  it('finds every store under the roots it is given', () => {
-    const a = project('alpha');
-    const b = project('nested', 'beta');
-    expect(discoverStores([dir]).map((s) => s.root).sort()).toEqual([a, b].sort());
+  it('finds every store under the roots it is given, in a stable order', () => {
+    const z = project('zulu');
+    const a = project('nested', 'alpha');
+    expect(discoverStores([dir])).toEqual([a, z]);
   });
 
   it('returns nothing when there is nothing to find', () => {
@@ -38,7 +38,7 @@ describe('discoverStores', () => {
     // A store inside another store's tree belongs to the outer plan.
     mkdirSync(join(a, 'inner'), { recursive: true });
     initRepo(join(a, 'inner'));
-    expect(discoverStores([dir]).map((s) => s.root)).toEqual([a]);
+    expect(discoverStores([dir])).toEqual([a]);
   });
 
   it('skips the directories nobody keeps a plan in', () => {
@@ -54,12 +54,12 @@ describe('discoverStores', () => {
     const kept = project('work');
     project('.claude', 'jobs', 'abc', 'tmp', 'skill-copy');
     project('.cache', 'thing');
-    expect(discoverStores([dir]).map((s) => s.root)).toEqual([kept]);
+    expect(discoverStores([dir])).toEqual([kept]);
   });
 
   it('still reaches a hidden directory named as a root', () => {
     const hidden = project('.config', 'notes');
-    expect(discoverStores([join(dir, '.config')]).map((s) => s.root)).toEqual([hidden]);
+    expect(discoverStores([join(dir, '.config')])).toEqual([hidden]);
   });
 
   it('stops at the depth it is given', () => {
@@ -78,7 +78,7 @@ describe('discoverStores', () => {
     mkdirSync(join(main, '.git', 'worktrees', 'wt'), { recursive: true });
     writeFileSync(join(main, '.git', 'worktrees', 'wt', 'commondir'), '../..\n');
     writeFileSync(join(tree, '.git'), `gitdir: ${join(main, '.git', 'worktrees', 'wt')}\n`);
-    expect(discoverStores([dir]).map((s) => s.root)).toEqual([main]);
+    expect(discoverStores([dir])).toEqual([main]);
   });
 
   it('keeps a worktree that says its plan is its own', () => {
@@ -91,26 +91,12 @@ describe('discoverStores', () => {
     mkdirSync(join(main, '.git', 'worktrees', 'wt'), { recursive: true });
     writeFileSync(join(main, '.git', 'worktrees', 'wt', 'commondir'), '../..\n');
     writeFileSync(join(tree, '.git'), `gitdir: ${join(main, '.git', 'worktrees', 'wt')}\n`);
-    expect(discoverStores([dir]).map((s) => s.root).sort()).toEqual([main, tree].sort());
+    expect(discoverStores([dir])).toEqual([main, tree]);
   });
 
-  it('names each project by its directory, in a stable order', () => {
-    project('zulu');
-    project('alpha');
-    expect(discoverStores([dir]).map((s) => s.name)).toEqual(['alpha', 'zulu']);
-  });
-
-  it('keeps two projects of the same name apart', () => {
-    project('one', 'work');
-    project('two', 'work');
-    const found = discoverStores([dir]);
-    expect(found.map((s) => s.name)).toEqual(['work', 'work']);
-    expect(new Set(found.map((s) => s.key)).size).toBe(2);
-  });
-
-  it('gives a project the same key every time', () => {
-    project('alpha');
-    expect(discoverStores([dir])[0]!.key).toBe(discoverStores([dir])[0]!.key);
+  it('lists a store once, however many roots reach it', () => {
+    const a = project('alpha');
+    expect(discoverStores([dir, a, join(dir, 'alpha')])).toEqual([a]);
   });
 
   it('shrugs off a directory it may not read', () => {
