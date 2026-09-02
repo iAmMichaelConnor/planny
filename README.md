@@ -234,10 +234,10 @@ planny serve --all --detach                 # every plan's board up, and one pag
 | --- | --- |
 | `init` | create the `.planny` store; `--nested` allows one inside another store's tree |
 | `add <name>` | add a task: `-d`/`--desc-file`, `--type task\|decision`, `--kind`, `--model`, `--parent`, `--child`, `--blocked-by`, `--blocks`, `--priority top\|bottom\|N`; `--start` claims it in the same command; `--json` returns `{task, warnings}` |
-| `update <id>` | change any field or relationship (`--add-blocked-by`, `--clear-parent`, `--append-desc`, …) |
+| `update <id>` | change any field or relationship (`--add-blocked-by`, `--clear-parent`, `--append-desc`, `--until` for a parked task's note, …) |
 | `start <id> [--take]` | mark in progress and claim it; `--take` takes over another session's claim |
 | `done` / `todo <id>` | finish / reopen (also wakes a parked task) |
-| `park <id> [--until "<note>"]` | park a task: real work, but not for now. It keeps its priority place and still blocks; only `next` and `decisions` pass it over |
+| `park <id> [--until "<note>"]` | park a task: real work, but not for now. It keeps its priority place and still blocks; only `next` and `decisions` pass it over. The note is a reminder for the next reader — nothing acts on it — and `update --until` rewords it later |
 | `cancel <id> [--replaced-by ids]` | cancel; dependants are rewired onto the replacements |
 | `bump <id> top\|bottom\|N` | move in the priority order, clamped by dependencies; a move that stops short says which task held it |
 | `show <id> [--json]` | one task in full: fields, body, relationships, history, file path |

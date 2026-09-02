@@ -344,6 +344,36 @@ describe('park', () => {
     expect(allOut()).not.toMatch(/parked until:/);
   });
 
+  it('update writes the note after the park, and rewrites it', async () => {
+    await seedTrio();
+    await run('park', 't2');
+    expect(await run('update', 't2', '--until', 'the API ships')).toBe(0);
+    out = [];
+    await run('show', 't2');
+    expect(allOut()).toMatch(/status: parked/);
+    expect(allOut()).toMatch(/parked until: the API ships/);
+    await run('update', 't2', '--until', 'the payments API ships');
+    out = [];
+    await run('show', 't2');
+    expect(allOut()).toMatch(/parked until: the payments API ships/);
+  });
+
+  it('update --clear-until drops the note and leaves the task parked', async () => {
+    await seedTrio();
+    await run('park', 't2', '--until', 'the API ships');
+    expect(await run('update', 't2', '--clear-until')).toBe(0);
+    out = [];
+    await run('show', 't2');
+    expect(allOut()).toMatch(/status: parked/);
+    expect(allOut()).not.toMatch(/parked until:/);
+  });
+
+  it('update refuses a note on a task that is not parked', async () => {
+    await seedTrio();
+    expect(await run('update', 't2', '--until', 'the API ships')).toBe(1);
+    expect(err.join('\n')).toMatch(/parked status only/);
+  });
+
   it('next passes parked work over, and --include-parked brings it back', async () => {
     await seedTrio();
     await run('park', 't1');

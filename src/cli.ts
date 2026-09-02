@@ -316,14 +316,21 @@ the body with a quoted heredoc delimiter and pass --desc-file.`,
     .option('--add-blocks <ids>', 'add tasks that wait on this one (comma-separated, repeatable)', collectIds)
     .option('--remove-blocks <ids>', 'remove tasks that wait on this one (comma-separated, repeatable)', collectIds)
     .option('--priority <pos>', 'top | bottom | 1-based position', parsePriority)
+    .option('--until <note>', 'rewrite the note on a parked task')
+    .option('--clear-until', 'remove the note from a parked task')
     .addHelpText(
       'after',
       `
+The --until note is a reminder for whoever picks the task up. Nothing acts
+on it: no date is read, and nothing wakes the task. Only a parked task
+carries one, and waking the task clears it.
+
 Examples:
   planny update t3 --name "Sharper name" --append-desc "Also cover the error path."
   planny update t3 --parent t1                  move under t1 (--clear-parent to detach)
   planny update t3 --add-blocked-by t2 --remove-blocks t9
-  planny update t3 --desc-file body.md          replace the whole description`,
+  planny update t3 --desc-file body.md          replace the whole description
+  planny update t3 --until 'the payments API ships'   reword the parking note`,
     )
     .action((id, options) => {
       const store = open();
@@ -342,6 +349,7 @@ Examples:
         addBlocks: options.addBlocks,
         removeBlocks: options.removeBlocks,
         priority: options.priority,
+        parkedUntil: options.clearUntil ? null : options.until,
       }, actor());
       report(store, result, `updated ${id}`);
     });
@@ -361,7 +369,7 @@ Examples:
     .command('park')
     .description('park a task: real work, but not for now')
     .argument('<id>', 'task id', normalizeId)
-    .option('--until <note>', 'what should bring this task back')
+    .option('--until <note>', 'a note for whoever picks the task up')
     .addHelpText(
       'after',
       `
@@ -369,6 +377,10 @@ A parked task keeps its priority place and still blocks whatever waits on
 it. Only the queues pass it over: \`planny next\` and \`planny decisions\`
 skip parked work unless you pass --include-parked. \`planny todo <id>\`
 wakes it and clears the note.
+
+The note is a reminder for whoever reads the task next. Nothing acts on
+it: no date is read, and nothing wakes the task on its own. Write it
+later, or reword it, with \`planny update <id> --until '<text>'\`.
 
 Examples:
   planny park t7

@@ -203,6 +203,23 @@ describe('mutations', () => {
     expect(store.load('t1').parkedUntil).toBe('the API ships');
   });
 
+  it('saves the wake note the drawer form sends, and clears it on null', async () => {
+    addTask(store, { name: 'a' });
+    await post('/api/tasks/t1/status', { status: 'parked' });
+    expect((await patch('/api/tasks/t1', { parkedUntil: 'the API ships' })).status).toBe(200);
+    expect(store.load('t1').parkedUntil).toBe('the API ships');
+    expect((await patch('/api/tasks/t1', { parkedUntil: null })).status).toBe(200);
+    expect(store.load('t1').parkedUntil).toBeUndefined();
+    expect(store.load('t1').status).toBe('parked');
+  });
+
+  it('refuses a wake note on a task the form did not park', async () => {
+    addTask(store, { name: 'a' });
+    const res = await patch('/api/tasks/t1', { parkedUntil: 'the API ships' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('parked status only');
+  });
+
   it('refuses a wake note that is not text', async () => {
     addTask(store, { name: 'a' });
     const res = await post('/api/tasks/t1/status', { status: 'parked', parkedUntil: 7 });

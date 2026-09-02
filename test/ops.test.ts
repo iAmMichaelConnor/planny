@@ -653,6 +653,62 @@ describe('parking', () => {
     ).toThrow(/text/);
   });
 
+  it('update writes the note on a parked task, and leaves the status alone', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked');
+    const { task } = updateTask(store, 't1', { parkedUntil: 'the API ships' });
+    expect(task.status).toBe('parked');
+    expect(task.parkedUntil).toBe('the API ships');
+    expect(store.load('t1').parkedUntil).toBe('the API ships');
+  });
+
+  it('update rewrites a note the park already wrote', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'first reason' });
+    updateTask(store, 't1', { parkedUntil: 'a better reason' });
+    expect(store.load('t1').parkedUntil).toBe('a better reason');
+  });
+
+  it('update clears the note on null, and on a blank one', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'a reason' });
+    setStatus(store, 't2', 'parked', undefined, { parkedUntil: 'a reason' });
+    expect(updateTask(store, 't1', { parkedUntil: null }).task.parkedUntil).toBeUndefined();
+    expect(updateTask(store, 't2', { parkedUntil: '   ' }).task.parkedUntil).toBeUndefined();
+    expect(store.load('t1').parkedUntil).toBeUndefined();
+    expect(store.load('t2').parkedUntil).toBeUndefined();
+  });
+
+  it('update refuses a note on a task that is not parked', () => {
+    addTask(store, { name: 'a' });
+    expect(() => updateTask(store, 't1', { parkedUntil: 'later' })).toThrow(/parked/);
+    expect(() => updateTask(store, 't1', { parkedUntil: null })).toThrow(/parked/);
+  });
+
+  it('update refuses a note that is not text', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked');
+    expect(() => updateTask(store, 't1', { parkedUntil: 7 as unknown as string })).toThrow(
+      /parkedUntil/,
+    );
+  });
+
+  it('update leaves the note alone when it says nothing about it', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'a reason' });
+    updateTask(store, 't1', { name: 'a renamed' });
+    expect(store.load('t1').parkedUntil).toBe('a reason');
+  });
+
+  it('a note edit writes no history entry, like every other field edit', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', 'sess-a');
+    const before = store.load('t1').history.length;
+    updateTask(store, 't1', { parkedUntil: 'the API ships' });
+    expect(store.load('t1').history.length).toBe(before);
+  });
+
   it('records the park in the history', () => {
     addTask(store, { name: 'a' });
     setStatus(store, 't1', 'parked', 'sess-a');

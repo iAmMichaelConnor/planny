@@ -63,6 +63,11 @@ export interface UpdateInput {
   removeBlocks?: string[];
   priority?: BumpTarget;
   /**
+   * The wake note on a parked task: text sets it, null or blank clears it.
+   * The task must be parked, the same rule setStatus follows.
+   */
+  parkedUntil?: string | null;
+  /**
    * Optimistic guard for body replacement: the updated stamp the caller's
    * copy was read at. When the stored task is newer and a body is being
    * written, the update is refused instead of clobbering the newer body.
@@ -210,6 +215,7 @@ function assertUpdateInput(input: UpdateInput): void {
   assertOptionalString(input.body, 'body');
   assertOptionalString(input.appendBody, 'appendBody');
   assertOptionalString(input.ifUnchangedSince, 'ifUnchangedSince');
+  assertOptionalString(input.parkedUntil, 'parkedUntil', true);
   assertIdList(input.addChildren, 'addChildren');
   assertIdList(input.removeChildren, 'removeChildren');
   assertIdList(input.addBlockedBy, 'addBlockedBy');
@@ -368,6 +374,7 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: stri
   if (input.kind !== undefined) task.kind = input.kind;
   if (input.type !== undefined) task.type = input.type;
   if (input.model !== undefined) task.model = input.model ?? undefined;
+  if (input.parkedUntil !== undefined) setWakeNote(task, input.parkedUntil);
 
   if (input.parent !== undefined) setParent(m, id, input.parent ?? undefined, actor);
   for (const childId of input.addChildren ?? []) setParent(m, childId, id, actor);
@@ -417,6 +424,20 @@ function logEvent(task: Task, actor: string | undefined, fields: Record<string, 
 function logStatus(task: Task, status: Status, actor: string | undefined): void {
   if (task.status === status) return;
   logEvent(task, actor, { status });
+}
+
+const WAKE_NOTE_RULE = 'a wake note belongs to the parked status only';
+
+/**
+ * Write the wake note on a task that is already parked. Text sets it, null or
+ * blank clears it. Like a body edit, it logs nothing: the note describes the
+ * parking the history already records.
+ */
+function setWakeNote(task: Task, note: string | null): void {
+  if (task.status !== 'parked') throw new Error(WAKE_NOTE_RULE);
+  const text = note === null ? '' : note.trim();
+  if (text === '') delete task.parkedUntil;
+  else task.parkedUntil = text;
 }
 
 /**
@@ -523,9 +544,7 @@ function doSetStatus(
     }
   }
   if (options.parkedUntil !== undefined) {
-    if (status !== 'parked') {
-      throw new Error('a wake note belongs to the parked status only');
-    }
+    if (status !== 'parked') throw new Error(WAKE_NOTE_RULE);
     if (typeof options.parkedUntil !== 'string' || options.parkedUntil.trim() === '') {
       throw new Error('a wake note must be text');
     }
