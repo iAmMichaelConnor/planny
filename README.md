@@ -125,7 +125,9 @@ dependency edit and rename appends a one-line history entry `{at, …, by}`.
 Session ids are hierarchical: an orchestrator passes its id to subagents
 (environment inheritance does this for free) and may suffix per child
 (`sess-abc/builder`); ids sharing the root before the first `/` are one
-team. The web UI attributes its changes to `operator`.
+team. The web UI attributes its changes to `operator`. `--project <name>`
+(or `PLANNY_PROJECT`) makes every command refuse a store whose directory
+name differs, so an agent's wrong `cd` cannot touch the wrong plan.
 
 **Claims.** `start` claims a task. Starting one that a different team holds
 is refused until `--take`, which records the takeover in history. The
@@ -197,7 +199,7 @@ planny update t2 --add-blocked-by t1   # the tests wait on the build
 planny bump t3 top                     # clamped: never above the tasks it waits on
 planny done t1
 planny decisions                       # what the operator still needs to answer
-planny resolve t4 --response "Fly.io"  # record the answer; t3 unblocks
+planny resolve t4 --response "Fly.io"  # record the answer; t3 now waits on the outcome task
 planny tree                            # the hierarchy at a glance
 planny deps                            # blockers above the tasks they block
 planny progress                        # █████░░░░░░░░░░░░░░░ 25% — 1/4 done…
@@ -211,7 +213,7 @@ planny url                             # where that UI is being served
 | Command | Does |
 | --- | --- |
 | `init` | create the `.planny` store |
-| `add <name>` | add a task: `-d`/`--desc-file`, `--type task\|decision`, `--kind`, `--model`, `--parent`, `--child`, `--blocked-by`, `--blocks`, `--priority top\|bottom\|N` |
+| `add <name>` | add a task: `-d`/`--desc-file`, `--type task\|decision`, `--kind`, `--model`, `--parent`, `--child`, `--blocked-by`, `--blocks`, `--priority top\|bottom\|N`; `--start` claims it in the same command |
 | `update <id>` | change any field or relationship (`--add-blocked-by`, `--clear-parent`, `--append-desc`, …) |
 | `start <id> [--take]` | mark in progress and claim it; `--take` takes over another session's claim |
 | `done` / `todo <id>` | finish / reopen |
@@ -224,11 +226,11 @@ planny url                             # where that UI is being served
 | `progress [--parent id]` | completion percentage (excludes cancelled) |
 | `export [--out plan.md]` | the plan as one markdown document |
 | `decisions [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
-| `catchup [--as id] [--peek]` | everything changed since this consumer last asked, then advance its stored cursor |
+| `catchup [--as id] [--peek] [--compact]` | everything changed since this consumer last asked, then advance its stored cursor; `--compact` trims to ids, names, statuses and stamps |
 | `resolve <id> --response …\|--accept\|--response-file f\|--reject` | record the answer, mark done, create the outcome task (`--reject`: close as decided-no, create nothing) |
 | `doctor [--fix]` | integrity checks for hand-edit damage; `--fix` repairs what has one right answer; exits 1 while errors remain |
 | `path <id>` | print the task's file path |
-| `serve [--port] [--detach] [--stop]` | localhost control site (127.0.0.1 only); `--detach` outlives the launching (agent) session, `--stop` ends the detached server |
+| `serve [--port] [--detach] [--stop] [--clean-logs [--older-than d]]` | localhost control site (127.0.0.1 only); `--detach` outlives the launching (agent) session, `--stop` ends the detached server, `--clean-logs` deletes this store's dead old log |
 | `url` | print the address where the UI serves this store; exits 1 when it is not up |
 
 Every command's `--help` carries examples; mistyped commands get a
@@ -236,14 +238,14 @@ did-you-mean suggestion.
 
 ### Staying current
 
-Two styles, one contract. `planny catchup` keys a cursor to the asking
-consumer (default: your `PLANNY_SESSION`) and returns every task changed and
-every decision resolved since that consumer last asked — the agent carries
-no state; `--peek` looks without advancing. Explicit windows do the same for
-a time you name: `list --changed-since <t>` and
-`decisions --resolved --since <t>`. Delivery is at-least-once: a change in
-the same millisecond as a cursor write may repeat, so treat deltas as facts,
-safe to see twice. One task's own timeline is its history: `planny show`.
+`planny catchup` keys a cursor to the asking consumer (default: your
+`PLANNY_SESSION`) and returns every task changed and every decision
+resolved since that consumer last asked — the agent carries no state;
+`--peek` looks without advancing, `--compact` trims the payload. Explicit
+windows do the same for a time you name: `list --changed-since <t>` and
+`decisions --resolved --since <t>`. You can see the same change twice —
+never missed, sometimes repeated — so treat each entry as a current fact,
+safe to read again. One task's own timeline is its history: `planny show`.
 
 ## Storage
 
@@ -267,13 +269,16 @@ merging branches whose stores diverged is not supported (both sides mint
 the same next id for different tasks, among subtler damage — `planny
 doctor` names an unresolved merge when it sees one), and planny warns on
 stderr when a checkout or restore hands it a store older than what this
-machine last wrote — `planny doctor` then prints the recovery steps. Two design choices worth knowing:
+machine last wrote — `planny doctor` then prints the recovery steps.
+
+Two design choices worth knowing:
 
 - **Flat directory, not a tree.** Hierarchy is a field, not a directory
   structure, so re-parenting never moves a file and ids and paths stay
   stable. The tree is a view: `planny tree`, the export, the UI.
 - **Markdown files, not a database.** Agents grep and read files well,
-  diffs review well, and merge conflicts are one task per file. Reading raw
+  diffs review well, and damage from a bad merge stays contained to
+  single files. Reading raw
   files is encouraged; writing goes through the CLI, which keeps
   relationships one-sided, refuses cycles, and holds the priority
   invariant. `planny doctor` catches hand-edit damage after the fact.

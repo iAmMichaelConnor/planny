@@ -13,16 +13,20 @@ structure, so a re-parent never moves a file.
   - `store.ts` — repo discovery (walks up for `.planny`; a linked git
     worktree defers to the main worktree's store unless `.planny/fork`
     exists), read/write tasks, id allocation.
+  - `lock.ts` — the advisory cross-process lock every mutation runs in.
   - `graph.ts` — derived relationships: children, blocking, ancestors, descendants, cycle checks.
   - `priority.ts` — rank ordering, bump, the dependency-order invariant and its repair.
   - `ops.ts` — every mutation (add, update, status, cancel, resolve, bump). CLI and server both call this; never mutate a task file anywhere else (one exception: doctor repairs).
   - `doctor.ts` — integrity checks for hand-edited stores, plus safe repairs. It writes files directly because ops assumes the invariants doctor restores; it is the only writer besides ops.
   - `query.ts` — reads: filters, next-task selection, progress.
+  - `catchup.ts` — per-consumer cursors and the changed-since delta.
   - `render.ts` — markdown export, terminal tree, dependency forest.
   - `cli.ts` — commander wiring only; no logic.
+  - `bin.ts` — the executable entry point; calls cli.
   - `server.ts` — localhost API + static UI serving; calls ops/query only.
 - `web/` — static localhost UI (no build step, no framework).
-- `test/` — vitest suites, one per module plus CLI end-to-end.
+- `test/` — vitest suites, one per module, plus CLI end-to-end, a
+  real-process detach suite, and a jsdom UI walk.
 - `skills/planny/SKILL.md` — the skill that teaches an AI to use the tool
   (symlinked into `.claude/skills/` so sessions in this repo load it).
 - `PROMPT.md` — the founding prompt, verbatim.
@@ -81,7 +85,9 @@ using the CLI after source changes.
 
 ## Writing style
 
-Task and decision bodies follow Simplified Technical English in spirit: short
-sentences, active voice, one meaning per word, plain words, no project
-shorthand without a definition. Decision bodies use the section layout given in
-`skills/planny/SKILL.md`.
+All prose in this repo follows Simplified Technical English in spirit:
+short sentences, active voice, one meaning per word, plain words, no
+project shorthand without a definition. That covers task and decision
+bodies, this file, the README, the skill and its references, and the
+CLI's help text. Decision bodies use the section layout given in
+`skills/planny/references/decision-format.md`.
