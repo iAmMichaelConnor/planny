@@ -13,11 +13,7 @@ used.
 ## The sections
 
 Use these subheadings, in this order. Omit a heading you have nothing
-real to put under — never pad one. Three of them carry the question, so
-planny warns (and writes the task anyway) when a body has no
-**Background**, no **Proposal** (or **Options**, or **No proposal
-yet**), or no **Needed from you**. Read the warning as a prompt to
-rewrite the body, not as an error. A ratification item (asking
+real to put under — never pad one. A ratification item (asking
 the operator to confirm something already built) also states what changes if
 the answer is no.
 
