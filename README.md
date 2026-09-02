@@ -195,7 +195,10 @@ a whole ssh command; paste that line on the machine you sit at and every
 board is tunnelled at once. Inside an ssh session it fills in the host
 itself, from the address your machine dialled to get here, so there is
 nothing to edit — pass one (`--forward my-box`) when you reach the machine
-by another name, such as an alias in your own ssh config. `planny serve
+by another name, such as an alias in your own ssh config. Outside one it
+says why it cannot (a local terminal, an old tmux pane, a cron job and a
+container all look alike from there), leaves `<host>` blank, and prints
+this machine's name and addresses to choose from. `planny serve
 --forward` does the same for one plan. Do not wrap either in `ssh $(planny
 serve --forward) <host>`: the substitution runs where you paste it, and
 that machine has no plan on it.

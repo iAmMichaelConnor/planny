@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname, networkInterfaces } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { catchup, compactCatchup, compactTask } from './catchup.js';
@@ -946,12 +946,35 @@ Examples:
   ): { target: string; port?: number } | null => {
     if (typeof named === 'string') return { target: named };
     if (found === null) {
-      io.err('no ssh session to read a host from — fill in <host> yourself');
+      // Nothing to read, so hand over what this machine does know. An agent
+      // can offer these to the operator as candidates instead of guessing,
+      // and a person can usually recognize their own box in the list.
+      io.err(
+        'could not work out how you reach this machine, which is normal and not a fault: the address comes from an ssh session, and this command is not running in one. A local terminal, a tmux pane older than your session, a cron job and a container all look the same from here.',
+      );
+      io.err(
+        'replace <host> with the name you ssh to, or user@address; put -p <port> before the -L flags for a port that is not 22.',
+      );
+      io.err(
+        `this machine is called ${hostname()}, reachable at ${ownAddresses().join(', ') || 'no address but its own'}`,
+      );
       return null;
     }
-    io.err(`host ${found.target} read from this ssh session; pass one to --forward to override`);
+    // Named, not stated: a tmux pane or a detached process can carry the
+    // environment of a session that has since gone, and would name a host
+    // that no longer reaches here.
+    io.err(
+      `guessing host ${found.target} from this shell's ssh session — pass one to --forward if that is not how you reach this machine`,
+    );
     return found;
   };
+
+  /** Every address of this machine that something else could dial. */
+  const ownAddresses = (): string[] =>
+    Object.values(networkInterfaces())
+      .flat()
+      .filter((face): face is NonNullable<typeof face> => face !== undefined && !face.internal && face.family === 'IPv4')
+      .map((face) => face.address);
 
   /**
    * `serve --all`: a board for every plan on this machine, and one page that

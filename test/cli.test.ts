@@ -1165,6 +1165,51 @@ describe('serve --all: one command for every board on this machine', () => {
     expect(err.join(' ')).toContain(dir);
   });
 
+  it('says what belongs in the blank when it cannot fill it in', async () => {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'alpha'), { recursive: true });
+    await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
+    const saved = process.env.SSH_CONNECTION;
+    try {
+      delete process.env.SSH_CONNECTION;
+      out = [];
+      err = [];
+      await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
+      expect(out.join('\n')).toMatch(/<host>$/);
+      const note = err.join(' ');
+      // Naming the blank is not enough; say what goes in it.
+      expect(note).toMatch(/name you ssh to/);
+      expect(note).toMatch(/user@address/);
+      expect(note).toMatch(/-p /); // and where the port goes
+      // An agent reading this must be able to propose candidates rather
+      // than guess: give it what the machine knows about itself.
+      expect(note).toMatch(/this machine is called/);
+      expect(note).toMatch(/reachable at/);
+    } finally {
+      if (saved === undefined) delete process.env.SSH_CONNECTION;
+      else process.env.SSH_CONNECTION = saved;
+    }
+  });
+
+  it('calls the host it worked out a guess, so a stale one gets noticed', async () => {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'alpha'), { recursive: true });
+    await runCli(['init'], { cwd: join(dir, 'alpha'), out: () => {}, err: () => {} });
+    const saved = process.env.SSH_CONNECTION;
+    try {
+      process.env.SSH_CONNECTION = '10.0.0.2 5555 10.0.0.9 22';
+      process.env.USER = 'mike';
+      err = [];
+      await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
+      const note = err.join(' ');
+      expect(note).toContain('mike@10.0.0.9'); // names it, so a wrong one shows
+      expect(note).toMatch(/if that is not how you reach/);
+    } finally {
+      if (saved === undefined) delete process.env.SSH_CONNECTION;
+      else process.env.SSH_CONNECTION = saved;
+    }
+  });
+
   it('fills the host in from the ssh session, and a named host wins', async () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(join(dir, 'alpha'), { recursive: true });
@@ -1178,7 +1223,7 @@ describe('serve --all: one command for every board on this machine', () => {
       await run('serve', '--all', '--forward', '--root', dir, '--port', '5890');
       expect(out.join('\n')).toBe('ssh -p 2222 -L 5890:127.0.0.1:5890 mike@10.0.0.9');
       // The note must not reach stdout, or it would break `$(...)`.
-      expect(err.join(' ')).toMatch(/read from this ssh session/);
+      expect(err.join(' ')).toMatch(/guessing host/);
 
       out = [];
       await run('serve', '--all', '--forward', 'my-box', '--root', dir, '--port', '5890');

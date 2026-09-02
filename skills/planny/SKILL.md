@@ -84,10 +84,12 @@ Rules that keep the store consistent:
 - The server binds 127.0.0.1 only, so a remote operator needs a forward
   from their own machine. Run `planny serve --forward` here (or
   `--all --forward` for every board) and give them the line it prints, to
-  paste on their own machine. In an ssh session it fills in the host
-  itself; if it prints `<host>`, ask the operator what they ssh to. Never
-  hand them `ssh $(planny serve --forward) <host>` — the substitution would
-  run on their machine, which has no plan on it.
+  paste on their own machine. In an ssh session it fills the host in
+  itself. When it cannot, it says why and prints this machine's name and
+  addresses: offer those to the operator and ask which one they ssh to,
+  then hand back the line with `<host>` replaced. Never give them
+  `ssh $(planny serve --forward) <host>` — the substitution would run on
+  their machine, which has no plan on it.
 - **Starting a task claims it.** `planny start` on another session's
   task refuses unless you pass `--take`, which records the takeover,
   but you should _rarely_ need `--take`.
