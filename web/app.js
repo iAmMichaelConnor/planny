@@ -5,6 +5,11 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   data: null,
   byId: new Map(),
+  // The plans this server holds, and which one is on screen. A lone plan
+  // keeps the plain /api routes, so every existing link and client still
+  // works; a chosen one addresses itself.
+  projects: [],
+  project: null,
   view: 'board',
   selected: null, // task id shown in the drawer, or '__new__'
   drawerOpener: null, // where the focus goes when the drawer closes
@@ -179,6 +184,70 @@ function writePreference(key, value) {
 
 const VIEWS = ['board', 'tree', 'deps', 'decisions'];
 
+// ---------- which plan is on screen ----------
+
+/**
+ * The project name in the top-left. With one plan it is a label, as before.
+ * With several it is a button that opens the list, because that is the only
+ * place the reader needs to look to change what they are seeing.
+ */
+function renderProjectLabel() {
+  const label = $('#store-label');
+  const store = state.data.store;
+  if (!store) {
+    label.innerHTML = '';
+    return;
+  }
+  const path = `<span class="store-path">${esc(store.root)}</span>`;
+  if (state.projects.length < 2) {
+    label.removeAttribute('id-picker');
+    label.innerHTML = `${esc(store.name)} ${path}`;
+    return;
+  }
+  label.innerHTML = `<button id="project-picker" aria-haspopup="listbox" aria-expanded="${!$('#project-menu').hidden}">${esc(store.name)} <span class="caret" aria-hidden="true">▾</span></button> ${path}`;
+}
+
+function renderProjectMenu() {
+  $('#project-menu').innerHTML = state.projects
+    .map(
+      (project) => `<div class="picker-item" role="option" data-project="${esc(project.key)}"${
+        project.key === state.project ? ' aria-selected="true"' : ''
+      }>${esc(project.name)} <span class="store-path">${esc(project.root)}</span></div>`,
+    )
+    .join('');
+}
+
+/** Show another plan: nothing of the old one survives the switch. */
+async function chooseProject(key) {
+  if (key === state.project) return;
+  state.project = key;
+  $('#project-menu').hidden = true;
+  // Every per-task piece of state names tasks of the plan we are leaving.
+  state.selected = null;
+  state.collapsed = new Set();
+  state.expandedDecisions = new Set();
+  state.justResolved = new Map();
+  state.renderedDrawerId = null;
+  await refresh();
+}
+
+document.addEventListener('click', (event) => {
+  const menu = $('#project-menu');
+  if (event.target.closest?.('#project-picker')) {
+    menu.hidden = !menu.hidden;
+    if (!menu.hidden) renderProjectMenu();
+    const picker = $('#project-picker');
+    if (picker) picker.setAttribute('aria-expanded', String(!menu.hidden));
+    return;
+  }
+  const choice = event.target.closest?.('#project-menu [data-project]');
+  if (choice) {
+    void chooseProject(choice.dataset.project);
+    return;
+  }
+  if (!menu.hidden && !event.target.closest?.('.project-wrap')) menu.hidden = true;
+});
+
 // ---------- the address bar ----------
 
 /**
@@ -202,6 +271,7 @@ function applyUrl() {
 
 function syncUrl() {
   const params = new URLSearchParams();
+  if (state.project !== null) params.set('project', state.project);
   params.set('view', state.view);
   if (state.selected !== null && state.selected !== '__new__') params.set('task', state.selected);
   const next = `${location.pathname}?${params}`;
@@ -215,8 +285,33 @@ window.addEventListener('popstate', () => {
   renderDrawer();
 });
 
+/** The API address for this path, in the project the board is showing. */
+function apiPath(path) {
+  return state.project === null ? path : path.replace(/^\/api\//, `/api/projects/${state.project}/`);
+}
+
+/** Ask the server which plans it holds. One means nothing changes. */
+async function loadProjects() {
+  try {
+    const res = await fetch('/api/projects');
+    if (!res.ok) return;
+    const { projects } = await res.json();
+    if (!Array.isArray(projects) || projects.length === 0) return;
+    state.projects = projects;
+    if (projects.length < 2) {
+      state.project = null;
+      return;
+    }
+    const wanted = new URLSearchParams(location.search).get('project');
+    const chosen = projects.find((p) => p.key === wanted) ?? projects[0];
+    state.project = chosen.key;
+  } catch {
+    /* an older server has no project list: one plan, plain routes */
+  }
+}
+
 async function refresh() {
-  const res = await fetch('/api/state');
+  const res = await fetch(apiPath('/api/state'));
   state.data = await res.json();
   state.byId = new Map(state.data.tasks.map((t) => [t.id, t]));
   if (state.seenAt === null) {
@@ -239,7 +334,7 @@ let urlApplied = false;
 
 async function api(path, method, body, retried = false) {
   try {
-    const res = await fetch(path, {
+    const res = await fetch(apiPath(path), {
       method,
       headers: { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -665,10 +760,7 @@ $('#mark-seen').onclick = markAllSeen;
 
 function render() {
   const { progress } = state.data;
-  const label = $('#store-label');
-  label.innerHTML = state.data.store
-    ? `${esc(state.data.store.name)} <span class="store-path">${esc(state.data.store.root)}</span>`
-    : '';
+  renderProjectLabel();
   $('#progress-fill').style.width = `${progress.percent}%`;
   $('#progress-text').textContent = `${progress.percent}% · ${progress.done}/${progress.total} done`;
   renderNewSince();
@@ -2400,7 +2492,13 @@ window.addEventListener('resize', positionDrawer);
 if (typeof EventSource !== 'undefined') {
   // The server pushes an event whenever any task file changes (CLI edits included).
   const stream = new EventSource('/api/events');
-  stream.onmessage = () => refresh();
+  stream.onmessage = (event) => {
+    // The event names the plan that changed. Another plan's change is not
+    // ours to re-fetch.
+    const key = typeof event?.data === 'string' ? event.data.trim() : '';
+    if (state.project !== null && key !== '' && key !== state.project) return;
+    refresh();
+  };
   // A (re)connect means events may have been missed — a server restart, a
   // dropped connection — so catch up immediately.
   stream.onopen = () => refresh();
@@ -2420,4 +2518,6 @@ $('#deps-mode').addEventListener('change', () => {
 });
 window.addEventListener('focus', refresh);
 
-refresh().catch((err) => toast(err.message, 'error'));
+loadProjects()
+  .then(refresh)
+  .catch((err) => toast(err.message, 'error'));

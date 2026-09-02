@@ -71,6 +71,10 @@ const fetchCalls: Array<{ path: string; init?: RequestInit }> = [];
 // Tests that need their own task graph swap this and trigger a refresh.
 let servedState: typeof sampleState = sampleState;
 
+// The board asks which projects the server holds. One, unless a test says so.
+let servedProjects = [{ key: 'rocket', name: 'rocket', root: '/home/me/projects/rocket' }];
+let servedStateByKey: Record<string, typeof sampleState> = {};
+
 async function serveTasks(tasks: ReturnType<typeof task>[]): Promise<void> {
   servedState = { ...sampleState, tasks, decisions: [] };
   window.dispatchEvent(new Event('focus'));
@@ -98,7 +102,14 @@ function bootApp(): Promise<void> {
   return boot(true);
 }
 
-function boot(clearPreferences: boolean, search = '/'): Promise<void> {
+function boot(
+  clearPreferences: boolean,
+  search = '/',
+  projects = [{ key: 'rocket', name: 'rocket', root: '/home/me/projects/rocket' }],
+  statesByKey: Record<string, typeof sampleState> = {},
+): Promise<void> {
+  servedProjects = projects;
+  servedStateByKey = statesByKey;
   // A fresh load starts at a fresh address; the app writes the view and the
   // open task into it, so a leftover one would steer the next test.
   history.replaceState({}, '', search);
@@ -135,8 +146,15 @@ function boot(clearPreferences: boolean, search = '/'): Promise<void> {
       fetchCalls.push({ path, init });
       return {
         ok: true,
-        json: async () =>
-          path === '/api/state' ? structuredClone(servedState) : { task: task('t9'), warnings: [] },
+        json: async () => {
+          if (path === '/api/projects') return { projects: structuredClone(servedProjects) };
+          const scoped = /^\/api\/projects\/([^/]+)\/state$/.exec(path);
+          if (scoped !== null) {
+            return structuredClone(servedStateByKey[scoped[1]!] ?? servedState);
+          }
+          if (path === '/api/state') return structuredClone(servedState);
+          return { task: task('t9'), warnings: [] };
+        },
       };
     }),
   );
@@ -167,8 +185,9 @@ describe('ui smoke', () => {
     const label = document.querySelector('#store-label') as HTMLElement;
     expect(label.textContent).toContain('rocket');
     expect(label.textContent).toContain('/home/me/projects/rocket');
-    const sub = label.parentElement as HTMLElement;
-    expect(sub.classList.contains('header-sub')).toBe(true); // the row below
+    // The label sits in a wrapper, which the project menu hangs from.
+    const sub = label.closest('.header-sub') as HTMLElement;
+    expect(sub).not.toBeNull(); // the row below
     expect(sub.querySelector('#progress-wrap')).not.toBeNull(); // progress lives there too
     const theme = document.querySelector('#theme-btn') as HTMLElement;
     expect(theme.nextElementSibling!.id).toBe('tabs'); // 🌓 directly left of Board
@@ -725,8 +744,9 @@ describe('ui smoke', () => {
 
   it('progress sits next to the path on the sub-row, not pushed apart', () => {
     const label = document.querySelector('#store-label') as HTMLElement;
-    expect(label.nextElementSibling!.id).toBe('progress-wrap');
-    const sub = label.parentElement as HTMLElement;
+    const wrap = label.closest('.project-wrap') as HTMLElement;
+    expect(wrap.nextElementSibling!.id).toBe('progress-wrap');
+    const sub = wrap.parentElement as HTMLElement;
     expect(sub.classList.contains('spread')).toBe(false); // adjacency, not space-between
   });
 
@@ -1243,6 +1263,89 @@ describe('working the board from the keyboard', () => {
     expect(document.activeElement).toBe(name);
     key('?', name);
     expect(document.querySelector('#keys-help')!.classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('several projects in one board', () => {
+  const rocket = { key: 'rocket', name: 'rocket', root: '/home/me/projects/rocket' };
+  const barn = { key: 'barn', name: 'barn', root: '/home/me/projects/barn' };
+
+  async function twoProjects(search = '/'): Promise<void> {
+    await boot(true, search, [rocket, barn], {
+      rocket: sampleState,
+      barn: {
+        ...sampleState,
+        store: { root: barn.root, name: 'barn' },
+        tasks: [task('t1', { name: 'Muck out the stalls', position: 1 })],
+        decisions: [],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+  }
+
+  it('leaves a single project alone: plain label, plain requests', async () => {
+    await bootApp();
+    expect(document.querySelector('#project-picker')).toBeNull();
+    expect(fetchCalls.some((c) => c.path === '/api/state')).toBe(true);
+    expect(fetchCalls.some((c) => c.path.startsWith('/api/projects/'))).toBe(false);
+  });
+
+  it('turns the project name into a picker when there is more than one', async () => {
+    await twoProjects();
+    const picker = document.querySelector('#project-picker') as HTMLElement;
+    expect(picker).not.toBeNull();
+    expect(picker.textContent).toContain('rocket');
+    picker.click();
+    const menu = document.querySelector('#project-menu') as HTMLElement;
+    expect(menu.hidden).toBe(false);
+    expect(menu.textContent).toContain('barn');
+    expect(menu.textContent).toContain('rocket');
+  });
+
+  it('shows only the chosen project\'s tasks, never a mix', async () => {
+    await twoProjects();
+    expect(document.querySelector('.card[data-id="t1"]')!.textContent).toContain('Build the API');
+    (document.querySelector('#project-picker') as HTMLElement).click();
+    (document.querySelector('#project-menu [data-project="barn"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    const names = [...document.querySelectorAll('#board-columns .card')].map((c) => c.textContent);
+    expect(names.join(' ')).toContain('Muck out the stalls');
+    expect(names.join(' ')).not.toContain('Build the API');
+  });
+
+  it('addresses the chosen project in every request it makes', async () => {
+    await twoProjects();
+    (document.querySelector('#project-picker') as HTMLElement).click();
+    (document.querySelector('#project-menu [data-project="barn"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    fetchCalls.length = 0;
+    (document.querySelector('.card[data-id="t1"] button[data-action="start"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls.map((c) => c.path)).toContain('/api/projects/barn/tasks/t1/status');
+  });
+
+  it('carries the project in the address, and opens the one a link names', async () => {
+    await twoProjects();
+    (document.querySelector('#project-picker') as HTMLElement).click();
+    (document.querySelector('#project-menu [data-project="barn"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(location.search).toContain('project=barn');
+
+    await twoProjects('/?project=barn&view=tree');
+    expect((document.querySelector('#project-picker') as HTMLElement).textContent).toContain('barn');
+    expect(document.querySelector('#view-tree')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('ignores a live event about a project it is not showing', async () => {
+    await twoProjects();
+    const stream = FakeEventSource.instances.at(-1)!;
+    fetchCalls.length = 0;
+    stream.onmessage!({ data: 'barn' });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls).toHaveLength(0);
+    stream.onmessage!({ data: 'rocket' });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchCalls.length).toBeGreaterThan(0);
   });
 });
 

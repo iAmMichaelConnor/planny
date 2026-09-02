@@ -1,10 +1,16 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addTask, setStatus } from '../src/ops.js';
-import { currentServeUrl, pickPorts, startServer, type RunningServer } from '../src/server.js';
+import {
+  currentServeUrl,
+  pickPorts,
+  servedStoreRoots,
+  startServer,
+  type RunningServer,
+} from '../src/server.js';
 import { initRepo, openStore, type Store } from '../src/store.js';
 
 let dir: string;
@@ -40,6 +46,124 @@ async function patch(path: string, body: unknown): Promise<Response> {
     body: JSON.stringify(body),
   });
 }
+
+describe('serving several projects at once', () => {
+  let otherDir: string;
+  let other: Store;
+  let both: RunningServer;
+  let base2: string;
+
+  beforeEach(async () => {
+    otherDir = mkdtempSync(join(tmpdir(), 'planny-srv-b-'));
+    initRepo(otherDir);
+    other = openStore(otherDir);
+    addTask(store, { name: 'first project task' });
+    addTask(other, { name: 'second project task' });
+    both = await startServer([store, other], 0);
+    base2 = `http://127.0.0.1:${both.port}`;
+  });
+
+  afterEach(async () => {
+    await both.close();
+    rmSync(otherDir, { recursive: true, force: true });
+  });
+
+  const get = async (path: string): Promise<any> => (await fetch(`${base2}${path}`)).json();
+
+  it('lists the projects it holds, named and keyed', async () => {
+    const projects = (await get('/api/projects')).projects as Array<{
+      key: string;
+      name: string;
+      root: string;
+    }>;
+    expect(projects).toHaveLength(2);
+    expect(projects.map((p) => p.root).sort()).toEqual([store.root, other.root].sort());
+    expect(new Set(projects.map((p) => p.key)).size).toBe(2);
+  });
+
+  it('keeps every project\'s tasks to itself', async () => {
+    const projects = (await get('/api/projects')).projects as Array<{ key: string; root: string }>;
+    for (const project of projects) {
+      const state = await get(`/api/projects/${project.key}/state`);
+      expect(state.store.root).toBe(project.root);
+      expect(state.tasks).toHaveLength(1);
+      const expected = project.root === store.root ? 'first project task' : 'second project task';
+      expect(state.tasks[0].name).toBe(expected);
+    }
+  });
+
+  it('writes to the project the address names, and no other', async () => {
+    const projects = (await get('/api/projects')).projects as Array<{ key: string; root: string }>;
+    const second = projects.find((p) => p.root === other.root)!;
+    const res = await fetch(`${base2}/api/projects/${second.key}/tasks/t1/status`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'done' }),
+    });
+    expect(res.status).toBe(200);
+    expect(other.load('t1').status).toBe('done');
+    expect(store.load('t1').status).toBe('todo');
+  });
+
+  it('refuses a project it does not hold', async () => {
+    const res = await fetch(`${base2}/api/projects/nope/state`);
+    expect(res.status).toBe(404);
+  });
+
+  it('the unprefixed routes still answer, for the first project', async () => {
+    const state = await get('/api/state');
+    expect(state.store.root).toBe(store.root);
+  });
+
+  it('says which projects it serves, so every store can find its board', async () => {
+    const state = await get('/api/state');
+    expect(state.roots).toEqual(expect.arrayContaining([store.root, other.root]));
+    expect(await servedStoreRoots(both.port)).toEqual(
+      expect.arrayContaining([store.root, other.root]),
+    );
+  });
+
+  it('records the address in every store it serves', async () => {
+    for (const root of [store.root, other.root]) {
+      expect(existsSync(join(root, '.planny', 'serve.json'))).toBe(true);
+      expect(readFileSync(join(root, '.planny', 'serve-port'), 'utf8').trim()).toBe(
+        String(both.port),
+      );
+    }
+    expect(await currentServeUrl(other)).toBe(base2);
+  });
+
+  it('clears every record when it stops', async () => {
+    await both.close();
+    for (const root of [store.root, other.root]) {
+      expect(existsSync(join(root, '.planny', 'serve.json'))).toBe(false);
+    }
+    both = await startServer([store, other], 0); // afterEach closes it again
+    base2 = `http://127.0.0.1:${both.port}`;
+  });
+
+  it('names the project that changed in its live event', async () => {
+    const projects = (await get('/api/projects')).projects as Array<{ key: string; root: string }>;
+    const second = projects.find((p) => p.root === other.root)!;
+    const res = await fetch(`${base2}/api/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    addTask(other, { name: 'a change in the second project' });
+    // Writes from the setup can still be in flight, so read until the one
+    // this test caused shows up.
+    let text = '';
+    const deadline = Date.now() + 3000;
+    while (!text.includes(second.key) && Date.now() < deadline) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<{ value: undefined }>((r) => setTimeout(() => r({ value: undefined }), 300)),
+      ]);
+      if (chunk.value !== undefined) text += decoder.decode(chunk.value);
+    }
+    await reader.cancel();
+    expect(text).toContain(`data: ${second.key}`);
+  });
+});
 
 describe('choosing a port', () => {
   /** A port nothing holds right now — the machine running the tests may hold any. */
@@ -278,8 +402,11 @@ describe('events', () => {
     const decoder = new TextDecoder();
     addTask(store, { name: 'trigger' });
     let text = '';
+    // The event names the project that changed, so a page showing another
+    // one can ignore it.
+    const key = basename(store.root);
     const deadline = Date.now() + 3000;
-    while (!text.includes('changed') && Date.now() < deadline) {
+    while (!text.includes(key) && Date.now() < deadline) {
       const chunk = await Promise.race([
         reader.read(),
         new Promise<{ done: true; value: undefined }>((r) =>
@@ -288,7 +415,7 @@ describe('events', () => {
       ]);
       if (chunk.value !== undefined) text += decoder.decode(chunk.value);
     }
-    expect(text).toContain('changed');
+    expect(text).toContain(`data: ${key}`);
     await reader.cancel();
   });
 

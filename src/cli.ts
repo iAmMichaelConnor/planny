@@ -37,6 +37,26 @@ import {
 /** Where the port scan starts when the operator names no port. */
 const BASE_PORT = 5891;
 
+/** Collect a repeatable --root into a list. */
+function collectRoots(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+/**
+ * Every plan this machine holds, for `serve --all`. Looks under the roots
+ * given, or the home directory when none is.
+ */
+async function findEveryStore(roots: string[]): Promise<Store[]> {
+  const { discoverStores } = await import('./discover.js');
+  const { homedir } = await import('node:os');
+  const where = roots.length > 0 ? roots : [homedir()];
+  const found = discoverStores(where);
+  if (found.length === 0) {
+    throw new Error(`no .planny plans found under ${where.join(', ')} — run \`planny init\` in a project, or pass --root <dir>`);
+  }
+  return found.map((project) => openStore(project.root));
+}
+
 export interface CliIo {
   cwd: string;
   out: (text: string) => void;
@@ -935,6 +955,8 @@ Examples:
     .command('serve')
     .description('start the localhost control site')
     .option('--port <port>', 'port to listen on (default: the first free port from 5891)', (v: string) => Number(v))
+    .option('--all', 'serve every plan found on this machine, chosen in the UI')
+    .option('--root <dir>', 'with --all: where to look (repeatable; default your home directory)', collectRoots, [])
     .option('--detach', 'launch the server as its own detached process and return')
     .option('--stop', 'stop the detached server for this store')
     .option('--clean-logs', "delete this store's serve log once it is old and its server is gone")
@@ -958,18 +980,36 @@ deletes this store's log once its server is gone and it is older than
 also sweeps dead planny-serve-<port>.log files that planny 0.1.9 and older
 left in the OS temp dir.
 
+--all holds every plan it can find in one board: the project name in the
+top-left becomes a picker. Plans stay completely apart — one project's tasks
+are never mixed with another's. It looks under your home directory by
+default, or under each --root you name, passing over node_modules, build
+directories and the like, and passing over a linked git worktree's checkout
+of a plan (that worktree shares the main one). Every plan it holds records
+the address, so \`planny url\` answers from any of them.
+
 Examples:
   planny serve --detach            board that outlives this session
+  planny serve --all --detach      one board for every plan on this machine
+  planny serve --all --root ~/code --root ~/work
   planny serve --stop              stop it (the log stays)
   planny serve --clean-logs        delete dead serve logs older than 7 days`,
     )
     .action(async (options) => {
-      const store = open();
       const { startServer, servedStoreRoot, detachServer, stopServer, cleanLogs, pickPorts } =
         await import('./server.js');
       if (options.detach === true && options.stop === true) {
         throw new Error('pass --detach or --stop, not both');
       }
+      if (options.all === true && options.stop === true) {
+        throw new Error('--stop ends the server for this store; it takes no --all');
+      }
+      if (options.root.length > 0 && options.all !== true) {
+        throw new Error('--root only works with --all');
+      }
+      // --all serves whatever it finds, so it needs no store where it stands.
+      const stores = options.all === true ? await findEveryStore(options.root) : [open()];
+      const store = stores[0]!;
       if (options.cleanLogs === true && (options.detach === true || options.stop === true)) {
         throw new Error('pass --clean-logs on its own, not with --detach or --stop');
       }
@@ -1007,7 +1047,10 @@ Examples:
       const chosen: number[] =
         options.port === undefined ? await pickPorts(store, BASE_PORT) : [options.port as number];
       if (options.detach === true) {
-        const outcome = await detachServer(store, chosen[0]!);
+        const outcome = await detachServer(store, chosen[0]!, {
+          all: options.all === true,
+          roots: options.root as string[],
+        });
         if (outcome.kind === 'already') {
           io.out(`already serving this store at ${outcome.url}`);
           return;
@@ -1020,7 +1063,7 @@ Examples:
       let running;
       for (const [index, port] of chosen.entries()) {
         try {
-          running = await startServer(store, port);
+          running = await startServer(stores, port);
           break;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
@@ -1042,7 +1085,9 @@ Examples:
         }
       }
       if (running === undefined) throw new Error('no port was free — pass --port <free port>');
-      io.out(`planny ui: http://127.0.0.1:${running.port} (ctrl-c to stop)`);
+      io.out(
+        `planny ui: http://127.0.0.1:${running.port} (ctrl-c to stop)${stores.length > 1 ? ` — ${stores.length} projects` : ''}`,
+      );
       // Keep the process alive until interrupted.
       await new Promise<void>((resolve) => {
         process.once('SIGINT', resolve);
