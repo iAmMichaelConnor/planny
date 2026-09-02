@@ -572,11 +572,167 @@ describe('claim protection', () => {
   });
 });
 
+describe('parking', () => {
+  it('parks a task with a wake note', () => {
+    addTask(store, { name: 'a' });
+    const { task } = setStatus(store, 't1', 'parked', 'sess-a', { parkedUntil: 'the API ships' });
+    expect(task.status).toBe('parked');
+    expect(task.parkedUntil).toBe('the API ships');
+    expect(store.load('t1').parkedUntil).toBe('the API ships');
+  });
+
+  it('parks without a note when none is given', () => {
+    addTask(store, { name: 'a' });
+    expect(setStatus(store, 't1', 'parked').task.parkedUntil).toBeUndefined();
+  });
+
+  it('waking a task clears the note, so a stale reason never lingers', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'the API ships' });
+    expect(setStatus(store, 't1', 'todo').task.parkedUntil).toBeUndefined();
+    expect(store.load('t1').parkedUntil).toBeUndefined();
+  });
+
+  it('re-parking replaces the old note', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'first reason' });
+    expect(setStatus(store, 't1', 'parked').task.parkedUntil).toBeUndefined();
+  });
+
+  it('refuses a wake note on any other status', () => {
+    addTask(store, { name: 'a' });
+    expect(() => setStatus(store, 't1', 'todo', undefined, { parkedUntil: 'later' })).toThrow(
+      /parked/,
+    );
+  });
+
+  it('refuses a wake note that is not text', () => {
+    addTask(store, { name: 'a' });
+    expect(() =>
+      setStatus(store, 't1', 'parked', undefined, { parkedUntil: 7 as unknown as string }),
+    ).toThrow(/text/);
+  });
+
+  it('records the park in the history', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', 'sess-a');
+    expect(store.load('t1').history.at(-1)).toMatchObject({ status: 'parked', by: 'sess-a' });
+  });
+
+  it('keeps the priority rank, so waking a task restores its place', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    addTask(store, { name: 'c' });
+    const before = store.load('t2').priority;
+    setStatus(store, 't2', 'parked');
+    expect(activeOrder()).toEqual(['t1', 't2', 't3']);
+    setStatus(store, 't2', 'todo');
+    expect(store.load('t2').priority).toBe(before);
+  });
+
+  it('cancelling a parked task drops the wake note', () => {
+    addTask(store, { name: 'a' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'the API ships' });
+    expect(cancelTask(store, 't1').task.parkedUntil).toBeUndefined();
+    expect(store.load('t1').parkedUntil).toBeUndefined();
+  });
+
+  it('resolving a parked decision drops the wake note', () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    setStatus(store, 't1', 'parked', undefined, { parkedUntil: 'after the demo' });
+    resolveDecision(store, 't1', 'Ship it.');
+    expect(store.load('t1').parkedUntil).toBeUndefined();
+  });
+
+  it('warns when a task is finished while a parked child is still open', () => {
+    addTask(store, { name: 'parent' });
+    addTask(store, { name: 'child', parent: 't1' });
+    setStatus(store, 't2', 'parked');
+    expect(setStatus(store, 't1', 'done').warnings.join(' ')).toMatch(/active children.*t2/);
+  });
+});
+
 describe('bumpTask', () => {
   it('persists the new order', () => {
     addTask(store, { name: 'a' });
     addTask(store, { name: 'b' });
     bumpTask(store, 't2', 'top');
     expect(activeOrder()).toEqual(['t2', 't1']);
+  });
+
+  it('warns when a task it blocks holds it back from the bottom', () => {
+    addTask(store, { name: 'question' });
+    addTask(store, { name: 'waiter', blockedBy: ['t1'] });
+    addTask(store, { name: 'free' });
+    const { warnings } = bumpTask(store, 't1', 'bottom');
+    expect(activeOrder()).toEqual(['t1', 't2', 't3']);
+    expect(warnings.join(' ')).toContain('t2');
+    expect(warnings.join(' ')).toMatch(/position 1 of 3/);
+  });
+
+  it('warns when a blocker holds it back from the top', () => {
+    addTask(store, { name: 'blocker' });
+    addTask(store, { name: 'other' });
+    addTask(store, { name: 'waiter', blockedBy: ['t1'] });
+    const { warnings } = bumpTask(store, 't3', 'top');
+    expect(activeOrder()).toEqual(['t1', 't3', 't2']);
+    expect(warnings.join(' ')).toContain('t1');
+    expect(warnings.join(' ')).toMatch(/position 2 of 3/);
+  });
+
+  it('says nothing when the task lands where it was sent', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    addTask(store, { name: 'c' });
+    expect(bumpTask(store, 't3', 'top').warnings).toEqual([]);
+    expect(bumpTask(store, 't3', 'bottom').warnings).toEqual([]);
+    expect(bumpTask(store, 't3', 2).warnings).toEqual([]);
+  });
+
+  it('says nothing when the task is already where it was sent', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b', blockedBy: ['t1'] });
+    expect(bumpTask(store, 't1', 'top').warnings).toEqual([]);
+  });
+
+  it('says nothing when only the length of the list stopped the move', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    expect(bumpTask(store, 't1', 99).warnings).toEqual([]);
+  });
+
+  it('says nothing about a task that is not in the active order', () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b', blockedBy: ['t1'] });
+    setStatus(store, 't1', 'done');
+    expect(bumpTask(store, 't1', 'bottom').warnings).toEqual([]);
+  });
+
+  it('names the blocker that binds, not the first one found', () => {
+    addTask(store, { name: 'first blocker' });
+    addTask(store, { name: 'second blocker' });
+    addTask(store, { name: 'waiter', blockedBy: ['t1', 't2'] });
+    const { warnings } = bumpTask(store, 't3', 'top');
+    expect(warnings.join(' ')).toContain('t2');
+    expect(warnings.join(' ')).not.toContain('t1');
+  });
+
+  it('names the waiter that binds, not the last one found', () => {
+    addTask(store, { name: 'question' });
+    addTask(store, { name: 'near waiter', blockedBy: ['t1'] });
+    addTask(store, { name: 'far waiter', blockedBy: ['t1'] });
+    const { warnings } = bumpTask(store, 't1', 'bottom');
+    expect(warnings.join(' ')).toContain('t2');
+    expect(warnings.join(' ')).not.toContain('t3');
+  });
+
+  it('ignores a finished blocker, which no longer holds anything back', () => {
+    addTask(store, { name: 'blocker' });
+    addTask(store, { name: 'other' });
+    addTask(store, { name: 'waiter', blockedBy: ['t1'] });
+    setStatus(store, 't1', 'done');
+    const { warnings } = bumpTask(store, 't3', 'top');
+    expect(activeOrder()).toEqual(['t3', 't2']);
+    expect(warnings).toEqual([]);
   });
 });

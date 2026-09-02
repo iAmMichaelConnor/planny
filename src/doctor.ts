@@ -33,6 +33,7 @@ export type FindingCode =
   | 'status-history-mismatch'
   | 'unclaimed-in-progress'
   | 'stray-replaced-by'
+  | 'stray-wake-note'
   | 'foreign-file'
   | 'cursors-unreadable'
   | 'cursor-in-future'
@@ -265,6 +266,16 @@ export function diagnose(store: Store): Finding[] {
         task.id,
       );
     }
+    if (task.status !== 'parked' && task.parkedUntil !== undefined) {
+      add(
+        'stray-wake-note',
+        'warning',
+        true,
+        file,
+        `${task.id} is ${task.status} but carries a wake note ("${task.parkedUntil}") — only parked tasks carry parked_until`,
+        task.id,
+      );
+    }
     if (task.status !== 'cancelled' && task.replacedBy.length > 0) {
       add(
         'stray-replaced-by',
@@ -445,6 +456,12 @@ function doFixStore(store: Store): FixResult {
     const keptReplacements = task.replacedBy.filter((id) => byId.has(id) && id !== task.id);
     if (keptReplacements.length !== task.replacedBy.length) {
       task.replacedBy = keptReplacements;
+      changedMeaning.add(task.id);
+    }
+    // A wake note explains a parking. On any other status it is left over
+    // from a hand edit, and dropping it has one right answer.
+    if (task.status !== 'parked' && task.parkedUntil !== undefined) {
+      delete task.parkedUntil;
       changedMeaning.add(task.id);
     }
   }

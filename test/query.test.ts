@@ -172,6 +172,67 @@ describe('changed-since filter', () => {
   });
 });
 
+describe('parked work', () => {
+  it('next passes a parked task over but still offers the rest', () => {
+    addTask(store, { name: 'parked one' }); // t1
+    addTask(store, { name: 'live one' }); // t2
+    setStatus(store, 't1', 'parked');
+    expect(nextTasks(store, 10).map((n) => n.task.id)).toEqual(['t2']);
+  });
+
+  it('next --include-parked offers it again, in its own priority place', () => {
+    addTask(store, { name: 'parked one' }); // t1
+    addTask(store, { name: 'live one' }); // t2
+    setStatus(store, 't1', 'parked');
+    expect(nextTasks(store, 10, { includeParked: true }).map((n) => n.task.id)).toEqual([
+      't1',
+      't2',
+    ]);
+  });
+
+  it('a parked blocker still blocks: parked work is not finished work', () => {
+    addTask(store, { name: 'blocker' }); // t1
+    addTask(store, { name: 'waiter', blockedBy: ['t1'] }); // t2
+    setStatus(store, 't1', 'parked');
+    expect(nextTasks(store, 10).map((n) => n.task.id)).toEqual([]);
+  });
+
+  it('a parked task still counts as work to do, so progress does not jump', () => {
+    addTask(store, { name: 'a' }); // t1
+    addTask(store, { name: 'b' }); // t2
+    setStatus(store, 't1', 'done');
+    const before = progress(store);
+    setStatus(store, 't2', 'parked');
+    expect(progress(store).total).toBe(before.total);
+    expect(progress(store).percent).toBe(before.percent);
+    expect(progress(store).byStatus.parked).toBe(1);
+  });
+
+  it('list finds parked tasks by status', () => {
+    addTask(store, { name: 'a' }); // t1
+    addTask(store, { name: 'b' }); // t2
+    setStatus(store, 't1', 'parked');
+    expect(listTasks(store, { status: ['parked'] }).map((t) => t.id)).toEqual(['t1']);
+  });
+
+  it('decisions pass a parked question over', () => {
+    addTask(store, { name: 'first q', type: 'decision' }); // t1
+    addTask(store, { name: 'second q', type: 'decision' }); // t2
+    setStatus(store, 't1', 'parked');
+    expect(nextDecisions(store).map((d) => d.task.id)).toEqual(['t2']);
+  });
+
+  it('decisions --include-parked brings the parked question back', () => {
+    addTask(store, { name: 'first q', type: 'decision' }); // t1
+    addTask(store, { name: 'second q', type: 'decision' }); // t2
+    setStatus(store, 't1', 'parked');
+    expect(nextDecisions(store, { includeParked: true }).map((d) => d.task.id)).toEqual([
+      't1',
+      't2',
+    ]);
+  });
+});
+
 describe('nextDecisions', () => {
   it('returns active decisions, unblocked first, in priority order', () => {
     addTask(store, { name: 'task blocker' }); // t1

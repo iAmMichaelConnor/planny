@@ -125,6 +125,53 @@ describe('mutations', () => {
     expect(store.load('t2').priority).toBeLessThan(store.load('t1').priority);
   });
 
+  it('parks a task with a wake note from the board', async () => {
+    addTask(store, { name: 'a' });
+    const res = await post('/api/tasks/t1/status', {
+      status: 'parked',
+      parkedUntil: 'the API ships',
+    });
+    expect(res.status).toBe(200);
+    expect(store.load('t1').status).toBe('parked');
+    expect(store.load('t1').parkedUntil).toBe('the API ships');
+  });
+
+  it('refuses a wake note that is not text', async () => {
+    addTask(store, { name: 'a' });
+    const res = await post('/api/tasks/t1/status', { status: 'parked', parkedUntil: 7 });
+    expect(res.status).toBe(400);
+    expect(store.load('t1').status).toBe('todo');
+  });
+
+  it('keeps a parked decision out of the board decision queue', async () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    addTask(store, { name: 'other q', type: 'decision' });
+    await post('/api/tasks/t1/status', { status: 'parked' });
+    const state = (await (await fetch(`${base}/api/state`)).json()) as {
+      decisions: Array<{ id: string }>;
+    };
+    expect(state.decisions.map((d) => d.id)).toEqual(['t2']);
+  });
+
+  it('attributes a bump, so the board leaves a name in the history', async () => {
+    addTask(store, { name: 'a' });
+    addTask(store, { name: 'b' });
+    await post('/api/tasks/t2/bump', { target: 'top' });
+    const entry = store.load('t2').history.at(-1);
+    expect(entry?.event).toBe('priority');
+    expect(entry?.by).toBe('operator');
+  });
+
+  it('returns the reason a bump stopped short, so the board can show it', async () => {
+    addTask(store, { name: 'question' });
+    addTask(store, { name: 'waiter', blockedBy: ['t1'] });
+    addTask(store, { name: 'free' });
+    const res = await post('/api/tasks/t1/bump', { target: 'bottom' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { warnings: string[] };
+    expect(body.warnings.join(' ')).toContain('t2');
+  });
+
   it('resolves a decision', async () => {
     addTask(store, { name: 'q', type: 'decision' });
     const res = await post('/api/tasks/t1/resolve', { response: 'Ship it.' });

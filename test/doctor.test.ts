@@ -239,6 +239,22 @@ describe('post-doctor feature coverage', () => {
     expect(findings[0]!.fixable).toBe(false);
   });
 
+  it('flags a wake note on a task that is not parked, and fix drops it', () => {
+    save(makeTask('t1', { parkedUntil: 'the API ships' }));
+    const findings = byCode(diagnose(store), 'stray-wake-note');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.severity).toBe('warning');
+    expect(findings[0]!.fixable).toBe(true);
+    const { remaining } = fixStore(store);
+    expect(codes(remaining)).not.toContain('stray-wake-note');
+    expect(store.load('t1').parkedUntil).toBeUndefined();
+  });
+
+  it('leaves a wake note alone on a parked task', () => {
+    save(makeTask('t1', { status: 'parked', parkedUntil: 'the API ships' }));
+    expect(codes(diagnose(store))).not.toContain('stray-wake-note');
+  });
+
   it('flags an unreadable cursors file as a fixable error, and fix resets it', () => {
     save(makeTask('t1'));
     writeFileSync(join(dir, '.planny', 'cursors.json'), 'not json{');

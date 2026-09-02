@@ -346,9 +346,32 @@ Examples:
       report(store, result, `${id} → in-progress`);
     });
 
+  program
+    .command('park')
+    .description('park a task: real work, but not for now')
+    .argument('<id>', 'task id', normalizeId)
+    .option('--until <note>', 'what should bring this task back')
+    .addHelpText(
+      'after',
+      `
+A parked task keeps its priority place and still blocks whatever waits on
+it. Only the queues pass it over: \`planny next\` and \`planny decisions\`
+skip parked work unless you pass --include-parked. \`planny todo <id>\`
+wakes it and clears the note.
+
+Examples:
+  planny park t7
+  planny park t7 --until 'the payments API ships'`,
+    )
+    .action((id, options) => {
+      const store = open();
+      const result = setStatus(store, id, 'parked', actor(), { parkedUntil: options.until });
+      report(store, result, `${id} → parked`);
+    });
+
   for (const [command, status, description] of [
     ['done', 'done', 'mark a task done'],
-    ['todo', 'todo', 'mark a task todo (reopen)'],
+    ['todo', 'todo', 'mark a task todo (reopen or wake)'],
   ] as const) {
     program
       .command(command)
@@ -525,11 +548,16 @@ Examples:
     .argument('[n]', 'how many tasks', (v: string) => Number(v), 5)
     .option('--kind <kind>', 'filter by owner kind')
     .option('--under <id>', 'restrict to the subtree under this task', normalizeId)
+    .option('--include-parked', 'offer parked tasks too')
     .option('--json', 'machine-readable output')
     .action((n, options) => {
       const store = open();
       if (!options.json) nameStore(store);
-      const items = nextTasks(store, n, { kind: options.kind, under: options.under });
+      const items = nextTasks(store, n, {
+        kind: options.kind,
+        under: options.under,
+        includeParked: options.includeParked === true,
+      });
       if (options.json) {
         io.out(
           JSON.stringify(
@@ -669,6 +697,7 @@ Examples:
     .description('list open decisions in the order to answer them')
     .option('--resolved', 'list answered decisions instead, newest first')
     .option('--since <time>', 'with --resolved: only decisions answered at or after this ISO time', parseTime)
+    .option('--include-parked', 'list parked decisions too')
     .option('--json', 'machine-readable output')
     .action((options) => {
       const store = open();
@@ -698,7 +727,7 @@ Examples:
         );
         return;
       }
-      const items = nextDecisions(store);
+      const items = nextDecisions(store, { includeParked: options.includeParked === true });
       if (options.json) {
         io.out(JSON.stringify(items.map(({ task, blocked }) => ({ task, blocked })), null, 2));
         return;

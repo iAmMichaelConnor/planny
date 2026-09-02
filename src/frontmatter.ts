@@ -25,6 +25,7 @@ export function serializeTaskFile(task: Task): string {
   meta.updated = task.updated;
   if (task.createdBy !== undefined) meta.created_by = task.createdBy;
   if (task.resolvedAt !== undefined) meta.resolved_at = task.resolvedAt;
+  if (task.parkedUntil !== undefined) meta.parked_until = task.parkedUntil;
   if (task.history.length > 0) {
     meta.history = task.history.map((entry) => {
       const row: Record<string, unknown> = {};
@@ -142,6 +143,7 @@ const KNOWN_KEYS = new Set([
   'updated',
   'created_by',
   'resolved_at',
+  'parked_until',
   'history',
 ]);
 
@@ -186,6 +188,7 @@ export function parseTaskFile(text: string): Task {
     createdBy: optionalString(meta, 'created_by'),
     history: historyList(meta),
     resolvedAt: optionalString(meta, 'resolved_at'),
+    parkedUntil: optionalString(meta, 'parked_until'),
     body: match[2]!.replace(/^\n/, '').replace(/\n+$/, ''),
   };
 }

@@ -465,6 +465,38 @@ describe('ui smoke', () => {
     expect(document.querySelector('#view-decisions .skipped-row')).not.toBeNull();
   });
 
+  it('a bump that stopped short says so, so the button never looks dead', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        fetchCalls.push({ path, init });
+        if (path.endsWith('/bump')) {
+          return {
+            ok: true,
+            json: async () => ({
+              task: task('t4'),
+              warnings: ['t4 stopped at position 2 of 9. t7 waits on it, and a task never ranks below a task that waits on it.'],
+            }),
+          };
+        }
+        return { ok: true, json: async () => structuredClone(servedState) };
+      }),
+    );
+    clickTab('decisions');
+    expandDecision('t4');
+    (
+      document.querySelector(
+        '.decision-priority button[data-action="bottom"][data-id="t4"]',
+      ) as HTMLElement
+    ).click();
+    await new Promise((r) => setTimeout(r, 5));
+    const warned = document.querySelector('#toasts .toast.warn') as HTMLElement;
+    expect(warned).not.toBeNull();
+    expect(warned.textContent).toContain('stopped at position 2 of 9');
+    expect(warned.textContent).toContain('t7');
+  });
+
   it('an expanded decision tile offers priority controls that post bumps', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
     clickTab('decisions');

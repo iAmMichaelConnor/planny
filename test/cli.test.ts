@@ -286,11 +286,85 @@ describe('ordering', () => {
     await seedTrio();
     await run('update', 't2', '--add-blocked-by', 't1');
     out = [];
+    err = [];
     await run('bump', 't2', 'top');
+    expect(allOut()).toMatch(/moved t2 to position 2 of 3 active/);
+    expect(err.join(' ')).toMatch(/stopped at position 2 of 3.*waits on t1/);
     out = [];
     await run('list');
     const text = allOut();
     expect(text.indexOf('first task')).toBeLessThan(text.indexOf('second task'));
+  });
+});
+
+describe('park', () => {
+  it('parks a task with a wake note and shows it', async () => {
+    await seedTrio();
+    expect(await run('park', 't2', '--until', 'the API ships')).toBe(0);
+    expect(allOut()).toMatch(/t2 → parked/);
+    out = [];
+    await run('show', 't2');
+    expect(allOut()).toMatch(/parked until: the API ships/);
+  });
+
+  it('parks without a note', async () => {
+    await seedTrio();
+    expect(await run('park', 't2')).toBe(0);
+    out = [];
+    await run('show', 't2');
+    expect(allOut()).toMatch(/status: parked/);
+    expect(allOut()).not.toMatch(/parked until:/);
+  });
+
+  it('next passes parked work over, and --include-parked brings it back', async () => {
+    await seedTrio();
+    await run('park', 't1');
+    out = [];
+    await run('next');
+    expect(allOut()).not.toMatch(/first task/);
+    out = [];
+    await run('next', '--include-parked');
+    expect(allOut()).toMatch(/first task/);
+  });
+
+  it('todo wakes a parked task and clears the note', async () => {
+    await seedTrio();
+    await run('park', 't2', '--until', 'the API ships');
+    out = [];
+    expect(await run('todo', 't2')).toBe(0);
+    await run('show', 't2');
+    expect(allOut()).toMatch(/status: todo/);
+    expect(allOut()).not.toMatch(/parked until:/);
+  });
+
+  it('list finds parked tasks by status', async () => {
+    await seedTrio();
+    await run('park', 't3');
+    out = [];
+    await run('list', '--status', 'parked');
+    expect(allOut()).toMatch(/third task/);
+    expect(allOut()).not.toMatch(/first task/);
+  });
+
+  it('decisions pass a parked question over, and --include-parked brings it back', async () => {
+    await run('init');
+    await run('add', 'first question', '--type', 'decision');
+    await run('add', 'second question', '--type', 'decision');
+    await run('park', 't1', '--until', 'after the demo');
+    out = [];
+    await run('decisions');
+    expect(allOut()).not.toMatch(/first question/);
+    out = [];
+    await run('decisions', '--include-parked');
+    expect(allOut()).toMatch(/first question/);
+  });
+
+  it('the tree marks a parked task', async () => {
+    await seedTrio();
+    await run('park', 't2');
+    out = [];
+    await run('tree', '--status', 'todo,parked');
+    expect(allOut()).toMatch(/\[~~\] t2/);
   });
 });
 

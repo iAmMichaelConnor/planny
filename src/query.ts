@@ -60,6 +60,8 @@ export interface NextOptions {
   kind?: string;
   /** Restrict to the subtree under this task. */
   under?: string;
+  /** Offer parked tasks too. They are skipped by default. */
+  includeParked?: boolean;
 }
 
 /**
@@ -78,6 +80,7 @@ export function nextTasks(store: Store, limit: number, options: NextOptions = {}
     .filter(
       (task) =>
         isActive(task) &&
+        (options.includeParked === true || task.status !== 'parked') &&
         (scope === undefined || scope.has(task.id)) &&
         (options.kind === undefined || task.kind === options.kind) &&
         !graph.isBlocked(task.id) &&
@@ -112,7 +115,13 @@ export function computeProgress(tasks: Task[], parentId?: string): Progress {
     graph.get(parentId) ?? raise(`no task ${parentId}`);
     scoped = [graph.get(parentId)!, ...graph.descendants(parentId)];
   }
-  const byStatus: Record<Status, number> = { todo: 0, 'in-progress': 0, done: 0, cancelled: 0 };
+  const byStatus: Record<Status, number> = {
+    todo: 0,
+    'in-progress': 0,
+    parked: 0,
+    done: 0,
+    cancelled: 0,
+  };
   for (const task of scoped) byStatus[task.status] += 1;
   const total = scoped.length - byStatus.cancelled;
   const done = byStatus.done;
@@ -130,11 +139,23 @@ export interface DecisionItem {
   blocked: boolean;
 }
 
+export interface DecisionOptions {
+  /** List parked decisions too. They are skipped by default. */
+  includeParked?: boolean;
+}
+
 /** Active decisions in the order to work through them: unblocked first, then by priority. */
-export function nextDecisions(store: Store): DecisionItem[] {
+export function nextDecisions(store: Store, options: DecisionOptions = {}): DecisionItem[] {
   const tasks = store.loadAll();
   const graph = buildGraph(tasks);
-  const decisions = sortByPriority(tasks.filter((t) => t.type === 'decision' && isActive(t)));
+  const decisions = sortByPriority(
+    tasks.filter(
+      (t) =>
+        t.type === 'decision' &&
+        isActive(t) &&
+        (options.includeParked === true || t.status !== 'parked'),
+    ),
+  );
   const ready = decisions.filter((t) => !graph.isBlocked(t.id));
   const waiting = decisions.filter((t) => graph.isBlocked(t.id));
   return [

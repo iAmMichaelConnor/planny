@@ -8,6 +8,7 @@ import { holderOf, isActive, type HistoryEntry, type Status, type Task, type Tas
 const STATUS_MARK: Record<Status, string> = {
   todo: '[ ]',
   'in-progress': '[~]',
+  parked: '[~~]',
   done: '[x]',
   cancelled: '[-]',
 };
@@ -146,6 +147,7 @@ export function renderShow(task: Task, allTasks: Task[], filePath: string): stri
   const blocking = graph.blocking(task.id);
   if (blocking.length > 0) lines.push(`blocks: ${blocking.map(named).join('; ')}`);
   if (task.replacedBy.length > 0) lines.push(`replaced by: ${task.replacedBy.join(', ')}`);
+  if (task.parkedUntil !== undefined) lines.push(`parked until: ${task.parkedUntil}`);
   lines.push(`file: ${filePath}`);
   lines.push(`created: ${task.created}   updated: ${task.updated}`);
   if (task.resolvedAt !== undefined) lines.push(`resolved: ${task.resolvedAt}`);
@@ -193,7 +195,9 @@ export function renderExport(tasks: Task[], options: ExportOptions): string {
     '## Dependencies',
     renderDependencyForest(tasks, true),
   ];
-  const open = sortByPriority(tasks.filter((t) => t.type === 'decision' && isActive(t)));
+  const open = sortByPriority(
+    tasks.filter((t) => t.type === 'decision' && isActive(t) && t.status !== 'parked'),
+  );
   if (open.length > 0) {
     sections.push(
       '## Open decisions',

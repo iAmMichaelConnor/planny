@@ -1,11 +1,15 @@
-export const STATUSES = ['todo', 'in-progress', 'done', 'cancelled'] as const;
+export const STATUSES = ['todo', 'in-progress', 'parked', 'done', 'cancelled'] as const;
 export type Status = (typeof STATUSES)[number];
 
 export const TASK_TYPES = ['task', 'decision'] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
-/** Statuses that count as still needing work. */
-export const ACTIVE_STATUSES: readonly Status[] = ['todo', 'in-progress'];
+/**
+ * Statuses that count as still needing work. Parked belongs here: parked work
+ * keeps its priority rank, still blocks whatever waits on it, and still counts
+ * as not done. Only the queues — `next` and `decisions` — pass it over.
+ */
+export const ACTIVE_STATUSES: readonly Status[] = ['todo', 'in-progress', 'parked'];
 
 /**
  * One recorded change: when, what, and by whom (a session id or label).
@@ -43,6 +47,8 @@ export interface Task {
   history: HistoryEntry[];
   /** For decisions: when the operator resolved it. */
   resolvedAt?: string;
+  /** For parked tasks: free text saying what should bring the task back. */
+  parkedUntil?: string;
   /** Markdown description. For decisions, uses the structured section layout. */
   body: string;
   /**

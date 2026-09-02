@@ -4,6 +4,7 @@ import {
   activePosition,
   bumpPriority,
   repairDependencyOrder,
+  sortByPriority,
   type BumpTarget,
 } from './priority.js';
 import type { Store } from './store.js';
@@ -419,6 +420,23 @@ function logStatus(task: Task, status: Status, actor: string | undefined): void 
 }
 
 /**
+ * The one place a task's status changes: log it, set it, and rewrite the wake
+ * note. The note explains one parking, so every status change replaces it and
+ * a stale reason never outlives the park it describes.
+ */
+function applyStatus(
+  task: Task,
+  status: Status,
+  actor: string | undefined,
+  parkedUntil?: string,
+): void {
+  logStatus(task, status, actor);
+  task.status = status;
+  if (status === 'parked' && parkedUntil !== undefined) task.parkedUntil = parkedUntil;
+  else delete task.parkedUntil;
+}
+
+/**
  * Which of a cancelled task's replacements can attach to a dependant
  * without looping the dependency graph. Shared by cancel and the doctor's
  * cancelled-blocker repair, so the rewire policy has one definition.
@@ -441,6 +459,8 @@ export function viableReplacements(
 export interface StatusOptions {
   /** Take over a task another team started (records the takeover). */
   take?: boolean;
+  /** With status 'parked': free text saying what should bring the task back. */
+  parkedUntil?: string;
 }
 
 export function setStatus(
@@ -502,8 +522,15 @@ function doSetStatus(
       m.warn(`${id} is a decision — prefer \`planny resolve ${id} --response ...\` to record the outcome`);
     }
   }
-  logStatus(task, status, actor);
-  task.status = status;
+  if (options.parkedUntil !== undefined) {
+    if (status !== 'parked') {
+      throw new Error('a wake note belongs to the parked status only');
+    }
+    if (typeof options.parkedUntil !== 'string' || options.parkedUntil.trim() === '') {
+      throw new Error('a wake note must be text');
+    }
+  }
+  applyStatus(task, status, actor, options.parkedUntil?.trim());
   if (status === 'todo') {
     task.replacedBy = [];
     // A reopened decision is unanswered again: a lingering stamp would
@@ -533,8 +560,7 @@ function doCancelTask(store: Store, id: string, replacedBy: string[], actor?: st
     m.get(replacementId);
     if (replacementId === id) throw new Error(`${id} cannot replace itself`);
   }
-  logStatus(task, 'cancelled', actor);
-  task.status = 'cancelled';
+  applyStatus(task, 'cancelled', actor);
   task.replacedBy = replacements;
   m.touch(id);
 
@@ -605,8 +631,7 @@ function doResolveDecision(
       : answer;
   const outcome = `## Outcome\n\n${outcomeText}`;
   task.body = task.body === '' ? outcome : `${task.body}\n\n${outcome}`;
-  logStatus(task, 'done', actor);
-  task.status = 'done';
+  applyStatus(task, 'done', actor);
   task.resolvedAt = new Date().toISOString();
   m.touch(id);
   let outcomeTask: Task | undefined;
@@ -661,12 +686,45 @@ export function bumpTask(store: Store, id: string, target: BumpTarget, actor?: s
     m.touch(id);
     m.bump(id, target);
     m.repair(); // so the logged position is the task's final resting place
-    logEvent(task, actor, {
-      event: 'priority',
-      target: String(target),
-      position: activePosition(m.tasks, id).position,
-    });
+    const { position, total } = activePosition(m.tasks, id);
+    logEvent(task, actor, { event: 'priority', target: String(target), position });
+    const note = clampNote(m, task, target, position, total);
+    if (note !== undefined) m.warn(note);
     m.commit();
     return m.result(task);
   });
+}
+
+/**
+ * Explain a move that stopped short of its target. A silent clamp reads as a
+ * broken button in the UI, which shows no landing position at all. Returns
+ * undefined when the task landed where it was sent, or when nothing but the
+ * length of the list held it back.
+ */
+function clampNote(
+  m: Mutation,
+  task: Task,
+  target: BumpTarget,
+  position: number,
+  total: number,
+): string | undefined {
+  if (position === 0) return undefined;
+  const wanted = target === 'top' ? 1 : target === 'bottom' ? total : target;
+  if (position === wanted) return undefined;
+  const where = `${task.id} stopped at position ${position} of ${total}`;
+  if (position < wanted) {
+    const waiter = sortByPriority(m.graph().blocking(task.id).filter(isActive))[0];
+    return waiter === undefined
+      ? undefined
+      : `${where}. ${waiter.id} waits on it, and a task never ranks below a task that waits on it.`;
+  }
+  const blockers = sortByPriority(
+    task.blockedBy.map((blockerId) => m.tasks.find((t) => t.id === blockerId)).filter(
+      (t): t is Task => t !== undefined && isActive(t),
+    ),
+  );
+  const blocker = blockers[blockers.length - 1];
+  return blocker === undefined
+    ? undefined
+    : `${where}. It waits on ${blocker.id}, and a task never ranks above a task it waits on.`;
 }

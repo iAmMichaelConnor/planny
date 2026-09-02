@@ -338,14 +338,18 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
         res,
         status === 'cancelled'
           ? cancelTask(store, id!, asIdList(body.replacedBy), actorOf(body))
-          : setStatus(store, id!, status, actorOf(body), { take: body.take === true }),
+          : setStatus(store, id!, status, actorOf(body), {
+              take: body.take === true,
+              // ops validates the note; the cast only quiets the compiler.
+              parkedUntil: body.parkedUntil as string | undefined,
+            }),
       );
       return;
     }
     if (req.method === 'POST' && action === 'bump') {
-      const { target } = await readJson(req);
+      const body = await readJson(req);
       // ops rejects malformed targets; the cast only quiets the compiler.
-      sendResult(res, bumpTask(store, id!, target as never));
+      sendResult(res, bumpTask(store, id!, body.target as never, actorOf(body)));
       return;
     }
     if (req.method === 'POST' && action === 'resolve') {
