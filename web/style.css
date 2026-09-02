@@ -475,5 +475,12 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
   box-shadow: var(--shadow);
 }
 .toast.warn { background: var(--warn); color: #fff; }
+.toast.undo { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+.toast-action {
+  margin-left: 10px; padding: 2px 8px; border-radius: 6px; cursor: pointer;
+  background: transparent; border: 1px solid currentColor; color: inherit;
+  font: inherit; font-size: 12px;
+}
+.toast-action:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .toast.ok { background: var(--ok); color: #fff; }
 .toast.error { background: var(--bad); color: #fff; }

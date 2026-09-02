@@ -635,27 +635,22 @@ describe('ui smoke', () => {
     expect(document.querySelector('#toasts')!.textContent).not.toMatch(/locked/);
   });
 
-  it('quick actions on cards confirm first, then post status and bump', () => {
-    const declined = vi.fn(() => false);
-    vi.stubGlobal('confirm', declined);
+  it('quick actions on cards post status and bump at once (t258: undo, not a dialog)', () => {
+    const asked = vi.fn(() => false);
+    vi.stubGlobal('confirm', asked);
     (document.querySelector('button[data-action="start"][data-id="t1"]') as HTMLElement).click();
-    expect(declined).toHaveBeenCalledOnce();
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
-
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    (document.querySelector('button[data-action="start"][data-id="t1"]') as HTMLElement).click();
+    expect(asked).not.toHaveBeenCalled();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(true);
     (document.querySelector('button[data-action="top"][data-id="t3"]') as HTMLElement).click();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(true);
   });
 
-  it('drawer status buttons confirm first', () => {
+  it('drawer status buttons act at once', () => {
     (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    const asked = vi.fn(() => false);
+    vi.stubGlobal('confirm', asked);
     (document.querySelector('#drawer-body button[data-status="done"]') as HTMLElement).click();
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(false);
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    (document.querySelector('#drawer-body button[data-status="done"]') as HTMLElement).click();
+    expect(asked).not.toHaveBeenCalled();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t1/status')).toBe(true);
   });
 
@@ -935,17 +930,13 @@ describe('ui smoke', () => {
     expect(document.querySelector('#operator-chip')).toBeNull();
   });
 
-  it('drawer top/bottom bumps ask for confirmation first', () => {
+  it('drawer top/bottom bumps move at once', () => {
     // t3 sits at position 3: its top bump is live (t1's would be disabled).
     (document.querySelector('.card[data-id="t3"]') as HTMLElement).click();
-    const declined = vi.fn(() => false);
-    vi.stubGlobal('confirm', declined);
+    const asked = vi.fn(() => false);
+    vi.stubGlobal('confirm', asked);
     (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
-    expect(declined).toHaveBeenCalledOnce();
-    expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(false);
-
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    (document.querySelector('button[data-bump="top"]') as HTMLElement).click();
+    expect(asked).not.toHaveBeenCalled();
     expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(true);
   });
 
@@ -1044,6 +1035,126 @@ const chainTasks = [
   task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
+
+describe('acting at once, with an undo', () => {
+  beforeEach(bootApp);
+
+  const posted = (path: string) => fetchCalls.filter((c) => c.path === path && c.init?.body);
+  const bodyOf = (path: string, nth = 0) =>
+    JSON.parse(posted(path)[nth]!.init!.body as string) as Record<string, unknown>;
+  const undoButton = () =>
+    document.querySelector('#toasts .toast-action') as HTMLButtonElement | null;
+
+  async function board(): Promise<void> {
+    await serveTasks([
+      task('t1', { name: 'First', position: 1 }),
+      task('t2', { name: 'Second', status: 'in-progress', position: 2 }),
+      task('t3', { name: 'Third', status: 'parked', parkedUntil: 'the API ships', position: 3 }),
+    ]);
+  }
+
+  it('starts a task with no dialog and offers to take it back', async () => {
+    const confirmed = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirmed);
+    await board();
+    (document.querySelector('.card[data-id="t1"] button[data-action="start"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(confirmed).not.toHaveBeenCalled();
+    expect(bodyOf('/api/tasks/t1/status')).toEqual({ status: 'in-progress' });
+    expect(undoButton()).not.toBeNull();
+  });
+
+  it('the undo posts the status the task had before', async () => {
+    await board();
+    (document.querySelector('.card[data-id="t2"] button[data-action="finish"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    undoButton()!.click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bodyOf('/api/tasks/t2/status', 1)).toEqual({ status: 'in-progress' });
+  });
+
+  it('the undo of a wake puts the task back to parked, note and all', async () => {
+    await board();
+    (document.querySelector('.card[data-id="t3"] button[data-action="unpark"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bodyOf('/api/tasks/t3/status')).toEqual({ status: 'todo' });
+    undoButton()!.click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bodyOf('/api/tasks/t3/status', 1)).toEqual({
+      status: 'parked',
+      parkedUntil: 'the API ships',
+    });
+  });
+
+  it('the undo of a priority move puts the task back where it was', async () => {
+    await board();
+    (document.querySelector('.card[data-id="t3"] button[data-action="top"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bodyOf('/api/tasks/t3/bump')).toEqual({ target: 'top' });
+    undoButton()!.click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bodyOf('/api/tasks/t3/bump', 1)).toEqual({ target: 3 });
+  });
+
+  it('a drag drops without a dialog and can be taken back', async () => {
+    const confirmed = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirmed);
+    await board();
+    const rect = (el: Element, top: number) => {
+      el.getBoundingClientRect = () =>
+        ({ top, height: 40, bottom: top + 40, left: 0, right: 0, width: 0, x: 0, y: top }) as DOMRect;
+    };
+    const card = (id: string) => document.querySelector(`.card[data-id="${id}"]`) as HTMLElement;
+    rect(card('t1'), 0);
+    const drag = (type: string, el: Element, clientY = 0) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY });
+      Object.defineProperty(event, 'dataTransfer', {
+        value: { setData: vi.fn(), effectAllowed: '', dropEffect: '' },
+      });
+      el.dispatchEvent(event);
+    };
+    // t1 and t3 are both todo once nothing else is; drag needs one column.
+    await serveTasks([
+      task('t1', { name: 'First', position: 1 }),
+      task('t4', { name: 'Fourth', position: 2 }),
+    ]);
+    rect(card('t1'), 0);
+    rect(card('t4'), 40);
+    drag('dragstart', card('t4'));
+    drag('dragover', card('t1'), 5);
+    drag('drop', card('t1'), 5);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(confirmed).not.toHaveBeenCalled();
+    expect(bodyOf('/api/tasks/t4/bump')).toEqual({ target: 1 });
+    undoButton()!.click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(bodyOf('/api/tasks/t4/bump', 1)).toEqual({ target: 2 });
+  });
+
+  it('cancelling still asks first: it rewires other tasks and has no undo', async () => {
+    const confirmed = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirmed);
+    clickTab('decisions');
+    expandDecision('t4');
+    (document.querySelector('button[data-action="cancel-decision"][data-id="t4"]') as HTMLElement).click();
+    expect(confirmed).toHaveBeenCalled();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t4/status')).toBe(false);
+  });
+
+  it('mentions the agent once, not on every action', async () => {
+    await board();
+    const tips = () =>
+      [...document.querySelectorAll('#toasts .toast')].filter((t) =>
+        /agent/i.test(t.textContent!),
+      ).length;
+    (document.querySelector('.card[data-id="t1"] button[data-action="start"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(tips()).toBe(1);
+    (document.querySelector('.card[data-id="t1"] button[data-action="top"]') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(tips()).toBe(1);
+  });
+});
 
 describe('what changed since you last looked', () => {
   const $ = (sel: string) => document.querySelector(sel);
@@ -1359,13 +1470,15 @@ describe('dragging a card to a new priority', () => {
     expect(fetchCalls.some((c) => c.path.includes('/bump'))).toBe(false);
   });
 
-  it('asks before it moves anything, and a refusal posts nothing', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => false));
+  it('drops without asking, because the drop can be taken back', async () => {
+    const asked = vi.fn(() => false);
+    vi.stubGlobal('confirm', asked);
     await threeTodos();
     drag('dragstart', card('t3'));
     drag('dragover', card('t1'), 5);
     drag('drop', card('t1'), 5);
-    expect(fetchCalls.some((c) => c.path.includes('/bump'))).toBe(false);
+    expect(asked).not.toHaveBeenCalled();
+    expect(fetchCalls.some((c) => c.path === '/api/tasks/t3/bump')).toBe(true);
   });
 });
 

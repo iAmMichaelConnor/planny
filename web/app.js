@@ -49,11 +49,86 @@ function markDirty() {
   if (note) note.hidden = false;
 }
 
-/** Guardrail for manual state changes: the agent usually does these. */
+/**
+ * Guardrail for a change that cannot be taken back. Reserved for cancelling
+ * and rejecting: both rewire or close other work, so neither has an inverse
+ * a single request can post. Everything else acts at once and offers an undo
+ * — see act().
+ */
 function guard(question) {
-  return confirm(
-    `${question}\n\nTip: an AI agent working this plan can make these changes for you — consider asking it instead.`,
+  return confirm(question);
+}
+
+// ---------- acting, and taking it back ----------
+
+/**
+ * A board action the reader can take back.
+ *
+ * `request` performs it. `inverse` is the request that restores what it
+ * changed, and it is built here — before the change — from the task as it
+ * stands, because afterwards the old state is gone. Both are plain
+ * {path, body} pairs posted through the same api() every other caller uses,
+ * so an undo obeys every rule the forward action obeys: the same locks, the
+ * same validation, the same dependency clamp.
+ *
+ * One level deep, deliberately: an undo raises no undo of its own.
+ *
+ * Two things it does not promise. A status change can move other tasks'
+ * ranks, because the store repairs the dependency order on every write;
+ * undoing the status does not move those back, and it should not — the
+ * invariant put them there. And an undo can be clamped like any move, in
+ * which case ops says so in its warning.
+ */
+async function act(label, request, inverse) {
+  const result = await api(request.path, 'POST', request.body);
+  if (!result) return; // the request failed and said so; nothing to take back
+  agentTipOnce();
+  toast(label, 'undo', {
+    label: 'undo',
+    run: () => void api(inverse.path, 'POST', inverse.body),
+  });
+}
+
+const post = (path, body) => ({ path, body });
+
+/** The request that puts a task back to the status it has right now. */
+function inverseStatus(task) {
+  const body = { status: task.status };
+  // The wake note only travels with the parked status; ops refuses it elsewhere.
+  if (task.status === 'parked' && task.parkedUntil) body.parkedUntil = task.parkedUntil;
+  return post(`/api/tasks/${task.id}/status`, body);
+}
+
+/** The request that puts a task back to the priority position it holds now. */
+function inverseBump(task) {
+  return post(`/api/tasks/${task.id}/bump`, { target: task.position });
+}
+
+/** Change a task's status, and offer to change it back. */
+function setTaskStatus(task, status, extra = {}) {
+  return act(
+    `${task.id} → ${status}`,
+    post(`/api/tasks/${task.id}/status`, { status, ...extra }),
+    inverseStatus(task),
   );
+}
+
+/** Move a task in the priority order, and offer to move it back. */
+function moveTask(task, target) {
+  const said = target === 'top' ? 'to the top' : target === 'bottom' ? 'to the bottom' : `to position ${target}`;
+  return act(`moved ${task.id} ${said}`, post(`/api/tasks/${task.id}/bump`, { target }), inverseBump(task));
+}
+
+let agentTipShown = false;
+
+/**
+ * The board used to repeat this on every dialog. Once a visit is enough: the
+ * reader learns it, and the undo makes a mistake cheap anyway.
+ */
+function agentTipOnce() {
+  if (agentTipShown) return;
+  agentTipShown = true;
+  toast('An AI agent working this plan can make these changes for you — try asking it instead.');
 }
 
 /**
@@ -191,13 +266,24 @@ function confirmResolved(id, outcomeId) {
   }, LOGGED_NOTE_MS);
 }
 
-function toast(message, cls = '') {
+function toast(message, cls = '', action) {
   const div = document.createElement('div');
   div.className = `toast ${cls}`;
   div.textContent = message;
+  if (action !== undefined) {
+    const button = document.createElement('button');
+    button.className = 'toast-action';
+    button.textContent = action.label;
+    button.onclick = () => {
+      div.remove();
+      action.run();
+    };
+    div.appendChild(button);
+  }
   $('#toasts').appendChild(div);
-  // Success toasts carry ids worth reading; give them longer than notices.
-  setTimeout(() => div.remove(), cls === 'ok' ? 10_000 : 4500);
+  // Success toasts carry ids worth reading, and one offering an undo must
+  // outlast the moment the reader realizes they want it.
+  setTimeout(() => div.remove(), cls === 'ok' || action !== undefined ? 10_000 : 4500);
 }
 
 function childrenOf(id) {
@@ -1204,9 +1290,8 @@ function renderDrawer() {
 function parkTask(id) {
   const note = prompt(`Park ${id}. What should bring it back? (optional)`);
   if (note === null) return;
-  const body = { status: 'parked' };
-  if (note.trim() !== '') body.parkedUntil = note.trim();
-  api(`/api/tasks/${id}/status`, 'POST', body);
+  const task = state.byId.get(id);
+  setTaskStatus(task, 'parked', note.trim() === '' ? {} : { parkedUntil: note.trim() });
 }
 
 /**
@@ -1415,8 +1500,7 @@ function wireDrawer(task, isNew) {
           parkTask(task.id);
           return;
         }
-        if (!guard(`Mark ${task.id} ${btn.dataset.status}?`)) return;
-        api(`/api/tasks/${task.id}/status`, 'POST', { status: btn.dataset.status });
+        setTaskStatus(task, btn.dataset.status);
       };
     }
     const confirmCancel = $('#confirm-cancel');
@@ -1430,10 +1514,7 @@ function wireDrawer(task, isNew) {
       };
     }
     for (const btn of body.querySelectorAll('[data-bump]')) {
-      btn.onclick = () => {
-        if (!guard(`Move ${task.id} to the ${btn.dataset.bump} of the priority order?`)) return;
-        api(`/api/tasks/${task.id}/bump`, 'POST', { target: btn.dataset.bump });
-      };
+      btn.onclick = () => moveTask(task, btn.dataset.bump);
     }
     const setPosition = $('#set-position');
     if (setPosition) {
@@ -1443,11 +1524,7 @@ function wireDrawer(task, isNew) {
       posInput.addEventListener('input', () => {
         setPosition.disabled = posInput.value === initialPosition || posInput.value === '';
       });
-      setPosition.onclick = () => {
-        const position = Number(posInput.value);
-        if (!guard(`Move ${task.id} to position ${position}?`)) return;
-        api(`/api/tasks/${task.id}/bump`, 'POST', { target: position });
-      };
+      setPosition.onclick = () => moveTask(task, Number(posInput.value));
     }
     const resolveBtn = $('#resolve-btn');
     if (resolveBtn) {
@@ -1587,8 +1664,7 @@ $('#board-columns').addEventListener('drop', (event) => {
   if (index === -1) return;
   const position = before ? index + 1 : index + 2;
   if (position === moving.position) return; // it landed where it started
-  if (!guard(`Move ${id} to position ${position} in the priority order?`)) return;
-  api(`/api/tasks/${id}/bump`, 'POST', { target: position });
+  moveTask(moving, position);
 });
 
 $('#board-columns').addEventListener('dragend', () => {
@@ -1682,19 +1758,19 @@ document.addEventListener('click', (event) => {
       return;
     }
     if (action === 'start') {
-      if (guard(`Start ${id} (mark it in progress)?`)) api(`/api/tasks/${id}/status`, 'POST', { status: 'in-progress' });
+      setTaskStatus(state.byId.get(id), 'in-progress');
       return;
     }
     if (action === 'finish') {
-      if (guard(`Mark ${id} done?`)) api(`/api/tasks/${id}/status`, 'POST', { status: 'done' });
+      setTaskStatus(state.byId.get(id), 'done');
       return;
     }
     if (action === 'top') {
-      if (guard(`Move ${id} to the top of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'top' });
+      moveTask(state.byId.get(id), 'top');
       return;
     }
     if (action === 'bottom') {
-      if (guard(`Move ${id} to the bottom of the priority order?`)) api(`/api/tasks/${id}/bump`, 'POST', { target: 'bottom' });
+      moveTask(state.byId.get(id), 'bottom');
       return;
     }
     if (action === 'cancel-decision') {
@@ -1709,7 +1785,7 @@ document.addEventListener('click', (event) => {
         toast('type a position number first', 'warn');
         return;
       }
-      api(`/api/tasks/${id}/bump`, 'POST', { target: position });
+      moveTask(state.byId.get(id), position);
       return;
     }
     if (action === 'toggle-decision') {
@@ -1734,9 +1810,7 @@ document.addEventListener('click', (event) => {
       return;
     }
     if (action === 'unpark') {
-      if (guard(`Bring ${id} back to the queue?`)) {
-        api(`/api/tasks/${id}/status`, 'POST', { status: 'todo' });
-      }
+      setTaskStatus(state.byId.get(id), 'todo');
       return;
     }
     if (action === 'accept') {
