@@ -1,12 +1,11 @@
 ---
 name: planny
 description: >-
-  Track a project's — or an AI session's — tasks and operator decisions
-  with the planny CLI instead of a plan.md. Use whenever the user asks you
-  to make a plan or break work down (the plan must be built as planny
-  tasks); asks to add, update, finish, cancel or reprioritize a task; asks
-  what to do next or to work on a task or project; asks for the plan,
-  progress, or dependencies; wants to go through open decisions; when you
+  Track a project's — or a multi-agent AI session's — tasks and outstanding human decisions
+  with the planny CLI instead of a PLAN.md. Use whenever the user: asks you
+  to make a plan or break work down; asks to add, update, finish, cancel
+  or reprioritize a task; asks what to do next; tells you to work on a task or
+  project; asks for the plan, progress, or dependencies; asks for what has changed; wants to go through open decisions; when you
   think of a task yourself, record it too; or whenever you hit a question
   only the operator can answer — record that as a decision task, don't
   just ask in chat. Requires a .planny store in the project (`planny init`
@@ -28,15 +27,13 @@ Rules that keep the store consistent:
 - **You must always mutate through the CLI (or a human can use the UI); never by writing or editing
   task files under `.planny/` directly**, because direct edits would
   catastrophically skip the CLI's id assignment, relationship bookkeeping
-  (parent/child, blockers), history, and data validation checks. The CLI
-  acts on the `.planny/` store that relates to your current directory, so
-  run every command from inside the project dir whose plan you mean to
-  change (a subdirectory is fine — the CLI walks up until it reaches a
-  `.planny/` dir; when in doubt, check `pwd` before calling the CLI).
-  In a linked git worktree, planny uses the main worktree's plan — the
-  worktree's own `.planny` checkout is ignored unless a `.planny/fork`
-  marker makes the split deliberate.
+  (parent/child, blockers), history, and data validation checks.
   _Reading_ the raw files (grep, cat, etc) is fine and encouraged.
+- **Run every command from inside the project dir whose plan you mean
+  to change.** The CLI acts on the `.planny/` store that relates to
+  your current directory (a subdirectory is fine — the CLI walks up
+  until it reaches a `.planny/` dir; when in doubt, check `pwd` before
+  calling the CLI).
 - Write task names and bodies in Simplified Technical English (STE) in
   spirit: short sentences, active voice, one meaning per word, no project
   shorthand without a definition.
@@ -52,25 +49,23 @@ Rules that keep the store consistent:
   including a mid-conversation aside — and the moment you think of one
   yourself. Then work it: `start` when you begin, `done` when it ships. A
   request or idea tracked only in chat, a TODO comment, or your own head
-  is one that gets lost. An idea you doubt becomes a decision task, not a
-  plain task — see "New ideas, which carry doubts, become a decision
-  task first".
+  is one that gets lost.
+- An idea you doubt becomes a decision task, not a plain task — see
+  "New ideas, which carry doubts, become a decision task first".
 - **A checklist in a document is a task list.** If you are
   tracking your own list of work and marking completion against it —
   checkboxes, tick marks, `Status:` fields, an open/closed split — you
   should be using planny instead: stop and run `planny add` for each
   item, whatever the section is called (queue, register, backlog,
-  follow-ups, review debt, next steps). Convert any such list you find
-  into planny tasks the same way. The document keeps the analysis and
-  cites the task ids.
+  follow-ups, review debt, next steps) — including a section you are
+  about to write. Convert any such list you find into planny tasks the
+  same way. The document keeps the analysis and cites the task ids.
 - **Serve the board at session start.** Run `planny serve --detach` and
-  tell the operator the URL it prints. `planny url` re-prints the address at any time. The
-  detached server outlives your session; a harness background task dies
-  at session end, /clear, or compaction, and the operator's board with it —
-  never use one for the board. `planny serve --stop` ends it. The server
-  binds 127.0.0.1 only: a remote operator needs the matching forward
-  from their own machine — `ssh -L 5891:127.0.0.1:5891 <host>`, then
-  open http://localhost:5891.
+  tell the operator the URL it prints. `planny url` re-prints the
+  address at any time. The detached server outlives your session; a
+  harness background task dies at session end, /clear, or compaction,
+  and the operator's board with it — never use one for the board.
+  `planny serve --stop` ends it.
 - **Identify yourself.** Prefix every planny command:
   `PLANNY_SESSION=<your session id> PLANNY_PROJECT=<store dir name> planny …` — the
   one form that survives every shell and harness (an `export` dies in a
@@ -78,9 +73,15 @@ Rules that keep the store consistent:
   id (PLANNY_SESSION) attributes your task creation and every history entry (`{at, …, by}`), so
   the operator can see which agent did what. PLANNY_PROJECT makes the
   CLI refuse commands aimed at a different store, so a wrong `cd` cannot
-  touch the wrong plan. Starting a task claims it: `planny start` on
-  another session's task refuses unless you pass `--take`, which records
-  the takeover, but you should _rarely_ need `--take`.
+  touch the wrong plan.
+- **In a linked git worktree, planny uses the main worktree's plan** —
+  the worktree's own `.planny` checkout is ignored unless a
+  `.planny/fork` marker makes the split deliberate.
+- The server binds 127.0.0.1 only; a remote operator needs their own
+  forward: `ssh -L 5891:127.0.0.1:5891 <host>`.
+- **Starting a task claims it.** `planny start` on another session's
+  task refuses unless you pass `--take`, which records the takeover,
+  but you should _rarely_ need `--take`.
 
 ## The action map
 
@@ -104,14 +105,14 @@ What the user says → what you run. Accept bare numbers as ids (`3` = `t3`).
 | "open the board" | `planny serve --detach` (see "Serve the board at session start") |
 | "is the store broken?", a command errors on a task file, a git merge or checkout touched `.planny` | `planny doctor` (add `--fix` to apply the safe repairs) |
 
-You have a question only the operator can answer → **add a decision task**
+If you have a question only the operator can answer → instead, **add a decision task**
 (see "Decision tasks"). Asking in the terminal as well is fine — but the
 task must exist regardless, because a question that lives only in chat
 disappears when the operator is away, scrolls past, or answers later.
 Never park a question in chat alone or in a TODO comment.
 
-You are about to draft a next-steps, follow-ups, or TODO section in a
-document → `planny add` each item, then cite the task ids in the
+If you are about to draft a PLAN.md, DECISIONS.md, next-steps, follow-ups, or TODO section in a
+document → instead, `planny add` each item, then cite the task ids in the
 document. The analysis stays in the document; the statuses live in
 planny.
 
@@ -144,11 +145,10 @@ agent could pick it up with no other context:
   task is yours to work right now, `planny add "…" --start` creates,
   starts and claims it in one command, with no id to juggle.
 
-Before you add a task, find its place and check it is new. A store with
-a hierarchy expects new
-work to join it: find the parent (`planny tree` shows the shape) and
-pass `--parent` — a root-level task is a deliberate choice, not a
-default. Then check the work is new: `planny list --status
+Before you add a task, find its place and check it is new. A store
+with a hierarchy expects new work to join it: find the parent
+(`planny tree` shows the shape) and pass `--parent` — a root-level
+task is a deliberate choice, not a default. Then check the work is new: `planny list --status
 todo,in-progress` prints one line per task; grep it for the key nouns
 and their synonyms. Never use `--json` for this check — it prints whole
 bodies (`--json --compact` is the lean form). A duplicate splits one
@@ -181,15 +181,15 @@ operator's original words in the body; they are the request of record.
 
 You will constantly hit questions only the operator can answer; a
 decision task is how such a question waits without being lost. A
-decision is a task with `--type decision`: a question for the operator with
-enough context to answer from the item alone. The operator answers on their own
-schedule — later today, next week — through `planny decisions` or the
-board; they may not be ready to think about it yet, and the open task
-is what they come back to. Meanwhile you keep working everything the
-answer does not block. When you (the AI) hit a choice
-that touches money, production, product trade-offs, an operational surface,
-or a pure operator preference — or you are simply blocked on an answer —
-create one:
+decision is a task with `--type decision`: a question for the operator
+with enough context to answer from the item alone. The operator
+answers on their own schedule — later today, next week — through
+`planny decide` or the board; they may not be ready to think about it
+yet, and the open task is what they come back to. Meanwhile you keep
+working everything the answer does not block. When you (the AI) hit a
+choice that touches money, production, product trade-offs, an
+operational surface, or a pure operator preference — or you are simply
+blocked on an answer — create one:
 
 ```bash
 planny add "Choose the database" --type decision --kind operator \
