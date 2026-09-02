@@ -37,6 +37,7 @@ const state = {
   renderedDrawerId: null,
   descExpanded: true, // always the default on open; collapse is per-view only
   heldRefresh: false, // a background change waiting for the reader to stop typing
+  saving: false, // a save is in flight: a second click must not send a twin
   drawerScroll: null, // {id, top}: where the reader had scrolled the panel to
 };
 
@@ -1665,6 +1666,15 @@ function wireDrawer(task, isNew) {
     input.focus();
   });
   $('#save-btn').onclick = () => {
+    // Two clicks faster than the request wrote the operator's t300 and t301:
+    // one task, twice. The panel is not rebuilt until the answer comes back,
+    // so the button itself has to hold the second click.
+    if (state.saving) return;
+    // The flag is raised beside the request itself, never before the fields
+    // are read: a throw in between would leave the form unable to save.
+    const settled = () => {
+      state.saving = false;
+    };
     state.drawerDirty = false; // saving hands the form back to refreshes
     const note = $('#unsaved-note');
     if (note) note.hidden = true;
@@ -1682,27 +1692,31 @@ function wireDrawer(task, isNew) {
     if (noteBox) fields.parkedUntil = noteBox.value.trim() || null;
     const blockedBy = parseIdList($('#f-blocked-by').value);
     if (isNew) {
+      state.saving = true;
       api('/api/tasks', 'POST', {
         ...fields,
         model: fields.model || undefined,
         parent: fields.parent || undefined,
         blockedBy,
         priority: $('#f-priority').value,
-      }).then((res) => {
-        if (res) state.selected = res.task.id;
-      });
+      })
+        .then((res) => {
+          if (res) state.selected = res.task.id;
+        })
+        .finally(settled);
       return;
     }
     const addBlockedBy = blockedBy.filter((id) => !task.blockedBy.includes(id));
     const removeBlockedBy = task.blockedBy.filter((id) => !blockedBy.includes(id));
     // The stamp the form was built from: ops refuses the body write if the
     // task changed underneath (an agent appended, a resolve landed).
+    state.saving = true;
     api(`/api/tasks/${task.id}`, 'PATCH', {
       ...fields,
       addBlockedBy,
       removeBlockedBy,
       ifUnchangedSince: task.updated,
-    });
+    }).finally(settled);
   };
 
   const parentPick = $('#f-parent-pick');

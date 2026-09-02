@@ -3479,3 +3479,70 @@ describe('nothing typed is thrown away without a question', () => {
     expect(drawerTitle()).toContain('t4');
   });
 });
+
+describe('one click, one task', () => {
+  const posts = () =>
+    fetchCalls.filter((c) => c.path === '/api/tasks' && c.init?.method === 'POST');
+
+  it('a second click on Create, before the first lands, adds nothing', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    (document.querySelector('#add-note-continue') as HTMLElement).click();
+    const name = document.querySelector('#f-name') as HTMLInputElement;
+    name.value = 'Return warning message if bad layout';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    const save = document.querySelector('#save-btn') as HTMLButtonElement;
+    save.click();
+    save.click(); // the impatient second click
+    await new Promise((r) => setTimeout(r, 10));
+    expect(posts()).toHaveLength(1);
+  });
+
+  it('a second save on an open task does not race the first', async () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'a real edit';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    const save = document.querySelector('#save-btn') as HTMLButtonElement;
+    save.click();
+    save.click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fetchCalls.filter((c) => c.path === '/api/tasks/t1' && c.init?.method === 'PATCH')).toHaveLength(1);
+  });
+
+  it('a save that fails leaves the button ready to try again', async () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+    desc.value = 'an edit the network eats';
+    desc.dispatchEvent(new Event('input', { bubbles: true }));
+    const live = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        fetchCalls.push({ path, init });
+        throw new Error('network down');
+      }),
+    );
+    (document.querySelector('#save-btn') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    vi.stubGlobal('fetch', live);
+    (document.querySelector('#save-btn') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fetchCalls.filter((c) => c.path === '/api/tasks/t1' && c.init?.method === 'PATCH')).toHaveLength(2);
+  });
+
+  it('the next save still goes through', async () => {
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const edit = (text: string) => {
+      const desc = document.querySelector('#f-desc') as HTMLTextAreaElement;
+      desc.value = text;
+      desc.dispatchEvent(new Event('input', { bubbles: true }));
+      (document.querySelector('#save-btn') as HTMLButtonElement).click();
+    };
+    edit('first edit');
+    await new Promise((r) => setTimeout(r, 10));
+    edit('second edit');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fetchCalls.filter((c) => c.path === '/api/tasks/t1' && c.init?.method === 'PATCH')).toHaveLength(2);
+  });
+});
