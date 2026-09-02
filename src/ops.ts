@@ -619,6 +619,17 @@ function doResolveDecision(
   if (task.type !== 'decision') {
     throw new Error(`${id} is not a decision task — use \`planny done\` for plain tasks`);
   }
+  // Two writers can answer the same question in the same minute. Without
+  // this guard the second answer appends a second Outcome and creates a
+  // second outcome task, and the queue then carries two tasks for one
+  // decision. Reopening is the deliberate way back in.
+  if (task.resolvedAt !== undefined) {
+    const carrier = outcomeTaskCitation(task);
+    const what = carrier === undefined ? 'it was rejected, so nothing was created from it' : `${carrier} carries the answer`;
+    throw new Error(
+      `${id} is already resolved (${what}) — run \`planny todo ${id}\` to reopen it, then resolve it again`,
+    );
+  }
   const answer = response.trim();
   const background = task.body; // the decision text before any outcome
   // The gate moves rather than opens: work that waited on the answer must
@@ -654,6 +665,12 @@ function doResolveDecision(
   }
   m.commit();
   return { ...m.result(task), outcomeTask };
+}
+
+/** The last outcome task the body cites, if any. Mirrors query.outcomeTaskOf. */
+function outcomeTaskCitation(task: Task): string | undefined {
+  const citations = [...task.body.matchAll(/^Outcome task: (t\d+)$/gm)];
+  return citations.length > 0 ? citations[citations.length - 1]![1] : undefined;
 }
 
 function outcomeTaskBody(

@@ -187,6 +187,8 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .card .id { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; margin-right: 6px; }
 .card .pos { position: absolute; bottom: 6px; right: 8px; color: var(--muted); opacity: 0.75; font-family: ui-monospace, monospace; font-size: 10px; margin: 0; }
 .column h2 .colsub { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--muted); }
+.column h2 .colcount { font-weight: 400; color: var(--muted); font-family: ui-monospace, monospace; }
+.chip .chip-count { margin-left: 5px; opacity: 0.7; font-family: ui-monospace, monospace; font-size: 11px; }
 .card .name { font-weight: 550; }
 .card.st-in-progress { border-left-color: var(--st-in-progress); }
 .card.st-parked { border-left-color: var(--st-parked); }
@@ -314,6 +316,9 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .parked-row { padding: 4px 0; display: flex; align-items: center; gap: 8px; }
 .parked-row .parked-why { font-size: 12px; }
 .parked-note { margin-top: 10px; }
+.activity-list { margin: 0; padding-left: 18px; max-height: 190px; overflow-y: auto; }
+.activity-list li { margin: 2px 0; }
+.activity-list time { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
 /* Drawer */
 #drawer {

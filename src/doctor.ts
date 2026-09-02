@@ -29,6 +29,7 @@ export type FindingCode =
   | 'cancelled-blocker'
   | 'cancelled-parent'
   | 'unresolved-decision'
+  | 'duplicate-outcome'
   | 'history-order'
   | 'status-history-mismatch'
   | 'unclaimed-in-progress'
@@ -223,6 +224,26 @@ export function diagnose(store: Store): Finding[] {
         `${task.id} is active under cancelled parent ${parent.id}`,
         task.id,
       );
+    }
+    if (task.type === 'decision') {
+      // Two writers answering the same question in the same minute each
+      // created an outcome task. Both then sit in the queue, and an agent
+      // works whichever it meets first.
+      const cited = [...new Set([...task.body.matchAll(/^Outcome task: (t\d+)$/gm)].map((m) => m[1]!))];
+      const live = cited.filter((outcomeId) => {
+        const outcome = byId.get(outcomeId);
+        return outcome !== undefined && isActive(outcome);
+      });
+      if (live.length > 1) {
+        add(
+          'duplicate-outcome',
+          'warning',
+          false,
+          file,
+          `decision ${task.id} has ${live.length} open outcome tasks (${live.join(', ')}) — keep one and cancel the rest`,
+          task.id,
+        );
+      }
     }
     if (
       task.type === 'decision' &&

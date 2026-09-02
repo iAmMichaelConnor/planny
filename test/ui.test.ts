@@ -89,8 +89,17 @@ class FakeEventSource {
 
 let bootAbort: AbortController | undefined;
 
+/** A reload that keeps what the browser stored — for preference tests. */
+function bootAppKeepingPreferences(): Promise<void> {
+  return boot(false);
+}
+
 function bootApp(): Promise<void> {
-  localStorage.clear(); // preferences persist per jsdom origin; each boot starts clean
+  return boot(true);
+}
+
+function boot(clearPreferences: boolean): Promise<void> {
+  if (clearPreferences) localStorage.clear(); // preferences persist per jsdom origin
   // app.js attaches document/window listeners at boot. The page never boots
   // twice in real life, but each test re-runs it, so stale instances would
   // keep handling events. Route every listener through an abort signal and
@@ -917,9 +926,9 @@ describe('ui smoke', () => {
 
   it('the drawer shows who created and who started the task', () => {
     (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
-    const body = document.querySelector('#drawer-body')!.textContent!;
-    expect(body).toContain('created by agent-7');
-    expect(body).toContain('started by agent-7');
+    const list = document.querySelector('#drawer-body .activity-list')!.textContent!;
+    expect(list).toContain('created by agent-7');
+    expect(list).toMatch(/in-progress by agent-7/);
   });
 
   it('has no For you chip (removed by operator preference)', () => {
@@ -1035,6 +1044,156 @@ const chainTasks = [
   task('t2', { name: 'Middle', blockedBy: ['t1'], blocked: true, blocking: ['t3'], position: 2 }),
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
+
+describe('board columns: counts and toggles', () => {
+  beforeEach(bootApp);
+
+  const headers = () =>
+    [...document.querySelectorAll('#board-columns .column h2')].map((h) => h.textContent!);
+  const chip = (status: string) =>
+    document.querySelector(`#board-filters .chip[data-status="${status}"]`) as HTMLButtonElement;
+
+  it('counts the cards in every column header', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { position: 2 }),
+      task('t3', { status: 'in-progress', position: 3 }),
+      task('t4', { status: 'done' }),
+    ]);
+    expect(headers().find((h) => h.includes('To do'))).toMatch(/\b2\b/);
+    expect(headers().find((h) => h.includes('In progress'))).toMatch(/\b1\b/);
+    expect(headers().find((h) => h.includes('Done'))).toMatch(/\b1\b/);
+  });
+
+  it('counts what the other filters left, not the whole store', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { type: 'decision', position: 2 }),
+    ]);
+    (document.querySelector('#board-filters .chip[data-type="decision"]') as HTMLElement).click();
+    expect(headers().find((h) => h.includes('To do'))).toMatch(/\b1\b/);
+  });
+
+  it('offers a chip per status, each carrying its own count', async () => {
+    await serveTasks([
+      task('t1', { position: 1 }),
+      task('t2', { status: 'parked', position: 2 }),
+      task('t3', { status: 'cancelled' }),
+    ]);
+    for (const status of ['todo', 'in-progress', 'parked', 'done', 'cancelled']) {
+      expect(chip(status), status).not.toBeNull();
+    }
+    expect(chip('parked').textContent).toMatch(/\b1\b/);
+    expect(chip('done').textContent).toMatch(/\b0\b/);
+  });
+
+  it('a chip click hides its column and the choice sticks', async () => {
+    await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'done' })]);
+    expect(headers().some((h) => h.includes('Done'))).toBe(true);
+    chip('done').click();
+    expect(headers().some((h) => h.includes('Done'))).toBe(false);
+    expect(localStorage.getItem('planny-board-statuses')).not.toContain('done');
+    chip('done').click();
+    expect(headers().some((h) => h.includes('Done'))).toBe(true);
+  });
+
+  it('brings back a column the store hides by default', async () => {
+    await serveTasks([task('t1', { position: 1 })]);
+    expect(headers().some((h) => h.includes('Parked'))).toBe(false);
+    chip('parked').click();
+    expect(headers().some((h) => h.includes('Parked'))).toBe(true);
+    expect(headers()[0]).toMatch(/^Parked/);
+  });
+
+  it('remembers the choice across a reload', async () => {
+    await serveTasks([task('t1', { position: 1 }), task('t2', { status: 'done' })]);
+    chip('done').click();
+    const stored = localStorage.getItem('planny-board-statuses')!;
+    await bootAppKeepingPreferences();
+    expect(localStorage.getItem('planny-board-statuses')).toBe(stored);
+    expect(headers().some((h) => h.includes('Done'))).toBe(false);
+  });
+});
+
+describe('the drawer activity list', () => {
+  beforeEach(bootApp);
+
+  const activity = () => document.querySelector('#drawer-body .activity-list') as HTMLElement;
+  const lines = () => [...activity().querySelectorAll('li')];
+
+  it('times the creation line, with or without a creator on record', async () => {
+    await serveTasks([
+      task('t1', { created: '2026-08-31T12:00:00.000Z', position: 1 }),
+      task('t2', { created: '2026-08-31T12:00:00.000Z', createdBy: 'agent-7', position: 2 }),
+    ]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(lines()[0]!.textContent).toMatch(/^created\b/);
+    expect(lines()[0]!.querySelector('time')).not.toBeNull();
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    expect(lines()[0]!.textContent).toContain('agent-7');
+    expect(lines()[0]!.querySelector('time')).not.toBeNull();
+  });
+
+  it('gives every action a time, and the exact stamp on hover', async () => {
+    await serveTasks([
+      task('t1', {
+        created: '2026-08-31T12:00:00.000Z',
+        createdBy: 'agent-7',
+        status: 'in-progress',
+        history: [
+          { at: '2026-08-31T13:00:00.000Z', event: 'rename', from: 'Old name', to: 'New name' },
+          { at: '2026-08-31T14:00:00.000Z', event: 'priority', target: 'top', position: 1 },
+          { at: '2026-08-31T15:00:00.000Z', event: 'parent', to: 't9' },
+          { at: '2026-08-31T16:00:00.000Z', event: 'blocked-by', added: ['t9'] },
+          { at: '2026-08-31T17:00:00.000Z', status: 'in-progress', by: 'agent-7' },
+        ],
+        position: 1,
+      }),
+    ]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(lines()).toHaveLength(6); // created, then one per history entry
+    for (const line of lines()) {
+      const stamp = line.querySelector('time') as HTMLElement;
+      expect(stamp, line.textContent!).not.toBeNull();
+      expect(stamp.getAttribute('datetime')).toMatch(/^2026-08-31T/);
+      expect(stamp.title).toMatch(/^2026-08-31T/);
+      expect(stamp.textContent!.trim()).not.toBe('');
+    }
+    const text = activity().textContent!;
+    expect(text).toContain('renamed');
+    expect(text).toContain('position 1');
+    expect(text).toContain('parent');
+    expect(text).toContain('waits on');
+    expect(text).toMatch(/in-progress/);
+    expect(text).toContain('agent-7');
+  });
+
+  it('reads the newest action last, in time order', async () => {
+    await serveTasks([
+      task('t1', {
+        created: '2026-08-31T12:00:00.000Z',
+        history: [
+          { at: '2026-08-31T13:00:00.000Z', status: 'in-progress', by: 'a' },
+          { at: '2026-08-31T18:00:00.000Z', status: 'done', by: 'b' },
+        ],
+        position: 1,
+      }),
+    ]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    const stamps = lines().map((l) => l.querySelector('time')!.getAttribute('datetime'));
+    expect(stamps).toEqual([
+      '2026-08-31T12:00:00.000Z',
+      '2026-08-31T13:00:00.000Z',
+      '2026-08-31T18:00:00.000Z',
+    ]);
+  });
+
+  it('shows only the creation line for a task nothing has happened to', async () => {
+    await serveTasks([task('t1', { created: '2026-08-31T12:00:00.000Z', position: 1 })]);
+    (document.querySelector('.card[data-id="t1"]') as HTMLElement).click();
+    expect(lines()).toHaveLength(1);
+  });
+});
 
 describe('parked work on the board', () => {
   beforeEach(bootApp);

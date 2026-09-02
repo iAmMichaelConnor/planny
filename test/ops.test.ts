@@ -572,6 +572,46 @@ describe('claim protection', () => {
   });
 });
 
+describe('resolving a decision twice', () => {
+  it('refuses the second resolve and names the outcome task that already exists', () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    const first = resolveDecision(store, 't1', 'Ship it.');
+    expect(first.outcomeTask?.id).toBe('t2');
+    expect(() => resolveDecision(store, 't1', 'Ship it again.')).toThrow(/t2/);
+  });
+
+  it('the refused resolve writes nothing at all', () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    resolveDecision(store, 't1', 'Ship it.');
+    const before = store.load('t1');
+    expect(() => resolveDecision(store, 't1', 'Ship it again.')).toThrow();
+    expect(store.load('t1').body).toBe(before.body);
+    expect(store.load('t1').resolvedAt).toBe(before.resolvedAt);
+    expect(store.loadAll().map((t) => t.id)).toEqual(['t1', 't2']);
+  });
+
+  it('refuses a second resolve on a rejected decision too', () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    resolveDecision(store, 't1', 'No.', undefined, { reject: true });
+    expect(() => resolveDecision(store, 't1', 'Actually yes.')).toThrow(/rejected/i);
+  });
+
+  it('the message points at the way through: reopen it first', () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    resolveDecision(store, 't1', 'Ship it.');
+    expect(() => resolveDecision(store, 't1', 'Again.')).toThrow(/planny todo t1/);
+  });
+
+  it('reopening lets the operator answer again, with a fresh outcome task', () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    resolveDecision(store, 't1', 'Ship it.');
+    setStatus(store, 't1', 'todo');
+    const second = resolveDecision(store, 't1', 'Changed my mind.');
+    expect(second.outcomeTask?.id).toBe('t3');
+    expect(store.load('t1').body).toContain('Changed my mind.');
+  });
+});
+
 describe('parking', () => {
   it('parks a task with a wake note', () => {
     addTask(store, { name: 'a' });

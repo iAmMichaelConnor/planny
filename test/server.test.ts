@@ -125,6 +125,15 @@ describe('mutations', () => {
     expect(store.load('t2').priority).toBeLessThan(store.load('t1').priority);
   });
 
+  it('refuses a second resolve, so two writers cannot make two outcome tasks', async () => {
+    addTask(store, { name: 'q', type: 'decision' });
+    expect((await post('/api/tasks/t1/resolve', { response: 'Ship it.' })).status).toBe(200);
+    const second = await post('/api/tasks/t1/resolve', { response: 'Ship it again.' });
+    expect(second.status).toBe(400);
+    expect(((await second.json()) as { error: string }).error).toContain('t2');
+    expect(store.loadAll().map((t) => t.id)).toEqual(['t1', 't2']);
+  });
+
   it('parks a task with a wake note from the board', async () => {
     addTask(store, { name: 'a' });
     const res = await post('/api/tasks/t1/status', {

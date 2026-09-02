@@ -297,6 +297,22 @@ describe('ordering', () => {
   });
 });
 
+describe('resolve twice', () => {
+  it('refuses the second answer and says how to reopen', async () => {
+    await run('init');
+    await run('add', 'question', '--type', 'decision');
+    await run('resolve', 't1', '--response', 'Ship it.');
+    out = [];
+    err = [];
+    expect(await run('resolve', 't1', '--response', 'Again.')).toBe(1);
+    expect(err.join(' ')).toMatch(/already resolved/);
+    expect(err.join(' ')).toMatch(/planny todo t1/);
+    out = [];
+    await run('list');
+    expect(allOut().match(/Act on the outcome/g) ?? []).toHaveLength(1);
+  });
+});
+
 describe('park', () => {
   it('parks a task with a wake note and shows it', async () => {
     await seedTrio();

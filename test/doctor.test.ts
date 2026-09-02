@@ -262,6 +262,52 @@ describe('post-doctor feature coverage', () => {
     expect(findings[0]!.fixable).toBe(false);
   });
 
+  it('flags a decision carrying two live outcome tasks', () => {
+    save(
+      makeTask('t1', {
+        type: 'decision',
+        status: 'done',
+        resolvedAt: '2026-09-02T01:00:00.000Z',
+        body: 'Q?\n\n## Outcome\n\nYes.\n\nOutcome task: t2\n\n## Outcome\n\nYes.\n\nOutcome task: t3',
+      }),
+      makeTask('t2', { parent: 't1', priority: 20 }),
+      makeTask('t3', { parent: 't1', priority: 30 }),
+    );
+    const findings = byCode(diagnose(store), 'duplicate-outcome');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.severity).toBe('warning');
+    expect(findings[0]!.fixable).toBe(false);
+    expect(findings[0]!.message).toContain('t2');
+    expect(findings[0]!.message).toContain('t3');
+  });
+
+  it('says nothing when only one outcome task is still open', () => {
+    save(
+      makeTask('t1', {
+        type: 'decision',
+        status: 'done',
+        resolvedAt: '2026-09-02T01:00:00.000Z',
+        body: 'Q?\n\nOutcome task: t2\n\nOutcome task: t3',
+      }),
+      makeTask('t2', { parent: 't1', status: 'done', priority: 20 }),
+      makeTask('t3', { parent: 't1', priority: 30 }),
+    );
+    expect(codes(diagnose(store))).not.toContain('duplicate-outcome');
+  });
+
+  it('says nothing about a decision with one outcome task', () => {
+    save(
+      makeTask('t1', {
+        type: 'decision',
+        status: 'done',
+        resolvedAt: '2026-09-02T01:00:00.000Z',
+        body: 'Q?\n\nOutcome task: t2',
+      }),
+      makeTask('t2', { parent: 't1', priority: 20 }),
+    );
+    expect(codes(diagnose(store))).not.toContain('duplicate-outcome');
+  });
+
   it('flags a wake note on a task that is not parked, and fix drops it', () => {
     save(makeTask('t1', { parkedUntil: 'the API ships' }));
     const findings = byCode(diagnose(store), 'stray-wake-note');

@@ -20,7 +20,8 @@ const state = {
     showDeps: true,
   },
   depsStatuses: new Set(['todo', 'in-progress', 'parked']),
-  boardFilters: { kinds: new Set(), types: new Set() },
+  // statuses is null until the operator picks columns; see boardStatuses().
+  boardFilters: { kinds: new Set(), types: new Set(), statuses: readColumnPreference() },
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
   descEditing: false, // the description editor was opened deliberately; rebuilds keep it
@@ -45,6 +46,15 @@ function guard(question) {
   return confirm(
     `${question}\n\nTip: an AI agent working this plan can make these changes for you — consider asking it instead.`,
   );
+}
+
+/**
+ * The columns the operator chose, or null while they have chosen none. A
+ * stored empty string means "every column off", which is a real choice.
+ */
+function readColumnPreference() {
+  const stored = readPreference('planny-board-statuses', null);
+  return stored === null ? null : new Set(stored.split(',').filter(Boolean));
 }
 
 function readPreference(key, fallback) {
@@ -236,10 +246,11 @@ function chip(scope, attr, value, label, active) {
   return `<button class="chip${active ? ' active' : ''}" data-scope="${scope}" data-${attr}="${esc(value)}">${label}</button>`;
 }
 
-function statusChips(scope, activeSet) {
-  return ALL_STATUSES.map((s) =>
-    chip(scope, 'status', s, `<span class="status-dot ${s}"></span>${s.replace('-', ' ')}`, activeSet.has(s)),
-  ).join('');
+function statusChips(scope, activeSet, countOf) {
+  return ALL_STATUSES.map((s) => {
+    const count = countOf === undefined ? '' : ` <span class="chip-count">${countOf(s)}</span>`;
+    return chip(scope, 'status', s, `<span class="status-dot ${s}"></span>${s.replace('-', ' ')}${count}`, activeSet.has(s));
+  }).join('');
 }
 
 function kindChips(scope, activeSet) {
@@ -361,27 +372,44 @@ function cardHtml(task, position) {
   </div>`;
 }
 
+const BOARD_COLUMNS = [
+  ['parked', 'Parked'],
+  ['todo', 'To do'],
+  ['in-progress', 'In progress'],
+  ['done', 'Done'],
+  ['cancelled', 'Cancelled'],
+];
+
+/**
+ * Which columns the board shows. The operator's choice wins once they make
+ * one. Until then: the three working columns always, and Parked or Cancelled
+ * only once the store has one — an empty column of either is noise.
+ */
+function boardStatuses() {
+  if (state.boardFilters.statuses !== null) return state.boardFilters.statuses;
+  const has = (status) => state.data.tasks.some((t) => t.status === status);
+  return new Set(
+    BOARD_COLUMNS.map(([status]) => status).filter(
+      (status) => (status !== 'parked' && status !== 'cancelled') || has(status),
+    ),
+  );
+}
+
 function renderBoard() {
   clearHoverLines(); // the rebuild wipes the overlay; drop the stale element cache too
   const f = state.boardFilters;
-  $('#board-filters').innerHTML =
-    `<span class="chip-group">${kindChips('board', f.kinds)}</span>` +
-    `<span class="chip-group">${typeChips('board', f.types)}</span>`;
   const visible = (t) =>
     (f.kinds.size === 0 || f.kinds.has(t.kind)) && (f.types.size === 0 || f.types.has(t.type));
+  const countOf = (status) =>
+    state.data.tasks.filter((t) => t.status === status && visible(t)).length;
+  const shown = boardStatuses();
+  $('#board-filters').innerHTML =
+    `<span class="chip-group">${statusChips('board', shown, countOf)}</span>` +
+    `<span class="chip-group">${kindChips('board', f.kinds)}</span>` +
+    `<span class="chip-group">${typeChips('board', f.types)}</span>`;
 
-  const columns = [
-    ['parked', 'Parked'],
-    ['todo', 'To do'],
-    ['in-progress', 'In progress'],
-    ['done', 'Done'],
-    ['cancelled', 'Cancelled'],
-  ];
-  // Parked and Cancelled are empty in most stores; an empty column there is
-  // noise, so each appears only once the store has one.
-  const onDemand = new Set(['parked', 'cancelled']);
-  $('#board-columns').innerHTML = columns
-    .filter(([status]) => !onDemand.has(status) || state.data.tasks.some((t) => t.status === status))
+  $('#board-columns').innerHTML = BOARD_COLUMNS
+    .filter(([status]) => shown.has(status))
     .map(([status, title]) => {
       const ordered = isActiveStatus(status)
         ? ' <span class="colsub">priority order ↓</span>'
@@ -393,7 +421,7 @@ function renderBoard() {
       const empty = status === 'in-progress'
         ? '<p class="muted col-tip">Nothing in progress. Ask your AI to work the plan — it has the planny skill. Try: &ldquo;do more tasks&rdquo;.</p>'
         : '<p class="muted">—</p>';
-      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title}${ordered}</h2>${cards || empty}</div>`;
+      return `<div class="column"><h2><span class="status-dot ${status}"></span>${title} <span class="colcount">${countOf(status)}</span>${ordered}</h2>${cards || empty}</div>`;
     })
     .join('');
 }
@@ -861,14 +889,11 @@ function renderDrawer() {
   const active = activeTasks();
   const positionValue = task.position ?? 0; // served by the API; 0 when inactive or new
 
-  const startedEntry = task.status === 'in-progress'
-    ? [...(task.history || [])].reverse().find((e) => e.status === 'in-progress')
-    : undefined;
   const activity = [
-    ...(task.createdBy ? [`created by ${esc(task.createdBy)}`] : []),
-    ...(startedEntry
-      ? [`started by ${esc(startedEntry.by || '(unattributed)')} at ${esc(startedEntry.at)}`]
-      : []),
+    `created${task.createdBy ? ` by ${esc(task.createdBy)}` : ''}${stamp(task.created)}`,
+    ...(task.history || []).map(
+      (entry) => `${describeHistory(entry)}${entry.by ? ` by ${esc(entry.by)}` : ''}${stamp(entry.at)}`,
+    ),
   ];
   const parkedNote = !isNew && task.status === 'parked'
     ? `<div class="parked-note"><label>parked until</label><div>${
@@ -878,7 +903,7 @@ function renderDrawer() {
 
   const relSection = isNew ? '' : `
     <div class="drawer-section">
-      ${activity.length > 0 ? `<label>activity</label><div>${activity.join(' · ')}</div>` : ''}
+      <label>activity</label><ul class="activity-list">${activity.map((line) => `<li>${line}</li>`).join('')}</ul>
       ${ancestorsOf(task.id).length > 0 ? `<label>path</label><div>${ancestorsOf(task.id).reverse().map((a) => linkifyIds(esc(`${a.id} ${a.name}`))).join(' › ')}</div>` : ''}
       ${childrenOf(task.id).length > 0 ? `<label>children</label><ul class="rel-list">${childrenOf(task.id).map((c) => `<li data-goto="${c.id}">${c.id} ${esc(c.name)} — ${c.status}</li>`).join('')}</ul>` : ''}
       ${task.blocking.length > 0 ? `<label>blocks</label><ul class="rel-list">${task.blocking.map((id) => { const b = state.byId.get(id); return `<li data-goto="${id}">${id} ${esc(b ? b.name : '')}</li>`; }).join('')}</ul>` : ''}
@@ -1006,6 +1031,50 @@ function parkTask(id) {
   const body = { status: 'parked' };
   if (note.trim() !== '') body.parkedUntil = note.trim();
   api(`/api/tasks/${id}/status`, 'POST', body);
+}
+
+/**
+ * A time the reader can scan, with the exact stamp on hover. The board has no
+ * build step and cannot import the CLI's renderer, so this pair mirrors
+ * describeHistory in src/render.ts; keep the two in step.
+ */
+function stamp(at) {
+  const when = new Date(at);
+  const text = Number.isNaN(when.getTime())
+    ? at
+    : when.toLocaleString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+  return ` <time datetime="${esc(at)}" title="${esc(at)}">${esc(text)}</time>`;
+}
+
+function describeHistory(entry) {
+  // The board names the subject; the CLI prefixes each line with its time,
+  // so a bare arrow reads fine there and not here.
+  if (entry.status !== undefined) return `status → ${esc(entry.status)}`;
+  switch (entry.event) {
+    case 'priority':
+      return `priority → position ${esc(String(entry.position))} (asked for ${esc(String(entry.target))})`;
+    case 'parent':
+      if (entry.to === undefined) return `parent ${linkifyIds(esc(entry.from || '?'))} → none`;
+      return entry.from === undefined
+        ? `parent → ${linkifyIds(esc(entry.to))}`
+        : `parent ${linkifyIds(esc(entry.from))} → ${linkifyIds(esc(entry.to))}`;
+    case 'blocked-by': {
+      const parts = [
+        ...(entry.added || []).map((id) => `+${id}`),
+        ...(entry.removed || []).map((id) => `-${id}`),
+      ];
+      return `waits on ${linkifyIds(esc(parts.join(' ')))}`;
+    }
+    case 'rename':
+      return `renamed "${esc(entry.from)}" → "${esc(entry.to)}"`;
+    default:
+      return esc(String(entry.event || 'changed'));
+  }
 }
 
 function parseIdList(value) {
@@ -1288,6 +1357,14 @@ document.addEventListener('click', (event) => {
     if (scope === 'deps') {
       toggleInSet(state.depsStatuses, status);
       renderDeps();
+    } else if (scope === 'board' && status !== undefined) {
+      // Materialize the default before the first change, so a click edits
+      // exactly what the operator sees.
+      const shown = new Set(boardStatuses());
+      toggleInSet(shown, status);
+      state.boardFilters.statuses = shown;
+      writePreference('planny-board-statuses', [...shown].join(','));
+      renderBoard();
     } else {
       const f = scope === 'tree' ? state.treeFilters : state.boardFilters;
       if (status !== undefined) toggleInSet(f.statuses, status);
