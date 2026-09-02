@@ -25,6 +25,11 @@ const state = {
   // One window for both views: "what happened this week" is a question about
   // the plan, not about the view you happen to be in.
   dateFilter: { event: 'any', from: '', to: '' },
+  // "New to you": everything the store changed after this moment, less the
+  // tasks already opened. Per browser, so two people watching one board keep
+  // their own reading.
+  seenAt: readPreference('planny-seen-at', null),
+  seenIds: readSeenIds(),
   drawerDock: readPreference('planny-drawer-dock', 'right'),
   drawerDirty: false, // unsaved form edits: background refreshes must not clobber them
   descEditing: false, // the description editor was opened deliberately; rebuilds keep it
@@ -60,6 +65,20 @@ function readColumnPreference() {
   return stored === null ? null : new Set(stored.split(',').filter(Boolean));
 }
 
+/**
+ * Tasks the reader already opened, each with the `updated` stamp it carried
+ * when they read it. Storing the stamp, not just the id, is what lets a task
+ * become new again the next time the store touches it.
+ */
+function readSeenIds() {
+  try {
+    const parsed = JSON.parse(readPreference('planny-seen-ids', '') || '{}');
+    return parsed !== null && typeof parsed === 'object' ? new Map(Object.entries(parsed)) : new Map();
+  } catch {
+    return new Map();
+  }
+}
+
 function readPreference(key, fallback) {
   try {
     return localStorage.getItem(key) || fallback;
@@ -82,6 +101,12 @@ async function refresh() {
   const res = await fetch('/api/state');
   state.data = await res.json();
   state.byId = new Map(state.data.tasks.map((t) => [t.id, t]));
+  if (state.seenAt === null) {
+    // A first visit marks nothing: everything would be new, which says
+    // nothing. It starts the clock so the next visit means something.
+    state.seenAt = new Date().toISOString();
+    writePreference('planny-seen-at', state.seenAt);
+  }
   render();
 }
 
@@ -389,6 +414,60 @@ function renderMarkdown(text) {
     .join('\n');
 }
 
+// ---------- what changed since you last looked ----------
+
+/** True when the store touched this task after the reader last saw it. */
+function isNewToReader(task) {
+  if (state.seenAt === null) return false;
+  const when = Date.parse(task.updated);
+  const read = state.seenIds.get(task.id);
+  if (read !== undefined && when <= Date.parse(read)) return false;
+  return when > Date.parse(state.seenAt);
+}
+
+function saveSeenIds() {
+  writePreference('planny-seen-ids', JSON.stringify(Object.fromEntries(state.seenIds)));
+}
+
+/** Stop marking a single task, because the reader just opened this version. */
+function markTaskSeen(task) {
+  if (state.seenIds.get(task.id) === task.updated) return;
+  state.seenIds.set(task.id, task.updated);
+  saveSeenIds();
+}
+
+/**
+ * Drop the marks the reader just cleared, without rebuilding a view. A full
+ * render would fight the drawer, which is mid-open when this runs.
+ */
+function applyNewMarks() {
+  for (const el of document.querySelectorAll('.card.is-new, .tree-row.is-new')) {
+    const task = state.byId.get(el.dataset.id);
+    if (task === undefined || !isNewToReader(task)) el.classList.remove('is-new');
+  }
+}
+
+function markAllSeen() {
+  state.seenAt = new Date().toISOString();
+  writePreference('planny-seen-at', state.seenAt);
+  // Ids only matter while they are newer than the moment; past it they are
+  // dead weight, so a full read empties the set.
+  state.seenIds = new Map();
+  saveSeenIds();
+  render();
+}
+
+function renderNewSince() {
+  const count = state.data.tasks.filter(isNewToReader).length;
+  const label = $('#new-since');
+  const button = $('#mark-seen');
+  label.textContent = count === 0 ? '' : `${count} new since you last looked`;
+  label.title = state.seenAt === null ? '' : `since ${state.seenAt}`;
+  button.hidden = count === 0;
+}
+
+$('#mark-seen').onclick = markAllSeen;
+
 // ---------- rendering ----------
 
 function render() {
@@ -399,6 +478,7 @@ function render() {
     : '';
   $('#progress-fill').style.width = `${progress.percent}%`;
   $('#progress-text').textContent = `${progress.percent}% · ${progress.done}/${progress.total} done`;
+  renderNewSince();
   const openCount = state.data.decisions.filter((d) => !d.blocked).length;
   $('#decision-count').textContent = openCount > 0 ? `(${openCount})` : '';
 
@@ -441,6 +521,7 @@ function cardHtml(task, position) {
     `st-${task.status}`,
     task.type === 'decision' ? 'decision' : '',
     task.blocked ? 'blocked-card' : '',
+    isNewToReader(task) ? 'is-new' : '',
   ];
   const pos = position !== undefined
     ? `<span class="pos" title="priority position among active tasks">#${position}</span>`
@@ -562,7 +643,7 @@ function renderTree() {
         progressHtml = `<span class="mini-progress" title="${done}/${total} done"><div style="width:${Math.round((done / total) * 100)}%"></div></span><span class="muted" style="font-size:11px">${done}/${total}</span>`;
       }
     }
-    const row = `<div class="tree-row" data-id="${task.id}">
+    const row = `<div class="tree-row${isNewToReader(task) ? ' is-new' : ''}" data-id="${task.id}">
       ${twist}<span class="status-dot ${task.status}"></span>
       <span class="id">${task.id}</span>
       <span class="name${task.status === 'done' ? ' done-name' : ''}">${linkifyIds(esc(task.name))}</span>
@@ -961,6 +1042,13 @@ function renderDrawer() {
     state.selected = null;
     drawer.classList.add('hidden');
     return;
+  }
+  // Reading a task is reading it: its "new" mark goes, and stays gone until
+  // the store touches the task again.
+  if (!isNew && isNewToReader(task)) {
+    markTaskSeen(task);
+    renderNewSince();
+    applyNewMarks();
   }
   $('#drawer-title').innerHTML = isNew
     ? 'New task'

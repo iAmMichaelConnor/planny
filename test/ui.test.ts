@@ -1045,6 +1045,94 @@ const chainTasks = [
   task('t3', { name: 'Leaf', blockedBy: ['t2'], blocked: true, position: 3 }),
 ];
 
+describe('what changed since you last looked', () => {
+  const $ = (sel: string) => document.querySelector(sel);
+  const OLD = '2026-08-01T09:00:00.000Z';
+  const NEW = '2026-08-30T09:00:00.000Z';
+
+  const marked = () =>
+    [...document.querySelectorAll('#board-columns .card.is-new')].map(
+      (c) => (c as HTMLElement).dataset.id,
+    );
+
+  async function twoTasks(): Promise<void> {
+    await serveTasks([
+      task('t1', { name: 'Untouched', created: OLD, updated: OLD, position: 1 }),
+      task('t2', { name: 'Moved on', created: OLD, updated: NEW, position: 2 }),
+    ]);
+  }
+
+  it('marks nothing on a first visit, and starts the clock', async () => {
+    await bootApp();
+    await twoTasks();
+    expect(marked()).toEqual([]);
+    expect(localStorage.getItem('planny-seen-at')).not.toBeNull();
+  });
+
+  it('marks what moved since the stored moment', async () => {
+    await bootApp();
+    localStorage.setItem('planny-seen-at', '2026-08-15T00:00:00.000Z');
+    await bootAppKeepingPreferences();
+    await twoTasks();
+    expect(marked()).toEqual(['t2']);
+    expect($('#new-since')!.textContent).toMatch(/1 new/);
+  });
+
+  it('marks the tree rows too', async () => {
+    await bootApp();
+    localStorage.setItem('planny-seen-at', '2026-08-15T00:00:00.000Z');
+    await bootAppKeepingPreferences();
+    await twoTasks();
+    clickTab('tree');
+    expect(document.querySelector('.tree-row[data-id="t2"]')!.classList.contains('is-new')).toBe(
+      true,
+    );
+    expect(document.querySelector('.tree-row[data-id="t1"]')!.classList.contains('is-new')).toBe(
+      false,
+    );
+  });
+
+  it('marking all as seen clears the marks and moves the moment on', async () => {
+    await bootApp();
+    localStorage.setItem('planny-seen-at', '2026-08-15T00:00:00.000Z');
+    await bootAppKeepingPreferences();
+    await twoTasks();
+    ($('#mark-seen') as HTMLElement).click();
+    expect(marked()).toEqual([]);
+    expect(Date.parse(localStorage.getItem('planny-seen-at')!)).toBeGreaterThan(
+      Date.parse('2026-08-15T00:00:00.000Z'),
+    );
+    expect($('#new-since')!.textContent).toBe('');
+  });
+
+  it('opening a task clears its own mark, and remembers that', async () => {
+    await bootApp();
+    localStorage.setItem('planny-seen-at', '2026-08-15T00:00:00.000Z');
+    await bootAppKeepingPreferences();
+    await twoTasks();
+    (document.querySelector('.card[data-id="t2"]') as HTMLElement).click();
+    expect(marked()).toEqual([]);
+    expect(localStorage.getItem('planny-seen-ids')).toContain('t2');
+  });
+
+  it('a task that moves again after you read it is new again', async () => {
+    await bootApp();
+    localStorage.setItem('planny-seen-at', '2026-08-15T00:00:00.000Z');
+    localStorage.setItem('planny-seen-ids', '{"t2":"2026-08-30T09:00:00.000Z"}');
+    await bootAppKeepingPreferences();
+    await serveTasks([
+      task('t1', { created: OLD, updated: OLD, position: 1 }),
+      task('t2', { created: OLD, updated: NEW, position: 2 }),
+    ]);
+    expect(marked()).toEqual([]);
+    await serveTasks([
+      task('t1', { created: OLD, updated: OLD, position: 1 }),
+      task('t2', { created: OLD, updated: '2026-08-31T09:00:00.000Z', position: 2 }),
+    ]);
+    expect(marked()).toEqual(['t2']);
+  });
+});
+
 describe('filtering by when something happened', () => {
   beforeEach(bootApp);
 

@@ -204,6 +204,16 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .card.blocked-card { opacity: 0.75; }
 .card[draggable="true"] { cursor: grab; }
 .card.dragging { opacity: 0.4; cursor: grabbing; }
+/* New to this reader since they last looked: a dot in the corner, and the
+   same mark on a tree row. Never colour alone — the title says why. */
+.card.is-new::before, .tree-row.is-new::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); flex: none;
+}
+.card.is-new::before { position: absolute; top: 6px; right: 8px; }
+.tree-row.is-new::before { margin-right: 2px; }
+#new-since { font-size: 12px; }
+#mark-seen { margin-left: 2px; }
 /* Where the card would land: a line on the side it would join. */
 .card.drop-above { box-shadow: inset 0 3px 0 0 var(--accent); }
 .card.drop-below { box-shadow: inset 0 -3px 0 0 var(--accent); }
