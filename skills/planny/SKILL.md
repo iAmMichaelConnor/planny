@@ -139,10 +139,12 @@ agent could pick it up with no other context:
 - **Name**: short, imperative, specific — "Guard concurrent writes with a
   lock", never "locking stuff".
 - **Description** (`-d`, or `--desc-file` for long bodies): self-contained
-  STE prose. Say what the task is, why it exists, what done looks like,
-  and give pointers — file paths, commands, the test to run. Include any
-  constraint the name cannot carry. The reader must not need the
-  conversation that produced the task.
+  STE prose. Say what the task is, why it exists, and give pointers — file
+  paths, commands, the test to run. Include any constraint the name cannot
+  carry. The reader must not need the conversation that produced the task.
+- **Definition of done**: say what the owner must see before they close the
+  task. Write evidence, not a feeling. One line can sometimes be enough. A task whose body
+  cannot say what done looks like is usually two tasks, or a question.
 - **A body that quotes a command needs `--desc-file`.** Inside a
   double-quoted `-d "…"`, the shell runs whatever sits between backticks
   and inside `$(…)` before planny ever sees it. The command really runs,
@@ -152,6 +154,7 @@ agent could pick it up with no other context:
   ```bash
   cat > /tmp/body.md <<'EOF'
   Run `npm test` and check $HOME is set.
+  Done when: `npm test` exits 0 on a clean tree.
   EOF
   planny add "Check the test run" --desc-file /tmp/body.md
   ```
@@ -166,6 +169,14 @@ agent could pick it up with no other context:
   tasks, one owner each. Encode order as dependencies, never as prose
   (`next` reads dependencies, not descriptions — "do this after t7" in
   prose does not hold).
+- **One owner and one definition of done per task.** A task that two
+  people close, on two tests of "done", hides one of them. Split it.
+  *Suggestion:* one agent writes the code and another merges it. The parent
+  is done when the change is merged, and belongs to whoever merges. The
+  child is done when every test passes on the branch, and belongs to
+  whoever writes the code. Each owner closes their own task. The board then
+  shows an open parent over a done child: the code is written and waits to
+  be merged.
 - **Decisions** use the section layout in
   [references/decision-format.md](references/decision-format.md).
 - **Take ids from command output — never predict them.** Another writer
@@ -189,7 +200,7 @@ right one?).
 
 An operator's quick-add often arrives rough — a two-word name, a pasted
 thought. When you pick one up, bring it to this standard: rename it to a
-short imperative name, and append what done looks like in STE. Keep the
+short imperative name, and append its definition of done in STE. Keep the
 operator's original words in the body; they are the request of record.
 
 ## Working tasks
@@ -199,9 +210,11 @@ operator's original words in the body; they are the request of record.
    share an ancestor belong together — give them to the same agent.
 2. `planny start <id>` before you begin; `planny show <id> --json` for the
    full body, relationships and file path.
-3. `planny done <id>` the moment it is finished — stale statuses are the
-   problem this tool exists to solve. Heed warnings: finishing a task that is
-   still blocked, or that has active children, usually means a missed update.
+3. `planny done <id>` the moment the task's definition of done is met and
+   you have seen the evidence — stale statuses are the problem this tool
+   exists to solve. A done recorded before the evidence exists costs a
+   reopen. Heed warnings: finishing a task that is still blocked, or that
+   has active children, usually means a missed update.
 4. Requirements changed? `planny update` the task, or `planny cancel
    --replaced-by` and add the successor tasks. Never leave a task describing
    work nobody intends to do.
@@ -249,9 +262,12 @@ planny add "Choose the database" --type decision --kind operator \
 
 Write the body using the section layout in
 [references/decision-format.md](references/decision-format.md) — read it
-before writing your first decision. Blocked work gets `--blocked-by` pointing
-at the decision, so the queue shows what each answer unlocks. After a
-resolution, dependants wait on the outcome task instead.
+before writing your first decision. planny warns when the body has no
+Background, no Proposal and no Needed from you; the task is still written,
+so answer the warning by rewriting the body. Blocked work gets
+`--blocked-by` pointing at the decision, so the queue shows what each
+answer unlocks. After a resolution, dependants wait on the outcome task
+instead.
 
 **New ideas, which carry doubts, become a decision task first.** When you are unsure an
 approach is right, when you have flagged risk or downsides, or when
@@ -279,11 +295,13 @@ with one open question inside it. The commands and layout live in
   `--reject` closes a decision as decided-no and creates nothing).
 - A resolution creates an **outcome task**: a child of the decision
   carrying the answer and the decision text — the answer cannot be lost
-  while that task is open. Tasks that waited on the decision are rewired
-  to wait on the outcome task, so work that waited on the decision
-  keeps waiting until the answer is interpreted. **Work it like any task**: update or cancel the
-  rewired tasks to match the outcome, and create the follow-on tasks it
-  calls for, each citing the decision in its body ("Decided in t150").
+  while that task is open. It takes the decision's own place in the
+  priority order, so an urgent question yields urgent work. Tasks that
+  waited on the decision are rewired to wait on the outcome task, so work
+  that waited on the decision keeps waiting until the answer is
+  interpreted. **Work it like any task**: update or cancel the rewired
+  tasks to match the outcome, and create the follow-on tasks it calls for,
+  each citing the decision in its body ("Decided in t150").
   Before you mark the outcome task done, append a record that starts
   `Subsequent actions:` and says what you did with the answer — the
   tasks you spawned and what each covers, or why no work was needed.
