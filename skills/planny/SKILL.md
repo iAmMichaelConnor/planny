@@ -206,6 +206,28 @@ operator's original words in the body; they are the request of record.
    --replaced-by` and add the successor tasks. Never leave a task describing
    work nobody intends to do.
 
+## Action tasks
+
+An action is work only the human can do: connect a device, sign in to an
+account, upload a file, or take a physical step. Record each request with
+`planny add "<action>" --type action --blocks <waiting-task>`. The type sets
+`kind` to `operator`. Give the human enough context to act later: why it is
+needed, the steps, and the evidence that means it is done. Use a decision
+when you need an answer or a choice; use an action when you need work done.
+
+`planny actions [--json]` lists open actions, ready first, then waiting.
+`--include-parked` includes parked requests. Tell the operator what awaits
+them and keep working tasks that do not depend on the action. The Actions
+tab lets the human start, finish, or park the request. Completing an action
+releases its dependants directly; it creates no decision outcome task.
+
+**Never perform, start, or complete an action task as an agent.** Keep your
+own session identity. Do not impersonate `operator`, use the board API to
+bypass the guard, or convert the task to another type so you can run it.
+Only the human may start, complete, or convert an action. Agents can create,
+clarify, prioritize, park, or cancel requests. `next` excludes actions unless
+`--kind operator` is explicit; that queue is for reporting to the human.
+
 ## Decision tasks
 
 You will constantly hit questions only the operator can answer; a
@@ -313,7 +335,7 @@ of your working memory. Finish or park the task, then catch up.
 - There is no agent-facing watch mode, deliberately. File watching exists
   only as harness plumbing (the serve UI's live refresh); an agent that
   polls or subscribes mid-task is doing it wrong.
-- While catching up, also run `planny next --kind operator` and tell the
+- While catching up, also run `planny actions` and `planny next --kind operator` and tell the
   operator what is waiting on them — operator tasks move only when a
   human sees them.
 

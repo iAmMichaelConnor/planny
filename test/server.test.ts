@@ -320,7 +320,7 @@ describe('malformed input cannot corrupt the store', () => {
     addTask(store, { name: 'a' });
     const res = await patch('/api/tasks/t1', { type: 'epic' });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/task or decision/);
+    expect((await res.json()).error).toMatch(/task, decision or action/);
     expect(store.load('t1').type).toBe('task'); // file still parses, unchanged
   });
 
@@ -409,5 +409,25 @@ describe('the serve record and currentServeUrl', () => {
       stranger.close((e) => (e ? reject(e) : resolve())),
     );
     server = await startServer(store, 0);
+  });
+});
+
+describe('human actions API', () => {
+  it('serves the queue and records human completion while refusing agent completion', async () => {
+    const created = await post('/api/tasks', { name: 'Connect device', type: 'action', by: 'agent' });
+    expect(created.status).toBe(200);
+    const { task } = await created.json();
+    const state = await (await fetch(`${base}/api/state`)).json();
+    expect(state.actions).toEqual([{ id: task.id, blocked: false }]);
+    expect((await post(`/api/tasks/${task.id}/status`, { status: 'done', by: 'agent' })).status).toBe(400);
+    expect((await post(`/api/tasks/${task.id}/status`, { status: 'done' })).status).toBe(200);
+    expect(store.load(task.id).history.at(-1)).toMatchObject({ status: 'done', by: 'operator' });
+  });
+
+  it('attributes UI edits to the operator and permits deliberate conversion', async () => {
+    const { task } = addTask(store, { name: 'Human work', type: 'action' });
+    expect((await patch(`/api/tasks/${task.id}`, { type: 'task', kind: 'ai', by: 'agent' })).status).toBe(400);
+    expect((await patch(`/api/tasks/${task.id}`, { type: 'task', kind: 'ai', name: 'Agent work' })).status).toBe(200);
+    expect(store.load(task.id).history.at(-1)).toMatchObject({ event: 'rename', by: 'operator' });
   });
 });

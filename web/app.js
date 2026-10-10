@@ -10,6 +10,7 @@ const state = {
   drawerOpener: null, // where the focus goes when the drawer closes
   collapsed: new Set(),
   justResolved: new Map(), // id → when the operator resolved it in this page (notes expire)
+  expandedActions: new Set(),
   expandedDecisions: new Set(), // open-decision tiles start collapsed
 
   depsMode: readPreference('planny-deps-mode', 'blocks'),
@@ -274,7 +275,7 @@ function writePreference(key, value) {
 
 // ---------- data ----------
 
-const VIEWS = ['board', 'tree', 'deps', 'decisions'];
+const VIEWS = ['board', 'tree', 'deps', 'decisions', 'actions'];
 
 // ---------- the address bar ----------
 
@@ -499,6 +500,7 @@ function subtreeCounts(id) {
 
 function badges(task) {
   const parts = [];
+  if (task.type === 'action') parts.push('<span class="badge action">human action</span>');
   if (task.type === 'decision') parts.push('<span class="badge decision">decision</span>');
   if (task.kind !== 'ai') parts.push(`<span class="badge operator">${esc(task.kind)}</span>`);
   if (task.status === 'in-progress' && task.holder) {
@@ -564,7 +566,7 @@ function kindChips(scope, activeSet) {
 }
 
 function typeChips(scope, activeSet) {
-  return ['task', 'decision'].map((t) => chip(scope, 'type', t, t, activeSet.has(t))).join('');
+  return ['task', 'decision', 'action'].map((t) => chip(scope, 'type', t, t, activeSet.has(t))).join('');
 }
 
 // ---------- the date window ----------
@@ -788,6 +790,8 @@ function render() {
   renderNewSince();
   const openCount = state.data.decisions.filter((d) => !d.blocked).length;
   $('#decision-count').textContent = openCount > 0 ? `(${openCount})` : '';
+  const actionCount = (state.data.actions || []).filter((a) => !a.blocked).length;
+  $('#action-count').textContent = actionCount > 0 ? `(${actionCount})` : '';
 
   for (const tab of document.querySelectorAll('.tab')) {
     const chosen = tab.dataset.view === state.view;
@@ -800,6 +804,7 @@ function render() {
   $(`#view-${state.view}`).classList.remove('hidden');
   syncUrl();
 
+  if (state.view === 'actions') renderActions();
   if (state.view === 'board') renderBoard();
   if (state.view === 'tree') renderTree();
   if (state.view === 'deps') renderDeps();
@@ -1197,6 +1202,38 @@ const TYPED_IN_DECISIONS = 'textarea[data-role="response"], input[data-role="pos
 /** The date window's boxes: they hold a part-typed value the state has not taken yet. */
 const TYPED_IN_FILTERS = '#date-from, #date-to, #time-from, #time-to';
 
+function renderActions() {
+  const view = $('#view-actions');
+  const actions = state.data.tasks.filter((t) => t.type === 'action');
+  const items = (state.data.actions || [])
+    .map(({ id }) => state.byId.get(id)).filter(Boolean);
+  const tile = (task) => {
+    const expanded = state.expandedActions.has(task.id);
+    const controls = [];
+    if (task.status === 'todo' || task.status === 'in-progress') {
+      if (task.status === 'todo') controls.push(`<button data-action="start" data-id="${task.id}"${task.blocked ? ' disabled' : ''}>Start</button>`);
+      controls.push(`<button class="primary" data-action="finish" data-id="${task.id}"${task.blocked ? ' disabled' : ''}>Mark done</button>`);
+      controls.push(`<button data-action="park" data-id="${task.id}">Park for now</button>`);
+    }
+    if (task.status === 'parked') controls.push(`<button data-action="unpark" data-id="${task.id}">Bring back</button>`);
+    controls.push(`<button data-goto-task="${task.id}">Details</button>`);
+    return `<div class="decision-card action-card${expanded ? '' : ' collapsed'}${task.blocked ? ' blocked' : ''}" data-id="${task.id}">
+      <h3><button class="action-toggle" data-action="toggle-action" data-id="${task.id}" aria-expanded="${expanded}">${expanded ? '▾' : '▸'} <span class="id muted">${task.id}</span> ${esc(task.name)}</button></h3>
+      <div class="badges">${badges(task)}</div>${askedLine(task)}
+      ${expanded ? `<div class="decision-body">${renderMarkdown(task.body || '_no detail_')}</div>
+        ${task.blocked ? `<p class="muted">Waiting on ${linkifyIds(esc(task.blockedBy.join(', ')))}.</p>` : ''}
+        ${task.parkedUntil ? `<p class="muted">Parked until ${linkifyIds(esc(task.parkedUntil))}</p>` : ''}
+        <div class="row">${controls.join('')}</div>` : ''}
+    </div>`;
+  };
+  const parked = actions.filter((t) => t.status === 'parked');
+  const closed = actions.filter((t) => !isActiveStatus(t.status));
+  view.innerHTML = '<p class="hint">These tasks need you. Your agent waits for you to do the action and mark it done.</p>'
+    + (items.map(tile).join('') || '<p class="muted">No open actions.</p>')
+    + (parked.length ? '<h4 class="muted">Parked (still open)</h4>' + parked.map(tile).join('') : '')
+    + (closed.length ? `<details><summary class="muted">${closed.length} closed actions</summary>${closed.map(tile).join('')}</details>` : '');
+}
+
 function renderDecisions() {
   const view = $('#view-decisions');
   const restoreTyped = keepTyped(view, TYPED_IN_DECISIONS);
@@ -1342,7 +1379,7 @@ function renderDrawer() {
   if (state.selected !== state.renderedDrawerId) state.descEditing = false; // a fresh task, fresh default
   const isNew = state.selected === '__new__';
   const task = isNew
-    ? { name: '', body: '', type: 'task', kind: 'ai', model: '', parent: state.newParent || '', blockedBy: [], status: 'todo' }
+    ? { name: '', body: '', type: state.view === 'actions' ? 'action' : 'task', kind: state.view === 'actions' ? 'operator' : 'ai', model: '', parent: state.newParent || '', blockedBy: [], status: 'todo' }
     : state.byId.get(state.selected);
   if (!task) {
     state.selected = null;
@@ -1359,7 +1396,7 @@ function renderDrawer() {
   }
   $('#drawer-title').innerHTML = isNew
     ? 'New task'
-    : `${statusDot(esc(task.status), true)}${esc(task.id)} · ${esc(task.status)}${task.status === 'todo' ? `
+    : `${statusDot(esc(task.status), true)}${esc(task.id)} · ${esc(task.status)}${task.status === 'todo' && task.type !== 'action' ? `
        <span class="do-copy"><code>"Do ${esc(task.id)}"</code><button id="copy-do" class="mini" aria-label="copy &quot;Do ${esc(task.id)}&quot; to the clipboard" title="Copies 'Do ${esc(task.id)}' to your clipboard, so you can paste it at your agent without typing six whole characters. Yes, you really are that lazy — and we respect it.">⧉</button></span>` : ''}`;
 
   const options = state.data.tasks
@@ -1470,6 +1507,7 @@ function renderDrawer() {
       <div><label>type</label><select id="f-type">
         <option value="task"${task.type === 'task' ? ' selected' : ''}>task</option>
         <option value="decision"${task.type === 'decision' ? ' selected' : ''}>decision</option>
+        <option value="action"${task.type === 'action' ? ' selected' : ''}>action (human only)</option>
       </select></div>
       <div><label>kind (owner)</label><select id="f-kind">
         ${[...new Set(['ai', 'operator', ...state.data.tasks.map((t) => t.kind), task.kind])]
@@ -1653,6 +1691,24 @@ function wireDrawer(task, isNew) {
   });
   // Reading is the default when there is something to read.
   setDescMode(!isNew && task.body !== '' && !state.descEditing);
+
+  const syncActionOwner = () => {
+    const human = $('#f-type').value === 'action';
+    let kind = $('#f-kind');
+    if (human && kind.tagName === 'INPUT') {
+      const select = document.createElement('select');
+      select.id = 'f-kind';
+      select.innerHTML = '<option value="operator">operator</option><option value="ai">ai</option>';
+      kind.replaceWith(select);
+      kind = select;
+    }
+    if (human) kind.value = 'operator';
+    kind.disabled = human;
+    $('#f-model').disabled = human;
+    if (human) $('#f-model').value = '';
+  };
+  $('#f-type').addEventListener('change', syncActionOwner);
+  syncActionOwner();
 
   // "custom…" turns the kind select into a free-form input: ai and
   // operator are the conventional kinds, but the store accepts new ones.
@@ -2215,6 +2271,12 @@ document.addEventListener('click', (event) => {
       moveTask(state.byId.get(id), position);
       return;
     }
+    if (action === 'toggle-action') {
+      state.expandedActions.has(id) ? state.expandedActions.delete(id) : state.expandedActions.add(id);
+      renderActions();
+      document.querySelector(`[data-action="toggle-action"][data-id="${id}"]`)?.focus();
+      return;
+    }
     if (action === 'toggle-decision') {
       // The whole tile toggles — but not clicks on things with their own
       // behavior (typing, links; buttons carry their own data-action and
@@ -2474,6 +2536,10 @@ $('#search').addEventListener('keydown', (event) => {
   }
   hideSearchResults();
   if (!openTask(id)) return;
+  if (state.view === 'actions' && task.type === 'action') {
+    state.expandedActions.add(id);
+    renderActions();
+  }
   const openDecision =
     task.type === 'decision' && isActiveStatus(task.status);
   if (state.view === 'decisions' && openDecision) {

@@ -3546,3 +3546,68 @@ describe('one click, one task', () => {
     expect(fetchCalls.filter((c) => c.path === '/api/tasks/t1' && c.init?.method === 'PATCH')).toHaveLength(2);
   });
 });
+
+describe('human action tasks', () => {
+  it('lists actions in their own tab with a human completion button and no agent prompt', async () => {
+    const action = task('t7', { name: 'Connect the device', type: 'action', kind: 'operator', body: 'Plug in the USB cable.' });
+    servedState = { ...sampleState, tasks: [...sampleState.tasks, action], actions: [{ id: 't7', blocked: false }] } as typeof sampleState;
+    await bootApp();
+    expect(document.querySelector('[data-view="actions"]')).not.toBeNull();
+    clickTab('actions');
+    expect(document.querySelector('#action-count')!.textContent).toBe('(1)');
+    const view = document.querySelector('#view-actions')!;
+    expect(view.textContent).toContain('Connect the device');
+    expect(view.textContent).not.toContain('Choose hosting');
+    (view.querySelector('[data-action="toggle-action"]') as HTMLElement).click();
+    expect(view.textContent).toContain('Plug in the USB cable.');
+    (view.querySelector('[data-action="finish"]') as HTMLElement).click();
+    expect(fetchCalls.some((call) => call.path === '/api/tasks/t7/status' && JSON.parse(call.init!.body as string).status === 'done')).toBe(true);
+    const search = document.querySelector('#search') as HTMLInputElement;
+    search.value = 't7';
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(document.querySelector('#copy-do')).toBeNull();
+    expect((document.querySelector('#f-kind') as HTMLSelectElement).disabled).toBe(true);
+  });
+
+  it('creates actions with operator ownership and no model', async () => {
+    (document.querySelector('#add-btn') as HTMLElement).click();
+    (document.querySelector('#add-note-continue') as HTMLElement).click();
+    const type = document.querySelector('#f-type') as HTMLSelectElement;
+    expect([...type.options].some((option) => option.value === 'action')).toBe(true);
+    type.value = 'action';
+    type.dispatchEvent(new Event('change', { bubbles: true }));
+    const kind = document.querySelector('#f-kind') as HTMLSelectElement;
+    expect(kind.value).toBe('operator');
+    expect(kind.disabled).toBe(true);
+    (document.querySelector('#f-name') as HTMLInputElement).value = 'Connect the device';
+    (document.querySelector('#save-btn') as HTMLElement).click();
+    const call = fetchCalls.find((call) => call.path === '/api/tasks')!;
+    expect(JSON.parse(call.init!.body as string)).toMatchObject({ type: 'action', kind: 'operator' });
+  });
+});
+
+describe('action queue states', () => {
+  it('opens the Actions URL and shows waiting, parked, and closed requests separately', async () => {
+    servedState = {
+      ...sampleState,
+      tasks: [
+        task('t1', { type: 'action', kind: 'operator', name: 'Blocked action', blocked: true, blockedBy: ['t4'] }),
+        task('t2', { type: 'action', kind: 'operator', name: 'Parked action', status: 'parked', parkedUntil: 'Cable arrives' }),
+        task('t3', { type: 'action', kind: 'operator', name: 'Finished action', status: 'done' }),
+        task('t4', { name: 'Prepare hardware' }),
+      ],
+      actions: [{ id: 't1', blocked: true }],
+    } as typeof sampleState;
+    await boot(true, '/?view=actions');
+    expect(document.querySelector('#view-actions')!.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('#action-count')!.textContent).toBe('');
+    (document.querySelector('[data-action="toggle-action"][data-id="t1"]') as HTMLElement).click();
+    expect((document.querySelector('#view-actions [data-action="start"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector('#view-actions [data-action="finish"]') as HTMLButtonElement).disabled).toBe(true);
+    (document.querySelector('[data-action="toggle-action"][data-id="t2"]') as HTMLElement).click();
+    expect(document.querySelector('#view-actions')!.textContent).toContain('Cable arrives');
+    expect(document.querySelector('#view-actions [data-action="unpark"]')).not.toBeNull();
+    expect(document.querySelector('#view-actions details')!.textContent).toContain('Finished action');
+    expect(document.querySelector('#view-actions details [data-action="finish"]')).toBeNull();
+  });
+});

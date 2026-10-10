@@ -232,7 +232,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .badge.blocked { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
 .chip-link { text-decoration: underline; cursor: pointer; }
 .chip-link:hover { color: var(--accent); }
-.badge.decision { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+.badge.decision, .badge.action { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
 .badge.operator { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
 .badge.holder { background: color-mix(in srgb, var(--st-in-progress) 15%, transparent); color: var(--st-in-progress); font-family: ui-monospace, monospace; }
 .card .quick { display: none; gap: 4px; margin-top: 6px; }
@@ -297,7 +297,7 @@ main { padding: 18px; max-width: 1500px; margin: 0 auto; }
 .dep-label { fill: var(--muted); font-size: 9.5px; }
 
 /* Decisions */
-#view-decisions { max-width: 860px; margin: 0 auto; }
+#view-decisions, #view-actions { max-width: 860px; margin: 0 auto; }
 .decision-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
 .decision-card h3 { margin: 0 0 4px; }
 .decision-card[data-action="toggle-decision"] { cursor: pointer; }
@@ -497,3 +497,5 @@ button.mini { padding: 0 7px; font-size: 11px; margin-left: 8px; }
 .toast-action:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .toast.ok { background: var(--ok); color: #fff; }
 .toast.error { background: var(--bad); color: #fff; }
+
+.action-toggle { text-align: left; border: 0; background: transparent; padding: 0; font: inherit; font-weight: bold; color: inherit; }

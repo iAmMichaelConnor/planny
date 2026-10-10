@@ -513,9 +513,9 @@ describe('unknown-key survival', () => {
 
 describe('input validation at the ops funnel', () => {
   it('rejects an invalid type, listing the valid ones', () => {
-    expect(() => addTask(store, { name: 'x', type: 'epic' as never })).toThrow(/task or decision/);
+    expect(() => addTask(store, { name: 'x', type: 'epic' as never })).toThrow(/task, decision or action/);
     addTask(store, { name: 'a' });
-    expect(() => updateTask(store, 't1', { type: 'epic' as never })).toThrow(/task or decision/);
+    expect(() => updateTask(store, 't1', { type: 'epic' as never })).toThrow(/task, decision or action/);
   });
 
   it('rejects malformed priority targets', () => {

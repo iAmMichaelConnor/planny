@@ -45,6 +45,7 @@ export function taskLabel(task: Task, graph: Graph, showBlockers = true, mdSafe 
   const name = mdSafe ? escapeMd(task.name) : task.name;
   const parts = [`${STATUS_MARK[task.status]} ${task.id} ${name}`];
   if (task.type === 'decision') parts.push('(decision)');
+  if (task.type === 'action') parts.push('(action)');
   if (task.kind !== 'ai') parts.push(`(${task.kind})`);
   const holder = holderOf(task);
   if (holder?.by !== undefined) parts.push(`(${holder.by})`);

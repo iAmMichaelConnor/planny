@@ -15,7 +15,7 @@ import {
   type ResolveResult,
 } from './ops.js';
 import { activePosition, type BumpTarget } from './priority.js';
-import { listTasks, nextDecisions, nextTasks, progress, resolvedDecisions } from './query.js';
+import { listTasks, nextActions, nextDecisions, nextTasks, progress, resolvedDecisions } from './query.js';
 import {
   askedLine,
   renderDependencyForest,
@@ -96,7 +96,7 @@ function parseStatuses(value: string): Status[] {
 }
 
 function parseType(value: string): TaskType {
-  if (!isTaskType(value)) throw new Error(`unknown type "${value}" — expected task or decision`);
+  if (!isTaskType(value)) throw new Error(`unknown type "${value}" — expected task, decision or action`);
   return value;
 }
 
@@ -118,7 +118,7 @@ function buildProgram(io: CliIo): Command {
   const program = new Command();
   program
     .name('planny')
-    .description('file-backed task and decision tracker for AI-driven projects')
+    .description('file-backed task, decision, and human action tracker for AI-driven projects')
     .option(
       '--session <id>',
       'attribute creates and status changes to this agent session (falls back to $PLANNY_SESSION)',
@@ -235,12 +235,12 @@ nearest store above the current directory. Agents: see skills/planny/SKILL.md.`,
 
   program
     .command('add')
-    .description('add a task (or decision) to the plan')
+    .description('add a task, decision, or human action to the plan')
     .argument('<name>', 'short imperative task name')
     .option('-d, --desc <text>', 'description (markdown)')
     .option('--desc-file <path>', 'read the description from a file (- for stdin)')
-    .option('--type <type>', 'task | decision', parseType, 'task')
-    .option('--kind <kind>', 'owner: ai | operator (or a custom kind)', 'ai')
+    .option('--type <type>', 'task | decision | action', parseType, 'task')
+    .option('--kind <kind>', 'owner: ai | operator (actions require operator; other tasks default to ai)')
     .option('--model <model>', 'preferred model for an ai task')
     .option('--parent <id>', 'parent task', normalizeId)
     .option('--child <ids>', 'existing tasks to re-parent under the new task (comma-separated, repeatable)', collectIds)
@@ -265,6 +265,9 @@ planny sees it: the command really runs and the body loses the text. Write
 the body with a quoted heredoc delimiter and pass --desc-file.`,
     )
     .action((name, options) => {
+      if (options.type === 'action' && options.start && actor() !== 'operator') {
+        throw new Error('only the human operator can start an action task — create it without --start');
+      }
       const store = open();
       const result = addTask(
         store,
@@ -305,7 +308,7 @@ the body with a quoted heredoc delimiter and pass --desc-file.`,
     .option('--desc-file <path>', 'replace the description from a file (- for stdin)')
     .option('--append-desc <text>', 'append a paragraph to the description')
     .option('--kind <kind>', 'owner: ai | operator (or a custom kind)')
-    .option('--type <type>', 'task | decision', parseType)
+    .option('--type <type>', 'task | decision | action', parseType)
     .option('--model <model>', 'preferred model')
     .option('--clear-model', 'remove the model preference')
     .option('--parent <id>', 'set the parent task', normalizeId)
@@ -493,7 +496,7 @@ Examples:
     .description('list tasks flat, in priority order')
     .option('--status <statuses>', 'filter: comma-separated statuses', parseStatuses)
     .option('--kind <kind>', 'filter by owner kind')
-    .option('--type <type>', 'filter: task | decision', parseType)
+    .option('--type <type>', 'filter: task | decision | action', parseType)
     .option('--model <model>', 'filter by preferred model')
     .option('--parent <id>', 'only children of this task', normalizeId)
     .option('--recursive', 'with --parent: all descendants')
@@ -544,7 +547,7 @@ Examples:
     .description('show the parent/child hierarchy')
     .option('--status <statuses>', 'filter: comma-separated statuses', parseStatuses)
     .option('--kind <kind>', 'filter by owner kind')
-    .option('--type <type>', 'filter: task | decision', parseType)
+    .option('--type <type>', 'filter: task | decision | action', parseType)
     .action((options) => {
       const store = open();
       nameStore(store);
@@ -570,7 +573,7 @@ Examples:
     .command('next')
     .description('what to work on now: unblocked leaf tasks in priority order')
     .argument('[n]', 'how many tasks', (v: string) => Number(v), 5)
-    .option('--kind <kind>', 'filter by owner kind')
+    .option('--kind <kind>', 'filter by owner kind; operator includes human actions (excluded by default)')
     .option('--under <id>', 'restrict to the subtree under this task', normalizeId)
     .option('--include-parked', 'offer parked tasks too')
     .option('--json', 'machine-readable output')
@@ -634,7 +637,7 @@ Examples:
     .option('--out <file>', 'write to a file instead of stdout')
     .option('--status <statuses>', 'filter tasks: comma-separated statuses', parseStatuses)
     .option('--kind <kind>', 'filter by owner kind')
-    .option('--type <type>', 'filter: task | decision', parseType)
+    .option('--type <type>', 'filter: task | decision | action', parseType)
     .action((options) => {
       const text = renderExport(open().loadAll(), {
         status: options.status,
@@ -715,6 +718,30 @@ Examples:
         io.out(result.changed.map((task) => taskLabel(task, graph)).join('\n'));
       }
       if (options.peek) io.out('(peek: cursor not advanced)');
+    });
+
+  program
+    .command('actions')
+    .description('list open human actions, ready first and then waiting')
+    .option('--include-parked', 'list parked actions too')
+    .option('--json', 'machine-readable output')
+    .addHelpText('after', `
+Create a request: planny add "Connect the device" --type action --blocks t7
+Only a human starts or completes it, in the Actions tab or with:
+  planny --session operator start <id>
+  planny --session operator done <id>
+Agents must keep their own session identity and leave these actions to the human.`)
+    .action((options) => {
+      const store = open();
+      const items = nextActions(store, { includeParked: options.includeParked === true });
+      if (options.json) {
+        io.out(JSON.stringify(items, null, 2));
+        return;
+      }
+      nameStore(store);
+      const graph = buildGraph(store.loadAll());
+      io.out(items.length === 0 ? 'No open actions.' : items
+        .map(({ task }) => `${taskLabel(task, graph)}\n   ${askedLine(task)}`).join('\n'));
     });
 
   program

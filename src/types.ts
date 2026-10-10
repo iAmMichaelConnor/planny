@@ -1,7 +1,7 @@
 export const STATUSES = ['todo', 'in-progress', 'parked', 'done', 'cancelled'] as const;
 export type Status = (typeof STATUSES)[number];
 
-export const TASK_TYPES = ['task', 'decision'] as const;
+export const TASK_TYPES = ['task', 'decision', 'action'] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
 /**

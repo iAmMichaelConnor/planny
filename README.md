@@ -120,6 +120,22 @@ the decision's own place in the queue: an urgent question makes urgent
 work. `--reject` closes a
 decision as decided-no and creates nothing.
 
+**Actions** are tasks with `type: action`: work only the human can do,
+such as connecting a device, signing in, or uploading a source file. Agents
+create them with `planny add "Connect the device" --type action --blocks t7`.
+The owner is always `operator`. Write the steps, why they are needed, and
+what counts as done in the description. The **Actions** tab and
+`planny actions` keep these requests visible while the agent works elsewhere.
+
+Start or complete an action in the board, or run
+`planny --session operator start <id>` / `planny --session operator done <id>`
+yourself. Agent sessions cannot start or complete actions, even with
+`--take`, or convert them into ordinary tasks. This uses planny's declared
+local session identity; it is a workflow guard, not authentication.
+`next` excludes actions unless `--kind operator` is explicit. Completion
+releases dependent work directly, without creating a decision outcome task.
+Parked actions stay visible in the tab; `actions --include-parked` lists them.
+
 **Attribution.** `planny --session <id> <command>` — or
 `export PLANNY_SESSION=<id>` once per shell — records who acted. Creates
 stamp `created_by`; every status change, priority move, re-parent,
@@ -166,12 +182,12 @@ decision that your agent has asked of you.*
 ![The edit drawer](https://raw.githubusercontent.com/iAmMichaelConnor/planny/main/docs/planny-drawer.png)
 *The edit drawer, docked on the right.*
 
-The detail, for the curious: four views — a kanban board (columns in
+The detail, for the curious: five views — a kanban board (columns in
 priority order, global `#position` on active cards), a tree of parents
 and children with per-parent progress, a dependency graph with a
 switchable reading (`A blocks B` / `A is blocked by B` — labels, arrows
 and layout all flip), and the decision queue with respond / accept /
-skip. Filter chips slice every view by status, kind and type. The edit
+skip, plus an Actions tab for work only you can do. Filter chips slice every view by status, kind and type. The edit
 drawer covers every CLI action, docks to either side or the bottom, and
 resizes. The server watches the store and pushes events to open tabs, so
 CLI edits appear without a reload; refreshes never clobber a half-typed
@@ -227,7 +243,7 @@ planny tree                            # the hierarchy at a glance
 planny deps                            # blockers above the tasks they block
 planny progress                        # █████░░░░░░░░░░░░░░░ 25% — 1/4 done…
 planny export --out plan.md            # the whole plan as one document
-planny serve                           # localhost UI: kanban, tree, deps, decisions
+planny serve                           # localhost UI: kanban, tree, deps, decisions, actions
 planny url                             # where that UI is being served
 planny serve --all --detach                 # every plan's board up, and one page that links them
 ```
@@ -237,11 +253,11 @@ planny serve --all --detach                 # every plan's board up, and one pag
 | Command | Does |
 | --- | --- |
 | `init` | create the `.planny` store; `--nested` allows one inside another store's tree |
-| `add <name>` | add a task: `-d`/`--desc-file`, `--type task\|decision`, `--kind`, `--model`, `--parent`, `--child`, `--blocked-by`, `--blocks`, `--priority top\|bottom\|N`; `--start` claims it in the same command; `--json` returns `{task, warnings}` |
+| `add <name>` | add a task: `-d`/`--desc-file`, `--type task\|decision\|action`, `--kind`, `--model`, `--parent`, `--child`, `--blocked-by`, `--blocks`, `--priority top\|bottom\|N`; `--start` claims it in the same command; `--json` returns `{task, warnings}` |
 | `update <id>` | change any field or relationship (`--add-blocked-by`, `--clear-parent`, `--append-desc`, `--until` for a parked task's note, …) |
 | `start <id> [--take]` | mark in progress and claim it; `--take` takes over another session's claim |
 | `done` / `todo <id>` | finish / reopen (also wakes a parked task) |
-| `park <id> [--until "<note>"]` | park a task: real work, but not for now. It keeps its priority place and still blocks; only `next` and `decisions` pass it over. The note is a reminder for the next reader — nothing acts on it — and `update --until` rewords it later |
+| `park <id> [--until "<note>"]` | park a task: real work, but not for now. It keeps its priority place and still blocks; the `next`, `decisions`, and `actions` queues pass it over. The note is a reminder for the next reader — nothing acts on it — and `update --until` rewords it later |
 | `cancel <id> [--replaced-by ids]` | cancel; dependants are rewired onto the replacements |
 | `bump <id> top\|bottom\|N` | move in the priority order, clamped by dependencies; a move that stops short says which task held it |
 | `show <id> [--json]` | one task in full: fields, body, relationships, history, file path |
@@ -250,6 +266,7 @@ planny serve --all --detach                 # every plan's board up, and one pag
 | `tree` / `deps` | hierarchy view / dependency view in the terminal |
 | `progress [--parent id]` | completion percentage (excludes cancelled) |
 | `export [--out plan.md]` | the plan as one markdown document |
+| `actions [--include-parked] [--json]` | open human actions, ready first, then waiting |
 | `decisions [--include-parked] [--json]` | open decisions in answering order; `--resolved [--since t]` lists answered ones newest first, with what each unblocked |
 | `catchup [--as id] [--peek] [--compact]` | everything changed since this consumer last asked, then advance its stored cursor; `--compact` trims to ids, names, statuses and stamps |
 | `resolve <id> --response …\|--accept\|--response-file f\|--reject` | record the answer, mark done, create the outcome task (`--reject`: close as decided-no, create nothing) |

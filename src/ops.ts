@@ -164,7 +164,7 @@ function requireName(name: unknown): string {
 
 function assertType(value: unknown): void {
   if (value !== undefined && !isTaskType(value)) {
-    throw new Error(`unknown task type "${String(value)}" — expected task or decision`);
+    throw new Error(`unknown task type "${String(value)}" — expected task, decision or action`);
   }
 }
 
@@ -299,14 +299,17 @@ export function addTask(store: Store, input: AddInput, actor?: string): OpResult
 
 /** Build and place a new task inside an open mutation. add and resolve share it. */
 function createTask(m: Mutation, store: Store, input: AddInput, actor?: string): Task {
+  if (input.type === 'action' && input.kind !== undefined && input.kind !== 'operator') {
+    throw new Error('action tasks must belong to operator');
+  }
   const now = new Date().toISOString();
   const task: Task = {
     id: store.nextId(),
     name: requireName(input.name),
     status: 'todo',
     type: input.type ?? 'task',
-    kind: input.kind ?? 'ai',
-    model: input.model,
+    kind: input.type === 'action' ? 'operator' : input.kind ?? 'ai',
+    model: input.type === 'action' ? undefined : input.model,
     priority: Number.MAX_SAFE_INTEGER, // placed by bump below
     parent: undefined,
     blockedBy: [],
@@ -385,6 +388,18 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: stri
   const m = new Mutation(store);
   const task = m.get(id);
 
+  if (task.type === 'action' && input.type !== undefined && input.type !== 'action') {
+    requireOperator(actor);
+  }
+  if ((input.type ?? task.type) === 'action') {
+    if (input.kind !== undefined && input.kind !== 'operator') {
+      throw new Error('action tasks must belong to operator');
+    }
+    if (task.type !== 'action' && task.status === 'in-progress') {
+      throw new Error('return this task to todo before converting it to a human action');
+    }
+  }
+
   if (
     input.ifUnchangedSince !== undefined &&
     input.body !== undefined &&
@@ -407,6 +422,10 @@ function doUpdateTask(store: Store, id: string, input: UpdateInput, actor?: stri
   if (input.kind !== undefined) task.kind = input.kind;
   if (input.type !== undefined) task.type = input.type;
   if (input.model !== undefined) task.model = input.model ?? undefined;
+  if (task.type === 'action') {
+    task.kind = 'operator';
+    delete task.model;
+  }
   if (input.parkedUntil !== undefined) setWakeNote(task, input.parkedUntil);
 
   if (input.parent !== undefined) setParent(m, id, input.parent ?? undefined, actor);
@@ -522,6 +541,13 @@ export interface StatusOptions {
   parkedUntil?: string;
 }
 
+/** Operator is an explicit local identity, shared by the UI and human CLI. */
+function requireOperator(actor: string | undefined): void {
+  if (actor !== 'operator') {
+    throw new Error('only the human operator can start, complete, or convert an action task — use the Actions tab, or run the CLI yourself with --session operator');
+  }
+}
+
 export function setStatus(
   store: Store,
   id: string,
@@ -549,6 +575,9 @@ function doSetStatus(
 ): OpResult {
   const m = new Mutation(store);
   const task = m.get(id);
+  if (task.type === 'action' && (status === 'in-progress' || status === 'done')) {
+    requireOperator(actor);
+  }
 
   // The claim: starting a task another team already started needs an
   // explicit takeover, so two agents cannot silently double-claim.

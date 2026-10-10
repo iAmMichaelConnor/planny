@@ -83,6 +83,7 @@ export function nextTasks(store: Store, limit: number, options: NextOptions = {}
         (options.includeParked === true || task.status !== 'parked') &&
         (scope === undefined || scope.has(task.id)) &&
         (options.kind === undefined || task.kind === options.kind) &&
+        (task.type !== 'action' || options.kind === 'operator') &&
         !graph.isBlocked(task.id) &&
         graph.children(task.id).filter(isActive).length === 0,
     )
@@ -146,12 +147,21 @@ export interface DecisionOptions {
 
 /** Active decisions in the order to work through them: unblocked first, then by priority. */
 export function nextDecisions(store: Store, options: DecisionOptions = {}): DecisionItem[] {
+  return nextHumanTasks(store, 'decision', options);
+}
+
+/** Open human actions, ready first and then waiting, each in priority order. */
+export function nextActions(store: Store, options: DecisionOptions = {}): DecisionItem[] {
+  return nextHumanTasks(store, 'action', options);
+}
+
+function nextHumanTasks(store: Store, type: TaskType, options: DecisionOptions): DecisionItem[] {
   const tasks = store.loadAll();
   const graph = buildGraph(tasks);
   const decisions = sortByPriority(
     tasks.filter(
       (t) =>
-        t.type === 'decision' &&
+        t.type === type &&
         isActive(t) &&
         (options.includeParked === true || t.status !== 'parked'),
     ),

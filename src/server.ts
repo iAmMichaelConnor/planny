@@ -18,7 +18,7 @@ import {
   type OpResult,
   type UpdateInput,
 } from './ops.js';
-import { computeProgress, nextDecisions } from './query.js';
+import { computeProgress, nextActions, nextDecisions } from './query.js';
 import { activePositions, sortByPriority } from './priority.js';
 import type { Store } from './store.js';
 import { holderOf, isStatus } from './types.js';
@@ -419,7 +419,8 @@ async function handle(store: Store, req: IncomingMessage, res: ServerResponse): 
   if (taskRoute !== null) {
     const [, id, action] = taskRoute;
     if (req.method === 'PATCH' && action === undefined) {
-      sendResult(res, updateTask(store, id!, (await readJson(req)) as UpdateInput));
+      const body = await readJson(req);
+      sendResult(res, updateTask(store, id!, body as UpdateInput, actorOf(body)));
       return;
     }
     if (req.method === 'POST' && action === 'status') {
@@ -487,6 +488,7 @@ function buildState(store: Store): object {
     })),
     progress: computeProgress(tasks),
     decisions: nextDecisions(store).map(({ task, blocked }) => ({ id: task.id, blocked })),
+    actions: nextActions(store).map(({ task, blocked }) => ({ id: task.id, blocked })),
   };
 }
 
