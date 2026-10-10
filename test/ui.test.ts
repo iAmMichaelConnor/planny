@@ -1474,6 +1474,7 @@ describe('acting at once, with an undo', () => {
     expect(confirmed).not.toHaveBeenCalled();
     expect(bodyOf('/api/tasks/t1/status')).toEqual({ status: 'in-progress' });
     expect(undoButton()).not.toBeNull();
+    expect(document.querySelector('#toasts .toast.undo')!.textContent).toContain('t1 → in-progress');
   });
 
   it('the undo posts the status the task had before', async () => {
@@ -3548,6 +3549,22 @@ describe('one click, one task', () => {
 });
 
 describe('human action tasks', () => {
+  it('confirms Start at the bottom only after the action update succeeds', async () => {
+    const action = task('t7', { type: 'action', kind: 'operator' });
+    servedState = { ...sampleState, tasks: [action], actions: [{ id: 't7', blocked: false }] } as typeof sampleState;
+    await bootApp();
+    clickTab('actions');
+    (document.querySelector('[data-action="toggle-action"]') as HTMLElement).click();
+    let finishRequest!: (result: unknown) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { finishRequest = resolve as typeof finishRequest; }));
+    (document.querySelector('#view-actions [data-action="start"]') as HTMLElement).click();
+    expect(document.querySelector('#toasts .toast.undo')).toBeNull();
+    finishRequest({ ok: true, json: async () => ({ task: { ...action, status: 'in-progress' }, warnings: [] }) });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(document.querySelector('#toasts .toast.undo')!.textContent).toContain('t7 → in-progress');
+    expect(document.querySelector('#toasts .toast-action')!.textContent).toBe('undo');
+  });
+
   it('lists actions in their own tab with a human completion button and no agent prompt', async () => {
     const action = task('t7', { name: 'Connect the device', type: 'action', kind: 'operator', body: 'Plug in the USB cable.' });
     servedState = { ...sampleState, tasks: [...sampleState.tasks, action], actions: [{ id: 't7', blocked: false }] } as typeof sampleState;
